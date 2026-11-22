@@ -417,12 +417,35 @@ class SearchResult:
 
 
 @dataclass(frozen=True)
+class SnippetHighlight:
+    """Half-open UTF-8 byte ranges relative to the excerpt and the source."""
+
+    start: int
+    end: int
+    source_byte_start: int
+    source_byte_end: int
+
+
+@dataclass(frozen=True)
+class Snippet:
+    """A stored-text excerpt, matched ranges, and its source byte bounds."""
+
+    text: str
+    highlights: tuple[SnippetHighlight, ...]
+    truncated_start: bool
+    truncated_end: bool
+    source_byte_start: int
+    source_byte_end: int
+
+
+@dataclass(frozen=True)
 class QueryHit:
     doc_id: int | None
     revision: int | None
     score: float
     vector_squared_l2: float | None
     lexical_bm25: float | None
+    snippet: Snippet | None = None
 
 
 @dataclass(frozen=True)

@@ -723,6 +723,17 @@ class ZeQueryRequestV2(ct.Structure):
     ]
 
 
+class ZeQueryFilter(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("filter", ct.POINTER(ZeFilter)),
+        ("has_timestamp_range", ct.c_uint32),
+        ("start_ts", ct.c_int64),
+        ("end_ts", ct.c_int64),
+    ]
+
+
 class ZeQueryHit(ct.Structure):
     _fields_ = [
         ("has_document", ct.c_uint32),
@@ -734,6 +745,46 @@ class ZeQueryHit(ct.Structure):
         ("has_lexical_score", ct.c_uint32),
         ("vector_squared_l2", ct.c_double),
         ("lexical_bm25", ct.c_double),
+    ]
+
+
+class ZeSnippetHighlight(ct.Structure):
+    _fields_ = [
+        ("start", ct.c_size_t),
+        ("end", ct.c_size_t),
+    ]
+
+
+class ZeQuerySnippet(ct.Structure):
+    _fields_ = [
+        ("has_snippet", ct.c_uint32),
+        ("truncated_start", ct.c_uint32),
+        ("truncated_end", ct.c_uint32),
+        ("reserved", ct.c_uint32),
+        ("text", UInt8Pointer),
+        ("text_len", ct.c_size_t),
+        ("highlights", ct.POINTER(ZeSnippetHighlight)),
+        ("highlight_count", ct.c_size_t),
+    ]
+
+
+class ZeQuerySnippets(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("snippets", ct.POINTER(ZeQuerySnippet)),
+        ("snippet_count", ct.c_size_t),
+    ]
+
+
+class ZeSnippetSourceRanges(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("source_start", ct.c_size_t),
+        ("source_end", ct.c_size_t),
+        ("highlights", ct.POINTER(ZeSnippetHighlight)),
+        ("highlight_count", ct.c_size_t),
     ]
 
 

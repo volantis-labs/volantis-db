@@ -20,6 +20,40 @@ with ze.open(Path("example-store")) as store:
     print(result.hits[0].doc_id)
 ```
 
+## Query filters and snippets
+
+`store.query(filter=...)` accepts the same structured `ze.Filter` builders as
+`scan` and `count`. The filter applies to every query leg before ranking and
+fusion. When supplied together, `filter` and `eligible_ids` must both match.
+Malformed filters, unknown attributes, and incompatible values raise
+`ze.InvalidArgument` (`ZE_ERR_INVALID_ARGUMENT`).
+
+```python
+result = store.query(
+    text="harbour cafe", filter=ze.Filter.range_("ts", gte=10), snippet_bytes=120
+)
+for hit in result.hits:
+    if hit.snippet is not None:
+        snippet = hit.snippet
+        excerpt = snippet.text.encode("utf-8")
+        print(snippet.text)
+        for highlight in snippet.highlights:
+            print(excerpt[highlight.start:highlight.end].decode("utf-8"))
+```
+
+`snippet_bytes` requires a lexical leg and a positive integer that fits the
+native `size_t`. Invalid requests raise `ze.InvalidArgument`. The excerpt
+starts at a matched token and can exceed the byte budget by up to three bytes
+to finish a UTF-8 character. Only matches fully inside the excerpt are
+highlighted. `truncated_start` and `truncated_end` mark the cuts.
+
+`QueryHit.snippet` is a `Snippet`, or `None` when snippets were omitted or a
+hybrid hit has no matching stored text. Each `SnippetHighlight` gives
+half-open UTF-8 byte offsets `start` and `end` in the excerpt. The snippet
+and each highlight also give absolute half-open `source_byte_start` and
+`source_byte_end` offsets in the original stored text. Slice UTF-8 encoded
+bytes to recover either range.
+
 ## Conditional writes and filtered deletion
 
 Pass an `UpsertDocument` to `store.upsert()` or a `DeleteTarget` to

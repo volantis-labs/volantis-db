@@ -58,6 +58,8 @@ from ._types import ScanCursor as ScanCursor
 from ._types import ScanPage as ScanPage
 from ._types import SearchHit as SearchHit
 from ._types import SearchResult as SearchResult
+from ._types import Snippet as Snippet
+from ._types import SnippetHighlight as SnippetHighlight
 from ._types import StateReport as StateReport
 from ._types import StatsReport as StatsReport
 from ._types import StoredDocument as StoredDocument

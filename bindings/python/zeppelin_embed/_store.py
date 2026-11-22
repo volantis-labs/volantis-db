@@ -18,6 +18,7 @@ from ._errors import (
     RevisionConflict,
     TextUnavailable,
     UnsupportedBuild,
+    ZeppelinError,
     invalid_argument,
     last_error_message,
     raise_for_status,
@@ -65,6 +66,8 @@ from ._types import (
     ScanPage,
     SearchHit,
     SearchResult,
+    Snippet,
+    SnippetHighlight,
     StateReport,
     StatsReport,
     StoredDocument,
@@ -1796,6 +1799,8 @@ class Store:
         vector: np.ndarray[Any, Any] | None = None,
         text: str | None = None,
         eligible_ids: Sequence[int | tuple[int, int]] | None = None,
+        filter: dict[str, Any] | None = None,
+        snippet_bytes: int | None = None,
         k: int = 10,
         thread_budget: int = 0,
         tier: Tier | None = None,
@@ -1812,7 +1817,18 @@ class Store:
         cancel_token: CancelToken | None = None,
         deadline_ns: int = 0,
     ) -> QueryResult:
+        """Run a structured query with optional attribute filters and stored-text excerpts."""
         handle = self._live_handle()
+        snippets = None
+        if snippet_bytes is not None:
+            if (
+                isinstance(snippet_bytes, bool)
+                or not isinstance(snippet_bytes, int)
+                or not 0 < snippet_bytes < 1 << (8 * ct.sizeof(ct.c_size_t))
+            ):
+                invalid_argument("snippet_bytes must be a positive integer that fits size_t")
+            snippets = s.sized(s.ZeQuerySnippets)
+        snippets_pointer = None if snippets is None else ct.byref(snippets)
         if vector is None:
             vector_pointer, vector_len = s.FloatPointer(), 0
             probe = None
@@ -1875,18 +1891,38 @@ class Store:
             eligible_count=0 if ids_owner is None else len(ids_owner),
             has_eligible=int(eligible_ids is not None),
         )
+        constraints = None
+        filter_owners: list[object] = []
+        if filter is not None:
+            flat_filter, filter_owners = _flatten_filter(
+                filter, self._attribute_ids, self._attribute_types, strict=True
+            )
+            constraints = s.sized(s.ZeQueryFilter)
+            constraints.filter = ct.pointer(flat_filter)
+        constraints_pointer = None if constraints is None else ct.byref(constraints)
         result = s.sized(s.ZeQueryResult)
         primary: BaseException | None = None
         try:
-            status = (
-                self._call(LIBRARY.ze_query, handle, ct.byref(request), ct.byref(result))
-                if eligible_ids is None else
-                self._call(
-                    LIBRARY.ze_query_v2, handle, ct.byref(request_v2), None,
-                    0, ct.byref(result), None,
+            if eligible_ids is not None:
+                status = self._call(
+                    LIBRARY.ze_query_v2, handle, ct.byref(request_v2), constraints_pointer,
+                    snippet_bytes or 0, ct.byref(result), snippets_pointer,
                 )
-            )
+            elif constraints is not None:
+                status = self._call(
+                    LIBRARY.ze_query_filtered, handle, ct.byref(request), constraints_pointer,
+                    snippet_bytes or 0, ct.byref(result), snippets_pointer,
+                )
+            elif snippets is not None:
+                status = self._call(
+                    LIBRARY.ze_query_with_snippets, handle, ct.byref(request),
+                    snippet_bytes, ct.byref(result), snippets_pointer,
+                )
+            else:
+                status = self._call(LIBRARY.ze_query, handle, ct.byref(request), ct.byref(result))
             raise_for_status(status, handle)
+            if snippets is not None and snippets.snippet_count != result.hit_count:
+                raise ERROR_TYPES[22]("query snippets are not aligned with its hits")
             hits = tuple(
                 QueryHit(
                     doc_id=_python_doc_id(hit.doc_id) if hit.has_document else None,
@@ -1896,8 +1932,9 @@ class Store:
                         float(hit.vector_squared_l2) if hit.has_vector_score else None
                     ),
                     lexical_bm25=float(hit.lexical_bm25) if hit.has_lexical_score else None,
+                    snippet=None if snippets is None else self._query_snippet(snippets, index),
                 )
-                for hit in (result.hits[index] for index in range(result.hit_count))
+                for index, hit in enumerate(result.hits[i] for i in range(result.hit_count))
             )
             fusion = (
                 FusionReport(
@@ -1927,13 +1964,50 @@ class Store:
             primary = error
             raise
         finally:
-            del probe, text_owner
-            free_status = self._call(LIBRARY.ze_query_result_free, ct.byref(result))
-            if free_status != 0:
-                if primary is None:
-                    raise_for_status(free_status, handle)
-                assert primary is not None
-                primary.add_note(f"ze_query_result_free: {last_error_message(handle)}")
+            del probe, text_owner, filter_owners
+            frees = [(LIBRARY.ze_query_result_free, ct.byref(result))]
+            if snippets is not None:
+                frees.append((LIBRARY.ze_query_snippets_free, ct.byref(snippets)))
+            cleanup_error = None
+            for free, pointer in frees:
+                status = self._call(free, pointer)
+                try:
+                    raise_for_status(status)
+                except ZeppelinError as error:
+                    if primary is None:
+                        primary = cleanup_error = error
+                    else:
+                        primary.add_note(f"{free.__name__}: {error}")
+            if cleanup_error is not None:
+                raise cleanup_error
+
+    def _query_snippet(self, snippets: s.ZeQuerySnippets, index: int) -> Snippet | None:
+        snippet = snippets.snippets[index]
+        if not snippet.has_snippet:
+            return None
+        source = s.sized(s.ZeSnippetSourceRanges)
+        status = self._call(
+            LIBRARY.ze_query_snippet_source_ranges, ct.byref(snippets), index, ct.byref(source)
+        )
+        raise_for_status(status)
+        if source.highlight_count != snippet.highlight_count:
+            raise ERROR_TYPES[22]("snippet source highlights are not aligned")
+        return Snippet(
+            text=ct.string_at(snippet.text, snippet.text_len).decode("utf-8"),
+            highlights=tuple(
+                SnippetHighlight(
+                    start=int(snippet.highlights[i].start),
+                    end=int(snippet.highlights[i].end),
+                    source_byte_start=int(source.highlights[i].start),
+                    source_byte_end=int(source.highlights[i].end),
+                )
+                for i in range(snippet.highlight_count)
+            ),
+            truncated_start=bool(snippet.truncated_start),
+            truncated_end=bool(snippet.truncated_end),
+            source_byte_start=int(source.source_start),
+            source_byte_end=int(source.source_end),
+        )
 
     def warm_lexical(self, cancel_token: CancelToken | None = None, *, deadline_ns: int = 0) -> None:
         """Prepare exact and prefix lexical queries; mutations invalidate preparation."""

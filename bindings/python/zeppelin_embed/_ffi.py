@@ -82,10 +82,31 @@ _bind(
 _bind("ze_search_result_free", [ct.POINTER(s.ZeSearchResult)])
 _bind("ze_query", [Handle, ct.POINTER(s.ZeQueryRequest), ct.POINTER(s.ZeQueryResult)])
 _bind(
-    "ze_query_v2",
-    [Handle, ct.POINTER(s.ZeQueryRequestV2), ct.c_void_p, ct.c_size_t,
-     ct.POINTER(s.ZeQueryResult), ct.c_void_p],
+    "ze_query_filtered",
+    [
+        Handle, ct.POINTER(s.ZeQueryRequest), ct.POINTER(s.ZeQueryFilter), ct.c_size_t,
+        ct.POINTER(s.ZeQueryResult), ct.POINTER(s.ZeQuerySnippets),
+    ],
 )
+_bind(
+    "ze_query_v2",
+    [
+        Handle, ct.POINTER(s.ZeQueryRequestV2), ct.POINTER(s.ZeQueryFilter), ct.c_size_t,
+        ct.POINTER(s.ZeQueryResult), ct.POINTER(s.ZeQuerySnippets),
+    ],
+)
+_bind(
+    "ze_query_with_snippets",
+    [
+        Handle, ct.POINTER(s.ZeQueryRequest), ct.c_size_t,
+        ct.POINTER(s.ZeQueryResult), ct.POINTER(s.ZeQuerySnippets),
+    ],
+)
+_bind(
+    "ze_query_snippet_source_ranges",
+    [ct.POINTER(s.ZeQuerySnippets), ct.c_size_t, ct.POINTER(s.ZeSnippetSourceRanges)],
+)
+_bind("ze_query_snippets_free", [ct.POINTER(s.ZeQuerySnippets)])
 _bind("ze_query_result_free", [ct.POINTER(s.ZeQueryResult)])
 _bind("ze_seal", [Handle, ct.POINTER(s.ZeSealRequest), ct.POINTER(s.ZeGenerationReport)])
 _bind(
