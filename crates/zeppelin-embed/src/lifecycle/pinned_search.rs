@@ -6,6 +6,7 @@ impl Store {
     pub(crate) fn graph_text_in(
         &self,
         pin: &NativeDocuments,
+        node_text: Option<&LexicalIndexCache>,
         query: &crate::fts::query::LexicalQuery,
         k: usize,
         filter: Option<&QueryFilter>,
@@ -17,7 +18,7 @@ impl Store {
         let inputs = LexicalInputs {
             filter,
             generation: pin.generation,
-            cache: &self.lexical_index_cache,
+            cache: node_text.unwrap_or(&self.lexical_index_cache),
             snapshot: &pin.snapshot,
             active: &pin.active,
             accounting: &self.accounting,

@@ -418,6 +418,8 @@ pub fn probe_unified_faults() -> Result<(), String> {
 pub fn exercise_unified_faults(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
     use fault_vfs::{FaultMode, FaultSite, Layer};
     let root = tempfile::tempdir().map_err(|e| e.to_string())?;
+    node_text_preparation_cancel(root.path(), seed)?;
+    coverage.hit("storage-durability.graph-commit.node-text.preparation-cancel");
     let mixed = Op::MixedBatch {
         doc_id: 91,
         revision: 2,
@@ -655,6 +657,75 @@ pub fn exercise_unified_faults(seed: u64, coverage: &mut CoverageRegistry) -> Re
         {
             return Err("wrong target fired".into());
         }
+    }
+    Ok(())
+}
+
+fn node_text_preparation_cancel(root: &Path, seed: u64) -> Result<(), String> {
+    use zeppelin_embed::fts::{index::DEFAULT_FIELD, search::TermQuery};
+    use zeppelin_embed::property_graph::GraphStoreErrorKind;
+    let (engine, _) = fault_fixture(root.join("node-text"), FaultSchedule::default(), true)?;
+    let store = engine.store()?;
+    let term = if seed & 1 == 0 { "amber" } else { "cedar" };
+    let contents = CanonicalContents::node(&mut [], &mut [], Some(term), None).unwrap();
+    let create = StructuredWrite {
+        key: ApplicationKey::new(EntityKind::Node, "graph", "person").unwrap(),
+        revision: GraphRevision::new(1).unwrap(),
+        operation: StructuredOperation::Create,
+        image: Some(WriteImage::Node(&contents)),
+    };
+    let control = QueryControl::Cancel(CancelToken::new());
+    let created = store
+        .graph_apply(&[create], &control)
+        .map_err(|e| e.to_string())?;
+    let entity = created.receipts()[0].entity;
+    let version = created.ack().generation();
+    let replacement = CanonicalContents::node(&mut [], &mut [], Some("quartz"), None).unwrap();
+    let put = [StructuredWrite {
+        key: create.key,
+        revision: GraphRevision::new(2).unwrap(),
+        operation: StructuredOperation::Put(entity),
+        image: Some(WriteImage::Node(&replacement)),
+    }];
+    let search = |query: &str| -> Result<Vec<u128>, String> {
+        store
+            .search_lexical(
+                &TermQuery::flat(vec![query.as_bytes().to_vec()], &[DEFAULT_FIELD]),
+                10,
+                control.clone(),
+            )
+            .map(|out| {
+                out.candidates
+                    .into_iter()
+                    .map(|row| row.document.doc_id().get())
+                    .collect()
+            })
+            .map_err(|e| e.to_string())
+    };
+    let zeppelin_embed::property_graph::EntityId::Node(id) = entity else {
+        return Err("node receipt expected".into());
+    };
+    let token = CancelToken::new();
+    zeppelin_embed::graph_structured_write_test_support::cancel_node_text_preparation(
+        token.clone(),
+    );
+    let error = store
+        .graph_apply(&put, &QueryControl::Cancel(token))
+        .err()
+        .ok_or("node text preparation did not refuse")?;
+    if error.kind() != GraphStoreErrorKind::Cancelled
+        || !error.nothing_committed()
+        || store.snapshot().map_err(|e| e.to_string())?.generation() != version
+        || !search("quartz")?.is_empty()
+        || search(term)? != [id.get()]
+    {
+        return Err("refused graph text put changed membership or generation".into());
+    }
+    store
+        .graph_apply(&put, &control)
+        .map_err(|e| e.to_string())?;
+    if search("quartz")? != [id.get()] || !search(term)?.is_empty() {
+        return Err("graph text retry did not replace postings".into());
     }
     Ok(())
 }

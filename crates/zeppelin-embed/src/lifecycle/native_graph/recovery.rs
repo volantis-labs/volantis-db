@@ -2510,6 +2510,7 @@ fn validate_native_checkpoint(
         &[ArtifactDescriptor],
         bool,
     )>,
+    mut node_text: Option<(&mut super::node_text::TextChanges, &GraphResources)>,
     resources: &mut TreeResources<'_>,
 ) -> Result<(), TreeError> {
     for kind in [
@@ -2572,13 +2573,23 @@ fn validate_native_checkpoint(
                 .map_err(|_| TreeError::Invalid("recovery node key width"))?,
         )));
         let payload = PayloadRef::decode(entry.value())?;
-        if let NodeRecordState::Live(record) = verify_node_state(
+        let state = verify_node_state(
             PayloadSlice::new(source, roots.store(), entry.creation_generation(), payload),
             node,
             catalog,
             document,
             resources,
-        )? {
+        )?;
+        if let NodeRecordState::Tombstone(record) = &state
+            && let Some(document) = record.document_version()
+            && let Some((changes, _)) = node_text.as_mut()
+        {
+            changes.delete(node, Some(document));
+        }
+        if let NodeRecordState::Live(record) = state {
+            if let Some((changes, shared)) = node_text.as_mut() {
+                changes.observe(node, &record, shared, resources)?;
+            }
             require_live_record_fence(source, catalog, document, roots, &record, resources)?;
             let RecordShape::Node { labels, .. } = record.shape() else {
                 return Err(TreeError::Invalid("recovery node record role"));
@@ -4270,6 +4281,8 @@ struct PendingWalCompletion {
 }
 
 struct SemanticReplay<'a, 'm> {
+    text_generation: Option<u64>,
+    node_text: super::node_text::TextChanges,
     store: &'a dyn RecoveryRead,
     directory: &'a Path,
     expected: GraphInterpretation<'a>,
@@ -4340,6 +4353,8 @@ impl<'a, 'm> SemanticReplay<'a, 'm> {
             .try_reserve_exact(crate::property_graph::storage::reclaim::MAX_CANDIDATES)
             .map_err(|_| NativeGraphError::Invalid("recovery descriptor allocation"))?;
         Ok(Self {
+            text_generation: None,
+            node_text: Default::default(),
             store,
             directory,
             expected,
@@ -4906,6 +4921,8 @@ impl<'a, 'm> SemanticReplay<'a, 'm> {
                 state.sequence,
                 state.high_waters,
                 reclaim,
+                (self.text_generation == Some(state.generation.get()))
+                    .then_some((&mut self.node_text, self.resources)),
                 &mut tree,
             )?;
             if state.text.is_some() || state.vector.is_some() {
@@ -5401,6 +5418,8 @@ impl ReplayValidator for SemanticReplay<'_, '_> {
                 target.sequence,
                 target.high_waters,
                 reclaim,
+                (self.text_generation == Some(target.generation.get()))
+                    .then_some((&mut self.node_text, self.resources)),
                 &mut tree,
             )?;
             let mut retained_mutations = StorageBuffer::new(self.memory, MAX_GRAPH_CHANGES)?;
@@ -6109,6 +6128,7 @@ fn install_unified_inner(
     });
     let expected = GraphInterpretation::new(store.tokenizer.epoch(), document.as_ref())?;
     let (validator, final_state, (_replay_work, replay_remaining)) = replay_unified(
+        true,
         store,
         &store.directory,
         checkpoint,
@@ -6142,6 +6162,7 @@ fn install_unified_inner(
     #[cfg(test)]
     reopen_phase("deferred_allocations_and_roots", &mut phase_start);
     let bundle = super::NativeGraphBundle::install_recovered(
+        validator.node_text.apply(None, store, &shared, &control)?,
         store,
         &shared,
         NativeGraphBundleInput {
@@ -6231,6 +6252,7 @@ fn install_unified_inner(
     reason = "read dependencies and borrowed replay/resource lifetimes are explicit"
 )]
 fn replay_unified<'a, 'm>(
+    rebuild_node_text: bool,
     store: &'a dyn RecoveryRead,
     directory: &'a Path,
     checkpoint: CommitState<'a>,
@@ -6247,6 +6269,11 @@ fn replay_unified<'a, 'm>(
     let mut validator = SemanticReplay::new(
         store, directory, expected, document, control, capacity, shared, storage,
     )?;
+    validator.text_generation = rebuild_node_text.then(|| {
+        commits
+            .last()
+            .map_or(checkpoint.generation.get(), |commit| commit.generation)
+    });
     let mut cancelled = || control.checkpoint().is_err();
     let states = u64::try_from(commits.len())
         .ok()
@@ -6586,6 +6613,7 @@ pub(crate) fn verify_unified(
             .checked_add(crate::property_graph::storage::reclaim::MAX_CANDIDATES)
             .ok_or(NativeGraphError::IdentityExhausted)?;
         let replay = replay_unified(
+            false,
             &reads,
             directory,
             checkpoint,

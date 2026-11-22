@@ -4130,9 +4130,13 @@ impl Store {
         let active_query = ActiveQuery {
             count: &self.active_queries,
         };
+        #[cfg(feature = "graph-cypher")]
+        let node_text = self.native_graph.node_text().map_err(QueryError::Store)?;
         drop(active_guard);
         drop(state);
         Ok(AdmittedLexicalQuery {
+            #[cfg(feature = "graph-cypher")]
+            node_text,
             generation,
             active,
             snapshot: snapshot::ReadSnapshot::new(snapshot),
@@ -4200,6 +4204,12 @@ impl Store {
             LexicalInputs {
                 filter: None,
                 generation: admission.generation,
+                #[cfg(feature = "graph-cypher")]
+                cache: admission
+                    .node_text
+                    .as_deref()
+                    .unwrap_or(&self.lexical_index_cache),
+                #[cfg(not(feature = "graph-cypher"))]
                 cache: &self.lexical_index_cache,
                 snapshot: &admission.snapshot,
                 active: &admission.active,
@@ -4257,6 +4267,8 @@ impl Store {
         let started = self.clock.now();
         let admission_started = timing_start(self.clock.as_ref());
         let AdmittedLexicalQuery {
+            #[cfg(feature = "graph-cypher")]
+            node_text,
             generation,
             active,
             snapshot,
@@ -4272,6 +4284,9 @@ impl Store {
             LexicalInputs {
                 filter,
                 generation,
+                #[cfg(feature = "graph-cypher")]
+                cache: node_text.as_deref().unwrap_or(&self.lexical_index_cache),
+                #[cfg(not(feature = "graph-cypher"))]
                 cache: &self.lexical_index_cache,
                 snapshot: &snapshot,
                 active: &active,
@@ -4677,6 +4692,8 @@ impl Store {
         let started = self.clock.now();
         let admission_started = timing_start(self.clock.as_ref());
         let AdmittedLexicalQuery {
+            #[cfg(feature = "graph-cypher")]
+            node_text,
             generation,
             active,
             snapshot,
@@ -4692,6 +4709,9 @@ impl Store {
             LexicalInputs {
                 filter,
                 generation,
+                #[cfg(feature = "graph-cypher")]
+                cache: node_text.as_deref().unwrap_or(&self.lexical_index_cache),
+                #[cfg(not(feature = "graph-cypher"))]
                 cache: &self.lexical_index_cache,
                 snapshot: &snapshot,
                 active: &active,
@@ -5860,8 +5880,13 @@ impl Store {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) enum StructuredLexicalSource {
+    #[cfg(feature = "graph-cypher")]
+    NodeText {
+        block: Arc<native_graph::node_text::NodeTextBlock>,
+        first_row: u32,
+    },
     Sealed(usize),
     Active,
 }
@@ -5945,6 +5970,46 @@ impl QueryFilter {
             rows.intersect_with(&eligible);
         }
         Ok(rows)
+    }
+
+    #[cfg(feature = "graph-cypher")]
+    fn matching_backing_documents(
+        &self,
+        inputs: LexicalInputs<'_>,
+        cancellation: Option<&QueryCancellation<'_>>,
+    ) -> Result<std::collections::BTreeSet<crate::ingest::DocId>, LexicalAssemblyError> {
+        let mut matching = std::collections::BTreeSet::new();
+        if self.predicate.is_none() || inputs.cache.masked_documents.is_empty() {
+            return Ok(matching);
+        }
+        let active = self
+            .active_rows(inputs.active)
+            .map_err(map_eligibility_error)?;
+        for version in inputs.cache.masked_versions() {
+            if let Some((row, found, _)) = inputs.active.existing(version.doc_id())
+                && found == version
+                && active.contains(u32::try_from(row).map_err(|_| StoreError::ActiveRowOverflow)?)
+            {
+                matching.insert(version.doc_id());
+            }
+        }
+        for segment in inputs.snapshot.segments() {
+            if let Some(control) = cancellation {
+                control
+                    .check_graph()
+                    .map_err(LexicalAssemblyError::Cancelled)?;
+            }
+            let selected = self.sealed_rows(segment).map_err(map_eligibility_error)?;
+            for version in inputs.cache.masked_versions() {
+                if let Some(row) = segment.query_row_for_document_version(version)?
+                    && selected
+                        .contains(u32::try_from(row).map_err(|_| StoreError::ActiveRowOverflow)?)
+                {
+                    matching.insert(version.doc_id());
+                }
+            }
+        }
+        Ok(matching)
     }
 
     /// Restricts all query legs to these document ids, before top-k and fusion.
@@ -6238,6 +6303,11 @@ impl CachedLexicalAssembly {
 /// construction; old admissions may build their own answer, but cannot replace
 /// a cached newer generation. Only immutable contribution Arcs cross rebuilds.
 pub(crate) struct LexicalIndexCache {
+    #[cfg(feature = "graph-cypher")]
+    // Hide only the backing revision superseded by a graph put or delete.
+    masked_documents: std::collections::BTreeMap<crate::ingest::DocId, crate::ingest::Revision>,
+    #[cfg(feature = "graph-cypher")]
+    node_text: std::collections::BTreeMap<u128, Arc<native_graph::node_text::NodeTextBlock>>,
     entry: Mutex<Option<CachedLexicalAssembly>>,
     #[cfg(any(test, feature = "test-seams"))]
     hits: AtomicU64,
@@ -6250,8 +6320,19 @@ pub(crate) struct LexicalIndexCache {
 }
 
 impl LexicalIndexCache {
+    #[cfg(feature = "graph-cypher")]
+    fn masked_versions(&self) -> impl Iterator<Item = crate::ingest::DocumentVersion> + '_ {
+        self.masked_documents
+            .iter()
+            .map(|(&id, &revision)| crate::ingest::DocumentVersion::new(id, revision))
+    }
+
     pub(crate) const fn new() -> Self {
         Self {
+            #[cfg(feature = "graph-cypher")]
+            node_text: std::collections::BTreeMap::new(),
+            #[cfg(feature = "graph-cypher")]
+            masked_documents: std::collections::BTreeMap::new(),
             entry: Mutex::new(None),
             #[cfg(any(test, feature = "test-seams"))]
             hits: AtomicU64::new(0),
@@ -6380,6 +6461,8 @@ fn assemble_lexical_index(
     let Some(filter) = inputs.filter else {
         return Ok(receipt);
     };
+    #[cfg(feature = "graph-cypher")]
+    let backing_matches = filter.matching_backing_documents(inputs, cancellation)?;
     let mut alive_sets = Vec::with_capacity(receipt.alive_sets.len());
     for (source, alive) in receipt.sources.iter().zip(&receipt.alive_sets) {
         if let Some(control) = cancellation {
@@ -6388,6 +6471,29 @@ fn assemble_lexical_index(
                 .map_err(LexicalAssemblyError::Cancelled)?;
         }
         let rows = match source {
+            #[cfg(feature = "graph-cypher")]
+            StructuredLexicalSource::NodeText { block, .. } => {
+                let mut rows = crate::meta::DocBitmap::new();
+                for (row, item) in block.rows.iter().enumerate() {
+                    let id = item.version.doc_id();
+                    let matches = filter.predicate.as_ref().is_none_or(|predicate| {
+                        if inputs.cache.masked_documents.contains_key(&id) {
+                            backing_matches.contains(&id)
+                        } else {
+                            native_graph::node_text::matches_absent_columns(predicate)
+                        }
+                    });
+                    if matches
+                        && filter
+                            .eligible_ids
+                            .as_ref()
+                            .is_none_or(|ids| ids.numeric.binary_search(&id).is_ok())
+                    {
+                        rows.insert(u32::try_from(row).map_err(|_| StoreError::ActiveRowOverflow)?);
+                    }
+                }
+                Ok(rows)
+            }
             StructuredLexicalSource::Active => filter.active_rows(inputs.active),
             StructuredLexicalSource::Sealed(ordinal) => inputs
                 .snapshot
@@ -6590,6 +6696,20 @@ fn build_lexical_assembly(
                 check_segment_document_identity(segment, &postings)?;
             }
             let alive = segment.query_alive().map_err(LexicalAssemblyError::Store)?;
+            #[cfg(feature = "graph-cypher")]
+            let alive = {
+                let mut alive = alive;
+                for version in cache.masked_versions() {
+                    work.step()?;
+                    if let Some(row) = segment.query_row_for_document_version(version)? {
+                        let row = u32::try_from(row).map_err(|_| StoreError::ActiveRowOverflow)?;
+                        Arc::make_mut(&mut alive)
+                            .tombstone(row)
+                            .map_err(|_| StoreError::ActiveRowOverflow)?;
+                    }
+                }
+                alive
+            };
             let identity = segment
                 .lexical_postings_identity()
                 .map_err(StoreError::Segment)
@@ -6635,6 +6755,23 @@ fn build_lexical_assembly(
             Some(value) => Arc::clone(value),
             None => {
                 let alive = Arc::new(active.alive_controlled(&mut work)?);
+                #[cfg(feature = "graph-cypher")]
+                let alive = {
+                    let mut alive = alive;
+                    for version in cache.masked_versions() {
+                        work.step()?;
+                        if let Some((row, found, _)) = active.existing(version.doc_id())
+                            && found == version
+                        {
+                            let row =
+                                u32::try_from(row).map_err(|_| StoreError::ActiveRowOverflow)?;
+                            Arc::make_mut(&mut alive)
+                                .tombstone(row)
+                                .map_err(|_| StoreError::ActiveRowOverflow)?;
+                        }
+                    }
+                    alive
+                };
                 CachedLexicalContribution::build(
                     LexicalContributionKey::Active(Arc::downgrade(active)),
                     &sealed,
@@ -6655,6 +6792,26 @@ fn build_lexical_assembly(
         alive_sets.push(Arc::clone(alive));
         contributions.push(contribution);
         sources.push(StructuredLexicalSource::Active);
+    }
+    #[cfg(feature = "graph-cypher")]
+    {
+        let mut first_row =
+            u32::try_from(active.row_count()).map_err(|_| StoreError::ActiveRowOverflow)?;
+        for block in cache.node_text.values() {
+            work.step()?;
+            index.push_shared_with_live_rows(
+                Arc::clone(&block.postings),
+                block.alive.alive_bitmap(),
+            )?;
+            alive_sets.push(Arc::clone(&block.alive));
+            sources.push(StructuredLexicalSource::NodeText {
+                block: Arc::clone(block),
+                first_row,
+            });
+            first_row = first_row
+                .checked_add(block.postings.row_count())
+                .ok_or(StoreError::ActiveRowOverflow)?;
+        }
     }
     crate::fts::control::sort_by(
         &mut contributions,
@@ -6794,6 +6951,12 @@ fn structured_lexical_document(
         .ok_or(LexicalDocumentError::SourceOrdinalOutOfRange)?;
     let row = usize::try_from(doc.row).map_err(|_| LexicalDocumentError::RowOverflow)?;
     match source {
+        #[cfg(feature = "graph-cypher")]
+        StructuredLexicalSource::NodeText { block, .. } => block
+            .rows
+            .get(row)
+            .map(|v| Some(v.version))
+            .ok_or(LexicalDocumentError::ActiveRowAbsent),
         StructuredLexicalSource::Sealed(ordinal) => {
             let segment = snapshot
                 .segments()
@@ -6890,7 +7053,7 @@ fn map_term_leg_document_error(error: LexicalDocumentError) -> crate::fusion::Fu
 fn structured_lexical_row<'a>(
     snapshot: &'a PublishedSnapshot,
     active: &'a crate::ingest::ActiveSegment,
-    sources: &[StructuredLexicalSource],
+    sources: &'a [StructuredLexicalSource],
     doc: crate::fts::search::GlobalDocId,
 ) -> Result<(&'a str, crate::ingest::DocumentVersion), crate::ingest::StoreLexicalError> {
     let source = usize::try_from(doc.segment)
@@ -6900,6 +7063,12 @@ fn structured_lexical_row<'a>(
     let row =
         usize::try_from(doc.row).map_err(|_| QueryError::Store(StoreError::ActiveRowOverflow))?;
     match source {
+        #[cfg(feature = "graph-cypher")]
+        StructuredLexicalSource::NodeText { block, .. } => block
+            .rows
+            .get(row)
+            .map(|v| (v.text.as_str(), v.version))
+            .ok_or(QueryError::Store(StoreError::ActiveRowOverflow).into()),
         StructuredLexicalSource::Sealed(ordinal) => {
             let segment = snapshot
                 .segments()
@@ -9207,6 +9376,8 @@ pub(crate) fn reserve_global_candidates(
 }
 
 struct AdmittedLexicalQuery<'a> {
+    #[cfg(feature = "graph-cypher")]
+    node_text: Option<Arc<LexicalIndexCache>>,
     generation: u64,
     active: Arc<crate::ingest::ActiveSegment>,
     snapshot: snapshot::ReadSnapshot,

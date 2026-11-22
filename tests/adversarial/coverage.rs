@@ -18,6 +18,7 @@ pub const REQUIRED_GRAPH_SMOKE_COVERAGE: &[&str] = &[
     "storage-durability.graph-commit.artifact-write.clean",
     "storage-durability.graph-commit.artifact-sync.fire",
     "storage-durability.graph-commit.artifact-sync.clean",
+    "storage-durability.graph-commit.node-text.preparation-cancel",
     "storage-durability.graph-commit.wal-append.fire",
     "storage-durability.graph-commit.wal-append.clean",
     "storage-durability.graph-commit.wal-sync.fire",

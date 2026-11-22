@@ -178,20 +178,23 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
             })
         })
         .collect::<Result<_, String>>()?;
-    use zeppelin_embed::ingest::{DocId, DocumentVersion, IngestBatch, IngestDocument, Revision};
-    let docs = IngestBatch::new(
-        (1..=64)
-            .map(|id| {
-                IngestDocument::new(
-                    DocumentVersion::new(DocId::new(id), Revision::new(1)),
-                    vec![1.0, 0.0],
-                )
-                .with_text(term)
-            })
-            .collect(),
-    );
+    use zeppelin_embed::ingest::{DocId, DocumentVersion, IngestDocument, Revision};
+    use zeppelin_embed::property_graph::{GraphBatch, GraphNodeDocument};
+    let docs: Vec<_> = (0..writes.len())
+        .map(|item_index| GraphNodeDocument {
+            item_index,
+            document: IngestDocument::new(
+                DocumentVersion::new(DocId::new(item_index as u128 + 1), Revision::new(1)),
+                vec![1.0, 0.0],
+            )
+            .with_text(term),
+        })
+        .collect();
     store
-        .apply_mixed_for_test(&docs, &writes, &QueryControl::Cancel(CancelToken::new()))
+        .graph_apply(
+            GraphBatch::with_node_documents(&writes, &docs),
+            &QueryControl::Cancel(CancelToken::new()),
+        )
         .map_err(|e| e.to_string())?;
     let shared = GraphResources::from_store(&store).map_err(|e| e.to_string())?;
     let (clean, polls, fires) = trial(&store, seed, None)?;

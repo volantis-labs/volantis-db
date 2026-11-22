@@ -234,6 +234,8 @@ impl std::error::Error for MaterializationError {
 
 /// Rank-addressed text access available only inside a Store query callback.
 pub struct QueryMaterializer<'a> {
+    #[cfg(feature = "graph-cypher")]
+    node_sources: &'a [super::StructuredLexicalSource],
     #[cfg(any(test, feature = "test-seams"))]
     pub(super) store: &'a Store,
     pub(super) snapshot: &'a PublishedSnapshot,
@@ -302,6 +304,21 @@ impl QueryMaterializer<'_> {
         self.counts.set(counts);
         let row = row_id.local_row() as usize;
         let (actual, source) = match row_id.source() {
+            #[cfg(feature = "graph-cypher")]
+            RowSource::Active if row >= self.active.row_count() => {
+                let item = self
+                    .node_sources
+                    .iter()
+                    .find_map(|source| {
+                        let super::StructuredLexicalSource::NodeText { block, first_row } = source
+                        else {
+                            return None;
+                        };
+                        block.rows.get(row.checked_sub(*first_row as usize)?)
+                    })
+                    .ok_or(MaterializationError::MissingSource { row_id })?;
+                (Some(item.version), Some(item.text.as_str()))
+            }
             RowSource::Active => (
                 self.active.document(row),
                 self.active
@@ -445,6 +462,8 @@ impl Store {
                         .ok_or(MaterializationError::MissingFusedIdentity { document: hit.key })
                 };
                 let materializer = QueryMaterializer {
+                    #[cfg(feature = "graph-cypher")]
+                    node_sources: &[],
                     #[cfg(any(test, feature = "test-seams"))]
                     store: self,
                     snapshot,
@@ -739,6 +758,8 @@ impl Store {
                     })
                 };
                 let materializer = QueryMaterializer {
+                    #[cfg(feature = "graph-cypher")]
+                    node_sources: &assembly.sources,
                     #[cfg(any(test, feature = "test-seams"))]
                     store: self,
                     snapshot,
@@ -785,6 +806,8 @@ impl Store {
                     )
                 };
                 let materializer = QueryMaterializer {
+                    #[cfg(feature = "graph-cypher")]
+                    node_sources: &[],
                     #[cfg(any(test, feature = "test-seams"))]
                     store: self,
                     counts: Cell::new(Default::default()),
@@ -815,6 +838,15 @@ fn lexical_row_id(
                 source: doc.segment,
             })?;
     let source = match source {
+        #[cfg(feature = "graph-cypher")]
+        super::StructuredLexicalSource::NodeText { first_row, .. } => {
+            return Ok(GlobalRowId::new(
+                RowSource::Active,
+                first_row
+                    .checked_add(doc.row)
+                    .ok_or(MaterializationError::ArithmeticOverflow)?,
+            ));
+        }
         super::StructuredLexicalSource::Active => RowSource::Active,
         super::StructuredLexicalSource::Sealed(ordinal) => RowSource::Sealed(
             snapshot

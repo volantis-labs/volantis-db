@@ -24,6 +24,7 @@ use std::time::Instant;
 
 pub(crate) mod automatic;
 mod base;
+pub(crate) mod node_text;
 pub(crate) use base::admission_cache_row_bytes;
 pub(crate) mod documents;
 pub(crate) mod maintenance;
@@ -210,6 +211,7 @@ pub(crate) struct NativeGraphBundleInput {
 /// directory selected during installation, so old lazy opens never consult the
 /// replacement bundle.
 pub(crate) struct NativeGraphBundle {
+    pub(crate) node_text: Option<Arc<super::LexicalIndexCache>>,
     base: BaseIdentity,
     roots: GraphRoots,
     wal_roots: WalGraphRoots,
@@ -228,26 +230,29 @@ pub(crate) struct NativeGraphBundle {
 }
 
 impl NativeGraphBundle {
+    #[cfg(any(test, feature = "test-seams"))]
     fn install(
         store: &Store,
         resources: &GraphResources,
         input: NativeGraphBundleInput,
     ) -> Result<Arc<Self>, NativeGraphError> {
-        Self::install_checked(store, resources, input)
+        Self::install_checked(store, resources, input, None)
     }
 
     pub(super) fn install_recovered(
+        node_text: Option<Arc<super::LexicalIndexCache>>,
         store: &Store,
         resources: &GraphResources,
         input: NativeGraphBundleInput,
     ) -> Result<Arc<Self>, NativeGraphError> {
-        Self::install_checked(store, resources, input)
+        Self::install_checked(store, resources, input, node_text)
     }
 
     fn install_checked(
         store: &Store,
         resources: &GraphResources,
         input: NativeGraphBundleInput,
+        node_text: Option<Arc<super::LexicalIndexCache>>,
     ) -> Result<Arc<Self>, NativeGraphError> {
         validate_bundle(&input)?;
         let metadata_bytes = bundle_owned_bytes(&input, &store.directory)?;
@@ -277,6 +282,7 @@ impl NativeGraphBundle {
             document,
         } = input;
         Ok(Arc::new(Self {
+            node_text,
             base,
             roots,
             wal_roots,
@@ -357,6 +363,7 @@ impl NativeGraphBundle {
             })?;
         directory.push(&store.directory);
         Ok(Arc::new(Self {
+            node_text: admitted.node_text.clone(),
             base: input.base,
             roots: input.roots,
             wal_roots: input.wal_roots,
@@ -386,7 +393,7 @@ impl NativeGraphBundle {
         {
             return Err(NativeGraphError::Invalid("unproved native fold transition"));
         }
-        Self::install(
+        Self::install_checked(
             store,
             resources,
             NativeGraphBundleInput {
@@ -407,6 +414,7 @@ impl NativeGraphBundle {
                 lexical: admitted.lexical,
                 document: admitted.document.clone(),
             },
+            admitted.node_text.clone(),
         )
     }
 
@@ -1111,6 +1119,16 @@ impl NativeGraphPublication {
         }
         drop(writer.take());
         Ok(())
+    }
+
+    pub(super) fn node_text(&self) -> Result<Option<Arc<super::LexicalIndexCache>>, StoreError> {
+        let state = self.state.lock().map_err(|_| StoreError::Synchronization {
+            component: "native graph publication",
+        })?;
+        Ok(state
+            .current
+            .as_ref()
+            .and_then(|bundle| bundle.node_text.clone()))
     }
 
     pub(crate) fn is_installed(&self) -> Result<bool, StoreError> {

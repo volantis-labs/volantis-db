@@ -830,6 +830,10 @@ fn lexical_identity(
         .get(hit.doc.segment as usize)
         .ok_or_else(|| lexical_invariant("hybrid lexical source ordinal is absent"))?;
     let source = match source {
+        #[cfg(feature = "graph-cypher")]
+        StructuredLexicalSource::NodeText { .. } => {
+            return Err(lexical_invariant("graph-only text in vector fusion"));
+        }
         StructuredLexicalSource::Active => RowSource::Active,
         StructuredLexicalSource::Sealed(ordinal) => RowSource::Sealed(
             snapshot
@@ -871,6 +875,8 @@ fn cross_score_lexical(
     for (position, candidate) in missing.iter().enumerate() {
         cancellation.check_graph().map_err(QueryError::Scan)?;
         let ordinal = assembly.sources.iter().position(|source| match source {
+            #[cfg(feature = "graph-cypher")]
+            StructuredLexicalSource::NodeText { .. } => false,
             StructuredLexicalSource::Active => candidate.row_id().source() == RowSource::Active,
             StructuredLexicalSource::Sealed(ordinal) => {
                 snapshot.segments().get(*ordinal).is_some_and(|segment| {
@@ -1018,6 +1024,10 @@ fn exact_squared_l2(
                 .get(*ordinal)
                 .ok_or_else(|| invariant("hybrid cross-fill named an absent sealed segment"))?;
             crate::lifecycle::exact_rescore_rows(segment).map_err(FusionError::from)?
+        }
+        #[cfg(feature = "graph-cypher")]
+        StructuredLexicalSource::NodeText { .. } => {
+            return Err(invariant("graph-only text has no vector"));
         }
         StructuredLexicalSource::Active => active.vectors(),
     };

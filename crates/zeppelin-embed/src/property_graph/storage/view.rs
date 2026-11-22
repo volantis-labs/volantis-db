@@ -136,6 +136,10 @@ impl<'s, 'lease, 'm, 'g> GraphReadView<'s, 'lease, 'm, 'g> {
         })
     }
 
+    pub(crate) fn node_text_index(&self) -> Option<&crate::lifecycle::LexicalIndexCache> {
+        self.lease.bundle().node_text.as_deref()
+    }
+
     pub(crate) fn search_documents(
         &self,
     ) -> Result<&crate::lifecycle::native_graph::documents::NativeDocuments, TreeError> {

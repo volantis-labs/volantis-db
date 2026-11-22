@@ -22,7 +22,7 @@ use crate::property_graph::storage::memory::{StorageBuffer, StorageMemory};
 use crate::property_graph::storage::participant::BatchCatalog;
 use crate::property_graph::storage::payload::PayloadRef;
 use crate::property_graph::storage::prepared::{PackLimits, PreparedObjects};
-use crate::property_graph::storage::records::{RecordCatalog, verify_record};
+use crate::property_graph::storage::records::{RecordCatalog, RecordView, verify_record};
 
 use crate::property_graph::storage::stream::PayloadSlice;
 use crate::property_graph::storage::tree::TreeKind;
@@ -1260,15 +1260,15 @@ pub(super) fn wal_roots(
     Ok(output)
 }
 
-fn canonical_required<S: BlockSource, C: RecordCatalog<S>>(
-    source: &S,
+fn canonical_required<'a, S: BlockSource, C: RecordCatalog<S>>(
+    source: &'a S,
     roots: GraphRoots,
     entity: EntityId,
     catalog: &C,
     document: Option<&crate::epoch::EmbeddingTower>,
     prepared: &[InventoryChange],
     resources: &mut crate::property_graph::storage::tree::directory::TreeResources<'_>,
-) -> Result<RequiredRef, NativeGraphError> {
+) -> Result<(RequiredRef, RecordView<'a, S>), NativeGraphError> {
     let (kind, key) = match entity {
         EntityId::Node(id) => (TreeKind::Nodes, id.get()),
         EntityId::Relationship(id) => (TreeKind::Relationships, id.get()),
@@ -1301,10 +1301,13 @@ fn canonical_required<S: BlockSource, C: RecordCatalog<S>>(
         .ok_or(NativeGraphError::Invalid(
             "prepared canonical has no immutable descriptor",
         ))?;
-    Ok(RequiredRef {
-        object,
-        block: canonical,
-    })
+    Ok((
+        RequiredRef {
+            object,
+            block: canonical,
+        },
+        record,
+    ))
 }
 
 #[derive(Clone, Copy)]
@@ -1565,6 +1568,7 @@ where
         .and_then(|count| count.checked_add(2))
         .ok_or(NativeGraphError::Invalid("WAL change count"))?;
     let mut changes = StorageBuffer::new(prepared.objects().memory(), change_capacity)?;
+    let mut text_changes = super::node_text::TextChanges::default();
     for delta in batch.deltas() {
         let fields = delta.provenance().fields();
         let (before, after) = delta.membership();
@@ -1574,8 +1578,17 @@ where
             vector_before: before.vector,
             vector_after: after.vector,
         };
+        if let EntityId::Node(node) = fields.incarnation {
+            if delta.canonical().is_none() {
+                if before.text || delta.document_version().is_some() {
+                    text_changes.delete(node, delta.document_version());
+                }
+            } else if before.text && (!after.text || delta.document_version().is_some()) {
+                text_changes.remove(node);
+            }
+        }
         let canonical = if delta.canonical().is_some() {
-            Some(canonical_required(
+            let (canonical, record) = canonical_required(
                 prepared.objects(),
                 roots,
                 fields.incarnation,
@@ -1583,7 +1596,11 @@ where
                 admitted.document(),
                 prepared.inventory(),
                 tree_resources,
-            )?)
+            )?;
+            if let EntityId::Node(node) = fields.incarnation {
+                text_changes.observe(node, &record, shared, tree_resources)?;
+            }
+            Some(canonical)
         } else {
             None
         };
@@ -1647,7 +1664,7 @@ where
             .checked_mul(std::mem::size_of::<RequiredRef>())
             .ok_or(NativeGraphError::IdentityExhausted)?,
     )?;
-    let next = NativeGraphBundle::assemble_committed(
+    let mut next = NativeGraphBundle::assemble_committed(
         store,
         target_generation,
         shared,
@@ -1671,6 +1688,9 @@ where
             document: admitted.document().cloned(),
         },
     )?;
+    Arc::get_mut(&mut next)
+        .ok_or(NativeGraphError::Invalid("shared unpublished graph bundle"))?
+        .node_text = text_changes.apply(admitted.node_text.as_ref(), store, shared, control)?;
     for index in 0..prepared.objects().len() {
         let artifact = prepared.objects().artifact(index)?;
         let descriptor = prepared

@@ -608,8 +608,10 @@ elements and expression temporaries; larger inputs can fail during execution.
 For example, use
 `store.cypher('MATCH (n) WHERE n.id IN $ids RETURN n.id', { ids: ['a', 'b'] })`. Pass a
 bigint for an integer; ordinary JavaScript numbers are F64. IDs are unsigned
-128-bit bigints. Source text is distinct from properties; read it with
-`ze.stored_text(n)`.
+128-bit bigints. Read a node’s `text` with `ze.stored_text(n)`. After a graph write returns,
+`store.query({text})` and Cypher `ze.text_search` can find that node, including
+when the store assigned its ID. A later `put` replaces the indexed text, and
+a node delete removes it.
 
 `maxRows` accepts integers 0..65,536; omitted or zero selects 1,024. Exceeding the
 cap throws `ZE_ERR_BUDGET_EXCEEDED` without truncation. Raising it permits larger results,

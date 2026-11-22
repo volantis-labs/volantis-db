@@ -286,7 +286,14 @@ impl<'v, 'm, 'g> SearchAdapter<'v, 'm, 'g> for NativeSearchAdapter<'_> {
                     let query = lexical(self.store, query, invocation.options.last_as_prefix);
                     let (outcome, matching) = self
                         .store
-                        .graph_text_in(pin, &query, invocation.k as usize, filter.as_ref(), control)
+                        .graph_text_in(
+                            pin,
+                            view.node_text_index(),
+                            &query,
+                            invocation.k as usize,
+                            filter.as_ref(),
+                            control,
+                        )
                         .map_err(RetrievalError::Fusion)?;
                     context.observe_candidate_window(outcome.candidates.len() as u64)?;
                     for hit in &outcome.candidates {

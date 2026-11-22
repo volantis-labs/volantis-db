@@ -108,3 +108,12 @@ test('store graph: unsupported builds reject before looking up native graph meth
   `], {encoding: 'utf8'});
   assert.equal(child.status, 0, child.stderr);
 });
+
+test('Store.query finds graph node text by exact term and prefix after graphApply', () => fixture(store => {
+  const text = 'amber testimony';
+  const { receipts: [{ id }] } = store.graphApply([node('person', { labels: ['Person'], text })]);
+  assert.deepEqual(store.query({ text: 'amber' }).hits.map(hit => hit.id), [id]);
+  const hits = store.query({ text: 'amb', lastAsPrefix: true, eligibleIds: [id], snippetBytes: 64 }).hits;
+  assert.deepEqual(hits.map(hit => hit.id), [id]);
+  assert.equal(hits[0].snippet.text, text);
+}));

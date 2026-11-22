@@ -2880,3 +2880,266 @@ fn ze418_sparse_labelled_ignores_isolated_documents() {
         incident_sources::sparse_shapes(256, Some(2))
     );
 }
+
+mod node_text {
+    use super::*;
+    use zeppelin_embed::fts::{index::DEFAULT_FIELD, search::TermQuery};
+    use zeppelin_embed::property_graph::staging::{
+        StructuredOperation, StructuredWrite, WriteImage,
+    };
+    use zeppelin_embed::property_graph::{
+        ApplicationKey, CanonicalContents, EntityId, EntityKind, GraphDeleteMode, GraphRevision,
+    };
+
+    fn write(
+        store: &Store,
+        revision: u64,
+        op: StructuredOperation,
+        text: Option<&str>,
+    ) -> EntityId {
+        let contents =
+            text.map(|text| CanonicalContents::node(&mut [], &mut [], Some(text), None).unwrap());
+        store
+            .graph_apply(
+                &[StructuredWrite {
+                    key: ApplicationKey::new(EntityKind::Node, "meetings", "person").unwrap(),
+                    revision: GraphRevision::new(revision).unwrap(),
+                    operation: op,
+                    image: contents.as_ref().map(WriteImage::Node),
+                }],
+                &control(),
+            )
+            .unwrap()
+            .receipts()[0]
+            .entity
+    }
+
+    fn store_hits(store: &Store, term: &str) -> Vec<u128> {
+        store
+            .search_lexical(
+                &TermQuery::flat(vec![term.as_bytes().to_vec()], &[DEFAULT_FIELD]),
+                10,
+                control(),
+            )
+            .unwrap()
+            .candidates
+            .iter()
+            .map(|hit| hit.document.doc_id().get())
+            .collect()
+    }
+
+    fn cypher_hits(store: &Store, term: &str) -> Vec<u128> {
+        ids(&run(
+            store,
+            &format!("CALL ze.text_search('{term}',10) YIELD node RETURN node"),
+        ))
+    }
+
+    fn create() -> (Directory, Store, EntityId, u128) {
+        let (dir, store) = fixture();
+        // Give seal a real document segment alongside the graph-only node.
+        store
+            .ingest(
+                IngestBatch::new(vec![
+                    IngestDocument::new(
+                        DocumentVersion::new(DocId::new(9100), Revision::new(1)),
+                        vec![1.0, 0.0],
+                    )
+                    .with_text("cedar"),
+                ])
+                .with_epoch(store.epoch_identity().unwrap()),
+            )
+            .unwrap();
+        store.enable_graph().unwrap();
+        let entity = write(&store, 1, StructuredOperation::Create, Some("amber"));
+        let EntityId::Node(id) = entity else {
+            panic!("expected node")
+        };
+        (dir, store, entity, id.get())
+    }
+
+    #[test]
+    fn graph_node_text_found_by_store_query_after_write() {
+        let (_dir, store, _, id) = create();
+        assert_eq!(store_hits(&store, "amber"), [id]);
+        store.seal().unwrap();
+        assert_eq!(store_hits(&store, "amber"), [id]);
+    }
+
+    #[test]
+    fn graph_node_text_found_by_cypher_after_write() {
+        let (_dir, store, _, id) = create();
+        assert_eq!(cypher_hits(&store, "amber"), [id]);
+        store.seal().unwrap();
+        assert_eq!(cypher_hits(&store, "amber"), [id]);
+    }
+
+    #[test]
+    fn graph_node_put_replaces_indexed_text() {
+        for seal in [false, true] {
+            let (dir, store, entity, id) = create();
+            if seal {
+                store.seal().unwrap();
+            }
+            write(&store, 2, StructuredOperation::Put(entity), Some("birch"));
+            for search in [store_hits, cypher_hits] {
+                assert!(search(&store, "amber").is_empty());
+                assert_eq!(search(&store, "birch"), [id]);
+                assert_eq!(search(&store, "cedar"), [9100]);
+            }
+            store.close().unwrap();
+            let reopened = Store::open(
+                dir.path(),
+                OpenOptions::read_only().with_epoch(fixture_epoch()),
+            )
+            .unwrap();
+            assert!(store_hits(&reopened, "amber").is_empty());
+            assert_eq!(cypher_hits(&reopened, "birch"), [id]);
+        }
+    }
+
+    fn create_bound_node(store: &Store) -> EntityId {
+        use zeppelin_embed::property_graph::{GraphBatch, GraphNodeDocument};
+        let contents = CanonicalContents::node(&mut [], &mut [], Some("amber"), None).unwrap();
+        let writes = [StructuredWrite {
+            key: ApplicationKey::new(EntityKind::Node, "meetings", "person").unwrap(),
+            revision: GraphRevision::new(1).unwrap(),
+            operation: StructuredOperation::Create,
+            image: Some(WriteImage::Node(&contents)),
+        }];
+        let docs = [GraphNodeDocument {
+            item_index: 0,
+            document: IngestDocument::new(
+                DocumentVersion::new(DocId::new(99), Revision::new(1)),
+                vec![0.0, 1.0],
+            )
+            .with_text("amber"),
+        }];
+        store
+            .graph_apply(GraphBatch::with_node_documents(&writes, &docs), &control())
+            .unwrap()
+            .receipts()[0]
+            .entity
+    }
+
+    fn assert_reingested_document_is_searchable(delete_document: bool) {
+        let (dir, store) = fixture();
+        store.enable_graph().unwrap();
+        let entity = create_bound_node(&store);
+        write(
+            &store,
+            2,
+            StructuredOperation::Delete(entity, GraphDeleteMode::Detach),
+            None,
+        );
+        let id = DocId::new(99);
+        if delete_document {
+            store
+                .delete(zeppelin_embed::ingest::DeleteBatch::new(vec![id]))
+                .unwrap();
+        }
+        let version = DocumentVersion::new(id, Revision::new(9));
+        store
+            .ingest(
+                IngestBatch::new(vec![
+                    IngestDocument::new(version, vec![1.0, 0.0]).with_text("zinc"),
+                ])
+                .with_epoch(store.epoch_identity().unwrap()),
+            )
+            .unwrap();
+        assert_eq!(store.stored_text(version).unwrap().as_deref(), Some("zinc"));
+        let check = |store: &Store, stage: &str| {
+            for search in [store_hits, cypher_hits] {
+                assert!(search(store, "amber").is_empty(), "{stage}");
+                assert_eq!(search(store, "zinc"), [99], "{stage}");
+            }
+        };
+        check(&store, "after ingest");
+        store.seal().unwrap();
+        check(&store, "after seal");
+        store.close().unwrap();
+        let reopened = Store::open(
+            dir.path(),
+            OpenOptions::read_only().with_epoch(fixture_epoch()),
+        )
+        .unwrap();
+        check(&reopened, "after reopen");
+    }
+
+    #[test]
+    fn graph_delete_then_reingest_same_id_is_searchable_before_seal_after_seal_and_reopen() {
+        assert_reingested_document_is_searchable(false);
+    }
+
+    #[test]
+    fn graph_and_document_delete_then_reingest_same_id_is_searchable() {
+        assert_reingested_document_is_searchable(true);
+    }
+
+    #[test]
+    fn graph_put_and_delete_replace_document_backed_node_text() {
+        for seal in [false, true] {
+            let (dir, store) = fixture();
+            store.enable_graph().unwrap();
+            let entity = create_bound_node(&store);
+            assert_eq!(store_hits(&store, "amber"), [99]);
+            if seal {
+                store.seal().unwrap();
+            }
+            write(&store, 2, StructuredOperation::Put(entity), Some("birch"));
+            assert!(store_hits(&store, "amber").is_empty());
+            assert_eq!(cypher_hits(&store, "birch"), [99]);
+            store.close().unwrap();
+            let store = Store::open(
+                dir.path(),
+                OpenOptions::new()
+                    .with_epoch(fixture_epoch())
+                    .with_max_resident_bytes(128 << 20),
+            )
+            .unwrap();
+            assert_eq!(store_hits(&store, "birch"), [99]);
+            write(
+                &store,
+                3,
+                StructuredOperation::Delete(entity, GraphDeleteMode::Restrict),
+                None,
+            );
+            store.close().unwrap();
+            let store = Store::open(
+                dir.path(),
+                OpenOptions::read_only().with_epoch(fixture_epoch()),
+            )
+            .unwrap();
+            for term in ["amber", "birch"] {
+                assert!(store_hits(&store, term).is_empty());
+                assert!(cypher_hits(&store, term).is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn graph_node_delete_removes_indexed_text() {
+        for seal in [false, true] {
+            let (dir, store, entity, id) = create();
+            if seal {
+                store.seal().unwrap();
+            }
+            assert_eq!(store_hits(&store, "amber"), [id]);
+            write(
+                &store,
+                2,
+                StructuredOperation::Delete(entity, GraphDeleteMode::Restrict),
+                None,
+            );
+            assert!(store_hits(&store, "amber").is_empty());
+            assert!(cypher_hits(&store, "amber").is_empty());
+            store.close().unwrap();
+            let reopened = Store::open(
+                dir.path(),
+                OpenOptions::read_only().with_epoch(fixture_epoch()),
+            )
+            .unwrap();
+            assert!(store_hits(&reopened, "amber").is_empty());
+        }
+    }
+}

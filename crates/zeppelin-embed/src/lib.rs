@@ -54,6 +54,11 @@ pub mod graph_structured_write_test_support {
         GraphProperty, GraphRevision, NodeId, PropertyData, PropertyValue,
     };
 
+    /// Cancels the supplied write token at graph text index preparation on this thread.
+    pub fn cancel_node_text_preparation(token: CancelToken) {
+        crate::lifecycle::native_graph::node_text::cancel_next_build(token);
+    }
+
     /// Creates one application-keyed `:A {v: 1}` through the real writer.
     pub fn create_keyed_node(store: &Store) -> Result<(NodeId, GraphGeneration), String> {
         let mut labels = [GraphName::new("A").map_err(|e| format!("label: {e:?}"))?];
