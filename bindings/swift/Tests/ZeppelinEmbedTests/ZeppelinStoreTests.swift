@@ -931,46 +931,42 @@ final class ZeppelinStoreTests: XCTestCase {
     }
 
     func testCancellationMidQueryThrowsTypedCancelled() async throws {
+        #if ZE_SWIFT_QUERY_TEST_SUPPORT
         let path = try storePath(#function)
         defer { try? FileManager.default.removeItem(at: path) }
         let store = try await ZeppelinStore.open(at: path)
-        let dimension = 8_192
-        let vector = [Float](repeating: 0.25, count: dimension)
-        _ = try await store.ingest((1...1_000).map { index in
+        let vector: [Float] = [0.25, 0, 0, 0]
+        // Span more than one native cancellation checkpoint (every 64 rows).
+        let ids = (1...128).map { DocumentID(high: 0, low: UInt64($0)) }
+        _ = try await store.ingest(ids.map { id in
             IngestDocument(
-                id: DocumentID(high: 0, low: UInt64(index)),
+                id: id,
                 revision: 1,
-                timestamp: Int64(index),
+                timestamp: 1,
                 vector: vector
             )
         })
         let token = try await ZeppelinCancellationToken.create()
-        let (started, continuation) = AsyncStream<Void>.makeStream()
-        let canceller = Task {
-            for await _ in started {
-                break
-            }
-            try token.cancelImmediatelyForTesting()
-        }
-        let query = Task {
-            try await store.queryForCancellationTesting(
-                vector: vector,
-                options: QueryOptions(k: 1_000, threadBudget: 1, cancellationToken: token),
-                onFFIEntry: {
-                    continuation.yield(())
-                    continuation.finish()
-                }
-            )
-        }
-        try await canceller.value
+        let options = QueryOptions(k: ids.count, threadBudget: 1, tier: .exact, cancellationToken: token)
+        let baseline = try await store.query(vector: vector, options: options)
+        XCTAssertEqual(Set(baseline.hits.compactMap(\.documentID)), Set(ids))
         do {
-            _ = try await query.value
+            _ = try await store.queryCancellingDuringScanForTesting(vector: vector, options: options)
             XCTFail("query completed before cancellation")
+        } catch let error as ZeppelinError {
+            XCTAssertEqual(error, .cancelled)
+        }
+        do {
+            _ = try await store.query(vector: vector, options: options)
+            XCTFail("caller token remained active after in-scan cancellation")
         } catch let error as ZeppelinError {
             XCTAssertEqual(error, .cancelled)
         }
         try await token.free()
         try await store.close()
+        #else
+        throw XCTSkip("requires swift-query-test-support and -Xswiftc -DZE_SWIFT_QUERY_TEST_SUPPORT")
+        #endif
     }
 
     func testABIPanicIsCaughtAndPoisonsTheSwiftStore() async throws {

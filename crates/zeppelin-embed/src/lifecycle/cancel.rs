@@ -24,6 +24,8 @@ const TIMED_OUT: u8 = 2;
 #[derive(Clone, Debug)]
 pub struct CancelToken {
     state: Arc<AtomicU8>,
+    #[cfg(feature = "test-seams")]
+    cancel_after_first_score: bool,
 }
 
 impl CancelToken {
@@ -32,7 +34,18 @@ impl CancelToken {
     pub fn new() -> Self {
         Self {
             state: Arc::new(AtomicU8::new(ACTIVE)),
+            #[cfg(feature = "test-seams")]
+            cancel_after_first_score: false,
         }
+    }
+
+    /// Arms this token clone to request cancellation once a serial exact scan
+    /// scores its first row. All clones still share the cancellation state.
+    #[cfg(feature = "test-seams")]
+    #[must_use]
+    pub fn with_cancel_after_first_score_for_testing(mut self) -> Self {
+        self.cancel_after_first_score = true;
+        self
     }
 
     /// Requests cancellation. Repeated calls have no additional effect.
@@ -264,6 +277,14 @@ pub struct QueryCancellation<'a> {
 }
 
 impl<'a> QueryCancellation<'a> {
+    #[cfg(feature = "test-seams")]
+    pub(crate) fn cancel_after_first_score_token_for_testing(&self) -> Option<&CancelToken> {
+        match self.control {
+            QueryControl::Cancel(token) if token.cancel_after_first_score => Some(token),
+            _ => None,
+        }
+    }
+
     pub(crate) fn cache_lock<'lock, T>(
         &self,
         mutex: &'lock std::sync::Mutex<T>,

@@ -382,6 +382,22 @@ public actor ZeppelinStore {
         )
     }
 
+    #if ZE_SWIFT_QUERY_TEST_SUPPORT
+    func queryCancellingDuringScanForTesting(
+        vector: [Float],
+        options: QueryOptions
+    ) async throws -> QueryResult {
+        // Private request flag recognized by the swift-query-test-support archive.
+        try await executeQuery(
+            vector: vector,
+            text: nil,
+            options: options,
+            onFFIEntry: nil,
+            testLexicalFlags: 1 << 31
+        )
+    }
+    #endif
+
     private nonisolated static func lexicalFlags(_ options: QueryOptions) -> UInt32 {
         options.lastAsPrefix ? UInt32(ZE_QUERY_LAST_AS_PREFIX) : 0
     }
@@ -398,7 +414,8 @@ public actor ZeppelinStore {
         filter: Filter? = nil,
         timestampRange: Range<Int64>? = nil,
         options: QueryOptions,
-        onFFIEntry: (@Sendable () -> Void)?
+        onFFIEntry: (@Sendable () -> Void)?,
+        testLexicalFlags: UInt32 = 0
     ) async throws -> QueryResult {
         let current = try openHandle()
         if let snippetBytes = options.snippetBytes, snippetBytes <= 0 {
@@ -430,7 +447,7 @@ public actor ZeppelinStore {
                     request.alpha = options.alpha ?? 0
                     request.has_max_rounds = options.maximumRounds == nil ? 0 : 1
                     request.quoted_phrase = options.quotedPhrase ? 1 : 0
-                    request.lexical_flags = Self.lexicalFlags(options)
+                    request.lexical_flags = Self.lexicalFlags(options) | testLexicalFlags
                     request.max_rounds = options.maximumRounds ?? 0
                     request.identifier_token = options.identifierToken ? 1 : 0
                     request.has_rarest_exact_document_frequency =

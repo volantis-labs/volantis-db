@@ -5229,12 +5229,19 @@ fn run_query(
     window: Option<NonZeroUsize>,
     filter: Option<&zeppelin_embed::lifecycle::QueryFilter>,
 ) -> Result<QueryParts, FfiError> {
-    if request.lexical_flags & !ZE_QUERY_LAST_AS_PREFIX != 0 {
+    let lexical_flags = request.lexical_flags;
+    #[cfg(feature = "swift-query-test-support")]
+    const CANCEL_DURING_SCAN: u32 = 1 << 31;
+    #[cfg(feature = "swift-query-test-support")]
+    let cancel_during_scan = lexical_flags & CANCEL_DURING_SCAN != 0;
+    #[cfg(feature = "swift-query-test-support")]
+    let lexical_flags = lexical_flags & !CANCEL_DURING_SCAN;
+    if lexical_flags & !ZE_QUERY_LAST_AS_PREFIX != 0 {
         return Err(FfiError::invalid(
             "query lexical_flags contains unknown bits",
         ));
     }
-    if request.lexical_flags & ZE_QUERY_LAST_AS_PREFIX != 0 && request.text_len == 0 {
+    if lexical_flags & ZE_QUERY_LAST_AS_PREFIX != 0 && request.text_len == 0 {
         return Err(FfiError::invalid(
             "ZE_QUERY_LAST_AS_PREFIX requires a lexical leg",
         ));
@@ -5282,7 +5289,7 @@ fn run_query(
             None => TokenizerConfig::text_default(),
         };
         let tokens = analyze_query_text(config, request.text, request.text_len)?;
-        Some(if request.lexical_flags & ZE_QUERY_LAST_AS_PREFIX == 0 {
+        Some(if lexical_flags & ZE_QUERY_LAST_AS_PREFIX == 0 {
             FfiLexicalQuery::Term(term_query(tokens))
         } else {
             last_as_prefix_query(tokens, request.text_len)?
@@ -5297,6 +5304,27 @@ fn run_query(
         options = options.with_tier(tier);
     }
     let control = query_control_for(request.cancel_token, request.deadline_ns)?;
+    #[cfg(feature = "swift-query-test-support")]
+    let control = if cancel_during_scan {
+        match control {
+            QueryControl::Cancel(token)
+                if has_vector
+                    && !has_text
+                    && tier == Some(SearchTier::Exact)
+                    && request.thread_budget == 1
+                    && request.cancel_token != 0 =>
+            {
+                QueryControl::Cancel(token.with_cancel_after_first_score_for_testing())
+            }
+            _ => {
+                return Err(FfiError::invalid(
+                    "in-scan cancellation test requires a caller token and a serial exact vector query",
+                ));
+            }
+        }
+    } else {
+        control
+    };
     let mut result = empty_query_result(abi_size);
     let mut hits = Vec::new();
     let mut snippets = Vec::new();

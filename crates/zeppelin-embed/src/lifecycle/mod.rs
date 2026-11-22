@@ -9193,6 +9193,8 @@ fn scan_serial_squared_l2(
         .chunks_exact(query.len())
         .enumerate()
         .filter(|(row, _)| u32::try_from(*row).is_ok_and(|row| alive.is_alive(row)));
+    #[cfg(feature = "test-seams")]
+    let mut cancel_after_first_score = cancellation.cancel_after_first_score_token_for_testing();
     let scored_rows = crate::quant::exact_squared_l2_with_sink(
         query,
         rows,
@@ -9209,6 +9211,10 @@ fn scan_serial_squared_l2(
             Ok(())
         },
         |row_id, exact| {
+            #[cfg(feature = "test-seams")]
+            if let Some(token) = cancel_after_first_score.take() {
+                token.cancel();
+            }
             let score = exact as f32;
             if !score.is_finite() {
                 // The old full f64 sort chose the best overflowing score, then

@@ -16,6 +16,7 @@ graph-cypher = ["zeppelin-embed/graph-cypher", "dep:zeppelin-embed-cypher"]
 graph-result-test-support = ["graph-cypher"]
 graph-bindings-test-support = ["graph-result-test-support", "abi-panic-probe", "zeppelin-embed/test-seams"]
 abi-panic-probe = []
+swift-query-test-support = ["zeppelin-embed/test-seams"]
 text = ["dep:zeppelin-embed-text"]
 
 [lints.rust]

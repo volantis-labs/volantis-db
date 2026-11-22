@@ -13,6 +13,17 @@ Local source builds set `ZE_USE_LOCAL_FFI=1` after building the release FFI
 archive. Release validation can set `ZE_USE_LOCAL_XCFRAMEWORK=1` to test the
 artifact in `target/xcframework` before uploading it.
 
+To include the deterministic mid-query cancellation test in a local core run,
+build the test-support archive and enable the matching Swift test flag:
+
+```sh
+cargo build -p zeppelin-embed-ffi --release --features swift-query-test-support
+ZE_USE_LOCAL_FFI=1 swift test --disable-sandbox --jobs 4 -Xswiftc -DZE_SWIFT_QUERY_TEST_SUPPORT
+```
+
+The cancellation trigger runs after the native exact scan scores its first
+row. Suites linked to release artifacts skip this test.
+
 Store databases in Application Support. `OpenOptions.excludeFromBackup`
 defaults to `true`, which applies `NSURLIsExcludedFromBackupKey` to the store
 directory. Do not put a store in iCloud Drive, Dropbox, or another synchronized
@@ -177,9 +188,9 @@ Vector and hybrid queries use document vectors.
 For local graph builds, link one full archive:
 
 ```sh
-CARGO_BUILD_JOBS=4 cargo build -p zeppelin-embed-ffi --release --features graph-bindings-test-support
+CARGO_BUILD_JOBS=4 cargo build -p zeppelin-embed-ffi --release --features graph-bindings-test-support,swift-query-test-support
 CLANG_MODULE_CACHE_PATH=/tmp/ze-swift-clang ZE_USE_LOCAL_FFI=1 ZE_ENABLE_GRAPH=1 swift build --disable-sandbox --jobs 4
-CLANG_MODULE_CACHE_PATH=/tmp/ze-swift-clang ZE_USE_LOCAL_FFI=1 ZE_ENABLE_GRAPH=1 swift test --disable-sandbox --jobs 4 -Xswiftc -DZE72_TEST_BRIDGE
+CLANG_MODULE_CACHE_PATH=/tmp/ze-swift-clang ZE_USE_LOCAL_FFI=1 ZE_ENABLE_GRAPH=1 swift test --disable-sandbox --jobs 4 -Xswiftc -DZE72_TEST_BRIDGE -Xswiftc -DZE_SWIFT_QUERY_TEST_SUPPORT
 ```
 
 The separate graph package is retired. The default package resolves the
