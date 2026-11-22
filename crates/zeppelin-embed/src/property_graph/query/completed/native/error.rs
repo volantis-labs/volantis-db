@@ -430,6 +430,7 @@ fn retrieval(error: &crate::property_graph::retrieval::RetrievalError) -> Kind {
             _ => Kind::Corruption,
         },
         RetrievalError::Memory | RetrievalError::CandidateWindow { .. } => Kind::Limit,
+        RetrievalError::Embedding(error) => store_kind(error.kind()),
         RetrievalError::NoVectorSpace => Kind::Constraint,
         RetrievalError::Dimension { .. } => Kind::Expression,
         RetrievalError::Invariant(_) => Kind::Corruption,

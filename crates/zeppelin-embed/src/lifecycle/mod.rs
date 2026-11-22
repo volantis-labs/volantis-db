@@ -6,6 +6,7 @@ mod cascade;
 mod clock;
 mod close;
 pub mod durability;
+pub mod embedded;
 mod expansion;
 pub(crate) mod graph_cache;
 mod group_count;
@@ -1479,6 +1480,7 @@ pub enum StoreState {
 /// Store-open configuration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenOptions {
+    embedder: Option<embedded::RegisteredModel>,
     inspection: bool,
     access_mode: AccessMode,
     durability_mode: DurabilityMode,
@@ -1507,6 +1509,7 @@ impl OpenOptions {
     #[must_use]
     pub const fn new() -> Self {
         Self {
+            embedder: None,
             inspection: false,
             access_mode: AccessMode::ReadWrite,
             durability_mode: DurabilityMode::Derived,
@@ -1526,6 +1529,7 @@ impl OpenOptions {
     #[must_use]
     pub const fn read_only() -> Self {
         Self {
+            embedder: None,
             inspection: false,
             access_mode: AccessMode::ReadOnly,
             durability_mode: DurabilityMode::Derived,
@@ -1809,6 +1813,7 @@ impl DocumentFields {
     pub const METADATA: Self = Self(1 << 2);
     /// Selects the typed schema attributes.
     pub const ATTRIBUTES: Self = Self(1 << 3);
+    const CHUNKS: Self = Self(1 << 4);
     /// Selects every optional field.
     pub const ALL: Self =
         Self(Self::VECTOR.0 | Self::TEXT.0 | Self::METADATA.0 | Self::ATTRIBUTES.0);
@@ -1985,6 +1990,10 @@ pub const MAX_DOCUMENT_SCAN_LIMIT: usize = 1 << 20;
 /// An open, lifecycle, or close operation was rejected.
 #[derive(Debug)]
 pub enum StoreError {
+    /// Query text requires a registered namespace model.
+    MissingEmbedder,
+    /// Namespace encoder rejected the input or produced invalid output.
+    Embedding(crate::epoch::EmbedderError),
     /// A graph rule or coordinated document mutation refused retention.
     #[cfg(feature = "graph-cypher")]
     DocumentMutation(Box<crate::ingest::IngestError>),
@@ -2264,6 +2273,10 @@ impl std::fmt::Display for StoreError {
             Self::Manifest(error) => error.fmt(formatter),
             Self::Tokenizer(error) => write!(formatter, "store tokenizer: {error}"),
             Self::EpochMismatch(error) => error.fmt(formatter),
+            Self::MissingEmbedder => {
+                formatter.write_str("namespace has no registered text embedder")
+            }
+            Self::Embedding(e) => e.fmt(formatter),
             Self::EpochUndeclared => {
                 formatter.write_str("store epoch is persisted but the caller declared none")
             }
@@ -2523,7 +2536,7 @@ impl StoreError {
             | Self::QueryPoolStart { .. }
             | Self::WalWrite(_)
             | Self::WalRetire(_) => StoreErrorKind::Io,
-            Self::CascadeCycle { .. }
+            Self::MissingEmbedder | Self::Embedding(_) | Self::CascadeCycle { .. }
             | Self::NotDirectory { .. }
             | Self::Tokenizer(_)
             | Self::SchemaMismatch { .. }
@@ -2581,6 +2594,8 @@ impl std::error::Error for StoreError {
         match self {
             #[cfg(feature = "graph-cypher")]
             Self::DocumentMutation(error) => Some(error.as_ref()),
+            Self::Embedding(e) => Some(e),
+            Self::MissingEmbedder => None,
             Self::Io { source, .. } => Some(source),
             Self::Lock(error) => Some(error),
             Self::Durability(error) => Some(error),
@@ -2657,6 +2672,7 @@ pub struct OpenMigrations {
 
 /// One explicitly closeable embedded-store handle.
 pub struct Store {
+    embedder: Option<Arc<dyn embedded::NamespaceEmbedder>>,
     open_migrations: OpenMigrations,
     pub(crate) private_preparation: Option<namespace_batch::PrivatePreparation>,
     pub(crate) directory: PathBuf,
@@ -3480,7 +3496,8 @@ impl Store {
             #[cfg(any(test, feature = "test-seams"))]
             text_materialization_work: materialize::TestMaterializationWork::default(),
             epoch_alias: crate::epoch::EpochAliasCell::new(persisted_epoch.or(declared_epoch)),
-            epoch: options.epoch,
+            epoch: options.epoch.or_else(|| snapshot.embedded_epoch.clone()),
+            embedder: options.embedder.map(|model| model.0),
             tokenizer,
             schema,
             lexical_index_cache: LexicalIndexCache::new(),
@@ -4473,6 +4490,9 @@ impl Store {
                     document = Some(materialize_sealed_document(segment, row, fields)?);
                 }
             }
+            if let Some(doc) = &mut document {
+                snapshot.expose_metadata(doc, fields)?;
+            }
             documents.push(document);
         }
         drop(active_query);
@@ -4598,6 +4618,9 @@ impl Store {
                         .map_err(QueryError::Store)?
                 }
             };
+            let mut document = document;
+            snapshot.expose_metadata(&mut document, fields)
+                .map_err(QueryError::Store)?;
             documents.push(document);
         }
         drop(active_query);

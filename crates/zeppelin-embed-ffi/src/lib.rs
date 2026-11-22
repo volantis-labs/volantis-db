@@ -561,6 +561,71 @@ fn parse_namespace_spec(request: *const ZeNamespaceSpec) -> Result<(Schema, Stor
     Ok((schema, epoch))
 }
 
+fn namespace_options(
+    pointer: *const ZeNamespaceSpec,
+    profile: Option<i32>,
+    options: OpenOptions,
+) -> Result<(OpenOptions, Schema, StoreEpoch), FfiError> {
+    let spec = marshal::read_struct(pointer)?;
+    // The base layout uses a boolean flag. Only the extended layout defines tag 2.
+    if spec.has_vector_space == 2 && spec.abi_size as usize >= size_of::<ZeEmbeddedNamespaceSpec>()
+    {
+        let normalization = parse_normalization(spec.normalization)?;
+        if !spec.epoch.is_null() || spec.dimensions != 0 || normalization != Normalization::None {
+            return Err(FfiError::invalid(
+                "model determines embedded namespace vector space",
+            ));
+        }
+        #[cfg(not(feature = "text"))]
+        return Err(FfiError::new(
+            ZeErrorCode::ZeErrUnsupported,
+            "embedded namespaces require a text-enabled build",
+        ));
+        #[cfg(feature = "text")]
+        {
+            let extended = marshal::read_struct(pointer.cast::<ZeEmbeddedNamespaceSpec>())?;
+            let model = marshal::read_struct(&extended.model)?;
+            let reference = zeppelin_embed_text::ModelRef {
+                repo: marshal::utf8_without_nul(model.repo, model.repo_len)?.into(),
+                revision: marshal::utf8_without_nul(model.revision, model.revision_len)?.into(),
+                manifest_sha256: marshal::utf8_without_nul(
+                    model.manifest_sha256,
+                    model.manifest_sha256_len,
+                )?
+                .into(),
+            };
+            let (schema, _) = parse_namespace_spec(&ZeNamespaceSpec {
+                has_vector_space: 0,
+                ..spec
+            })?;
+            let tokenizer = parse_tokenizer_profile(profile.unwrap_or(0))?;
+            let model =
+                zeppelin_embed_text::NamespaceModel::open_model(&reference, &Default::default())
+                    .map_err(FfiError::text)?;
+            let options = options
+                .with_tokenizer(tokenizer)
+                .with_embedder(std::sync::Arc::new(model))
+                .map_err(FfiError::store)?;
+            let epoch = options
+                .declared_epoch()
+                .cloned()
+                .ok_or_else(|| FfiError::invalid("missing embedded epoch"))?;
+            return Ok((options, schema, epoch));
+        }
+    }
+    let (schema, mut epoch) = parse_namespace_spec(pointer)?;
+    if let Some(profile) = profile {
+        let tokenizer = parse_tokenizer_profile(profile)?;
+        if !spec.epoch.is_null() && epoch.tokenizer != tokenizer.epoch() {
+            return Err(FfiError::invalid(
+                "namespace and epoch tokenizer profiles disagree",
+            ));
+        }
+        epoch.tokenizer = tokenizer.epoch();
+    }
+    Ok((options, schema, epoch))
+}
+
 fn validate_namespace_name(name: &[u8]) -> Result<&str, FfiError> {
     let valid_first = name.first().is_some_and(u8::is_ascii_alphanumeric);
     let valid_tail = name
@@ -1683,25 +1748,10 @@ fn namespace_open(
                 let name_bytes = marshal::read_slice(request.name, request.name_len)?;
                 let name = validate_namespace_name(name_bytes)?;
                 let open = marshal::read_struct(&request.open)?;
-                let (schema, mut epoch) = parse_namespace_spec(request.spec)?;
-                if let Some(profile) = tokenizer_profile {
-                    let tokenizer = parse_tokenizer_profile(profile)?;
-                    let spec = marshal::read_struct(request.spec)?;
-                    if !spec.epoch.is_null() && epoch.tokenizer != tokenizer.epoch() {
-                        return Err(FfiError::invalid(
-                            "namespace and epoch tokenizer profiles disagree",
-                        ));
-                    }
-                    epoch.tokenizer = tokenizer.epoch();
-                }
+                let (options, schema, epoch) =
+                    namespace_options(request.spec, tokenizer_profile, parse_open_options(&open)?)?;
                 let path = Path::new(root).join(name);
-                open_store_at(
-                    &path,
-                    parse_open_options(&open)?,
-                    Some(epoch),
-                    Some(schema),
-                    out_handle,
-                )
+                open_store_at(&path, options, Some(epoch), Some(schema), out_handle)
             })(),
         )
     })
@@ -1848,12 +1898,12 @@ fn decode_namespace_mutations(
             validate_namespace_name(marshal::read_slice(participant.name, participant.name_len)?)?
                 .to_owned();
         let spec = marshal::read_struct(participant.spec)?;
-        let (schema, mut epoch) = parse_namespace_spec(participant.spec)?;
-        let tokenizer = parse_tokenizer_profile(participant.tokenizer_profile)?;
-        if !spec.epoch.is_null() && epoch.tokenizer != tokenizer.epoch() {
-            return Err(FfiError::invalid("namespace and epoch tokenizers disagree"));
-        }
-        epoch.tokenizer = tokenizer.epoch();
+        let (options, schema, epoch) = namespace_options(
+            participant.spec,
+            Some(participant.tokenizer_profile),
+            OpenOptions::new(),
+        )?;
+        let tokenizer = tokenizer_for_epoch(epoch.tokenizer)?;
         let conditional = marshal::read_struct(&participant.upserts)?;
         let upsert = marshal::read_struct(&conditional.batch)?;
         let conditions = revision_conditions(
@@ -1864,14 +1914,19 @@ fn decode_namespace_mutations(
         let upserts = if upsert.document_count == 0 {
             Vec::new()
         } else {
-            decode_upsert_documents(spec.has_vector_space == 0, &schema, upsert)?
-                .into_iter()
-                .zip(conditions)
-                .map(|(document, condition)| match condition {
-                    Some(expected) => document.with_expected_revision(expected),
-                    None => document,
-                })
-                .collect()
+            decode_upsert_documents(
+                spec.has_vector_space == 0,
+                spec.has_vector_space == 2,
+                &schema,
+                upsert,
+            )?
+            .into_iter()
+            .zip(conditions)
+            .map(|(document, condition)| match condition {
+                Some(expected) => document.with_expected_revision(expected),
+                None => document,
+            })
+            .collect()
         };
         let deletes = marshal::read_slice(participant.deletes, participant.delete_count)?
             .iter()
@@ -1879,7 +1934,7 @@ fn decode_namespace_mutations(
             .map(doc_id)
             .collect();
         let delete_where = decode_filter(participant.filter, &schema)?;
-        let options = OpenOptions::new()
+        let options = options
             .with_tokenizer(tokenizer)
             .with_epoch(epoch)
             .with_schema(schema);
@@ -3445,11 +3500,17 @@ fn upsert_documents(
     access: &registry::HandleAccess,
     request: ZeUpsertRequest,
 ) -> Result<Vec<IngestDocument>, FfiError> {
-    decode_upsert_documents(access.record_only, access.store.schema(), request)
+    decode_upsert_documents(
+        access.record_only,
+        access.store.is_embedded(),
+        access.store.schema(),
+        request,
+    )
 }
 
 fn decode_upsert_documents(
     record_only: bool,
+    embedded: bool,
     schema: &Schema,
     request: ZeUpsertRequest,
 ) -> Result<Vec<IngestDocument>, FfiError> {
@@ -3458,7 +3519,7 @@ fn decode_upsert_documents(
             "record-only upsert dimension must be zero or one",
         ));
     }
-    if !record_only && request.dimension == 0 {
+    if !record_only && !embedded && request.dimension == 0 {
         return Err(FfiError::invalid("upsert dimension must be nonzero"));
     }
     let vector_bytes = if record_only {
@@ -3486,7 +3547,14 @@ fn decode_upsert_documents(
     for record in records {
         let record = marshal::read_struct(record as *const ZeUpsertDocument)?;
         let document = marshal::read_struct(&record.document)?;
-        let vector = if record_only {
+        let vector = if embedded {
+            if document.vector_len != 0 || request.dimension != 0 {
+                return Err(FfiError::invalid(
+                    "embedded upsert requires text without a vector",
+                ));
+            }
+            Vec::new()
+        } else if record_only {
             if !document.vector.is_null() || document.vector_len != 0 {
                 return Err(FfiError::new(
                     ZeErrorCode::ZeErrNoVectorSpace,
@@ -4914,6 +4982,30 @@ pub extern "C" fn ze_query_v2(
     })
 }
 
+fn parse_query_filter(
+    constraints: *const ZeQueryFilter,
+    schema: &Schema,
+) -> Result<Option<zeppelin_embed::lifecycle::QueryFilter>, FfiError> {
+    Ok(if constraints.is_null() {
+        None
+    } else {
+        let constraints: ZeQueryFilter = marshal::read_struct(constraints)?;
+        let has_range = parse_flag(constraints.has_timestamp_range, "has_timestamp_range")?;
+        if !has_range && (constraints.start_ts != 0 || constraints.end_ts != 0) {
+            return Err(FfiError::invalid(
+                "query timestamp bounds require has_timestamp_range",
+            ));
+        }
+        let predicate = decode_filter(constraints.filter, schema)?;
+        zeppelin_embed::lifecycle::QueryFilter::new(
+            schema,
+            predicate.as_ref(),
+            has_range.then_some((constraints.start_ts, constraints.end_ts)),
+        )
+        .map_err(FfiError::query)?
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn query_filtered_entry(
     handle: ZeHandle,
@@ -4936,25 +5028,7 @@ fn query_filtered_entry(
             (|| {
                 let access = registry::lookup(handle)?;
                 let request = marshal::read_struct(request)?;
-                let mut filter = if constraints.is_null() {
-                    None
-                } else {
-                    let constraints: ZeQueryFilter = marshal::read_struct(constraints)?;
-                    let has_range =
-                        parse_flag(constraints.has_timestamp_range, "has_timestamp_range")?;
-                    if !has_range && (constraints.start_ts != 0 || constraints.end_ts != 0) {
-                        return Err(FfiError::invalid(
-                            "query timestamp bounds require has_timestamp_range",
-                        ));
-                    }
-                    let predicate = decode_filter(constraints.filter, access.store.schema())?;
-                    zeppelin_embed::lifecycle::QueryFilter::new(
-                        access.store.schema(),
-                        predicate.as_ref(),
-                        has_range.then_some((constraints.start_ts, constraints.end_ts)),
-                    )
-                    .map_err(FfiError::query)?
-                };
+                let mut filter = parse_query_filter(constraints, access.store.schema())?;
                 if let Some(ids) = eligible_ids {
                     filter = Some(match filter {
                         Some(filter) => filter.with_eligible(ids),
@@ -6171,6 +6245,7 @@ pub extern "C" fn ze_error_code_name(code: i32) -> *const c_char {
             59 => b"ZE_ERR_GRAPH_UNSUPPORTED_BUILD\0",
             60 => b"ZE_ERR_GRAPH_EPOCH_TRANSITION\0",
             61 => b"ZE_ERR_GRAPH_DISABLED\0",
+            62 => b"ZE_ERR_MISSING_EMBEDDER\0",
             _ => b"ZE_ERR_UNKNOWN\0",
         };
         bytes.as_ptr().cast::<c_char>()
@@ -6430,4 +6505,171 @@ pub extern "C" fn ze_text_default_model(out: *mut ZeTextModelRef) -> ZeErrorCode
             })(),
         )
     })
+}
+
+/// Queries chunks in a model-bound namespace. Supply k writable rank slots.
+/// Each document entry contains the source id, revision, timestamp, chunk text
+/// and parent attributes. Ranks are aligned by index. Release the document
+/// arena with ze_get_result_free. Input and rank buffers remain caller-owned.
+#[unsafe(no_mangle)]
+pub extern "C" fn ze_query_embedded(
+    handle: ZeHandle,
+    request: *const ZeEmbeddedQueryRequest,
+    ranks: *mut ZeChunkRank,
+    rank_capacity: usize,
+    out_result: *mut ZeGetResult,
+) -> ZeErrorCode {
+    ffi_entry!(Some(handle), ZeErrorCode::ZeErrPanic, {
+        run_named_panic_probe("ze_query_embedded");
+        finish(
+            Some(handle),
+            (|| {
+                use zeppelin_embed::lifecycle::embedded::EmbeddedLeg;
+                let access = registry::lookup(handle)?;
+                let request = marshal::read_struct(request)?;
+                let abi_size = marshal::validate_output(out_result)?;
+                marshal::write_output(out_result, empty_get_result(abi_size));
+                if !(1..=4096).contains(&request.k) || rank_capacity < request.k {
+                    return Err(FfiError::invalid(
+                        "embedded query requires 1..4096 rank slots for k",
+                    ));
+                }
+                scalar_output(ranks)?;
+                let leg = match request.leg {
+                    0 => EmbeddedLeg::Dense,
+                    1 => EmbeddedLeg::Lexical,
+                    2 => EmbeddedLeg::Hybrid,
+                    _ => return Err(FfiError::invalid("unknown embedded query leg")),
+                };
+                let control = query_control_for(request.cancel_token, request.deadline_ns)?;
+                let text =
+                    std::str::from_utf8(marshal::read_slice(request.text, request.text_len)?)
+                        .map_err(|_| FfiError::invalid("invalid query UTF-8"))?;
+                let mut filter = parse_query_filter(request.constraints, access.store.schema())?;
+                if parse_flag(request.has_eligible, "has_eligible")? {
+                    let ids: Vec<_> =
+                        marshal::read_slice(request.eligible_ids, request.eligible_count)?
+                            .iter()
+                            .copied()
+                            .map(doc_id)
+                            .collect();
+                    filter = Some(match filter {
+                        Some(f) => f.with_eligible(&ids),
+                        None => zeppelin_embed::lifecycle::QueryFilter::eligible(
+                            access.store.schema(),
+                            &ids,
+                        ),
+                    });
+                } else if !request.eligible_ids.is_null() || request.eligible_count != 0 {
+                    return Err(FfiError::invalid("inactive eligible ids must be empty"));
+                }
+                let (generation, hits) = access
+                    .store
+                    .query_embedded_at(text, leg, request.k, filter.as_ref(), control)
+                    .map_err(FfiError::query)?;
+                let mut result = empty_get_result(abi_size);
+                result.generation = generation;
+                if !hits.is_empty() {
+                    let mut ids = Vec::with_capacity(hits.len());
+                    let mut documents = Vec::with_capacity(hits.len());
+                    let mut coordinates = Vec::with_capacity(hits.len());
+                    for hit in hits {
+                        ids.push(ffi_doc_id(hit.version.doc_id()));
+                        coordinates.push(ZeChunkRank {
+                            chunk: hit.chunk,
+                            byte_start: hit.bytes.start,
+                            byte_end: hit.bytes.end,
+                            score: hit.score,
+                        });
+                        documents.push(Some(StoredDocument {
+                            doc_id: hit.version.doc_id(),
+                            revision: hit.version.revision(),
+                            timestamp: hit.timestamp,
+                            text: Some(hit.text),
+                            attributes: Some(hit.attributes),
+                            metadata: None,
+                            vector: None,
+                        }));
+                    }
+                    let (ptr, allocation, _) = publish_get_documents(&ids, &documents)?;
+                    result.documents = ptr;
+                    result.document_count = ids.len();
+                    result.abi_reserved = allocation;
+                    // Caller guarantees rank_capacity writable entries. The engine returned at most k.
+                    marshal::write_slice(ranks, &coordinates);
+                }
+                marshal::write_output(out_result, result);
+                Ok(())
+            })(),
+        )
+    })
+}
+
+#[cfg(test)]
+#[path = "../../zeppelin-embed/tests/test_support/namespace_model.rs"]
+mod namespace_model;
+#[cfg(test)]
+#[test]
+#[allow(clippy::expect_used)]
+fn embedded_query_returns_parallel_owned_document_rows_and_chunk_ranks() {
+    let directory = tempfile::tempdir().expect("namespace");
+    let store = Store::open_embedded(
+        directory.path(),
+        OpenOptions::new(),
+        std::sync::Arc::new(namespace_model::Model),
+    )
+    .expect("open");
+    let id = DocId::new(u128::MAX);
+    store
+        .ingest(IngestBatch::new(vec![
+            IngestDocument::new(DocumentVersion::new(id, Revision::new(13)), vec![])
+                .with_text("target|target"),
+        ]))
+        .expect("ingest");
+    let epoch = store.epoch_identity();
+    let handle = registry::insert_store(store, epoch).expect("register");
+    let eligible = ffi_doc_id(id);
+    let q = ZeEmbeddedQueryRequest {
+        abi_size: size_of::<ZeEmbeddedQueryRequest>() as u32,
+        abi_reserved: 0,
+        leg: 2,
+        has_eligible: 1,
+        text: b"target".as_ptr(),
+        text_len: 6,
+        k: 2,
+        constraints: std::ptr::null(),
+        eligible_ids: &eligible,
+        eligible_count: 1,
+        deadline_ns: 0,
+        cancel_token: 0,
+    };
+    let mut result = empty_get_result(size_of::<ZeGetResult>() as u32);
+    let mut ranks = [ZeChunkRank {
+        chunk: 0,
+        byte_start: 0,
+        byte_end: 0,
+        score: 0.,
+    }; 2];
+    assert_eq!(
+        ze_query_embedded(handle, &q, ranks.as_mut_ptr(), 2, &mut result),
+        ZeErrorCode::ZeOk
+    );
+    assert_eq!(result.document_count, 2);
+    for (i, (doc, rank)) in marshal::read_slice(result.documents, result.document_count)
+        .expect("arena")
+        .iter()
+        .zip(ranks)
+        .enumerate()
+    {
+        assert_eq!(doc_id(doc.doc_id), id);
+        assert_eq!(doc.revision, 13);
+        assert_eq!(rank.chunk, i);
+        assert_eq!(rank.byte_start..rank.byte_end, i * 7..i * 7 + 6);
+        assert_eq!(
+            marshal::read_slice(doc.text, doc.text_len).expect("chunk text"),
+            b"target"
+        );
+    }
+    assert_eq!(ze_get_result_free(&mut result), ZeErrorCode::ZeOk);
+    assert_eq!(ze_close(handle), ZeErrorCode::ZeOk);
 }

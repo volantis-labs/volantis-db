@@ -1185,3 +1185,43 @@ fn ze446_held_writer_refusal_keeps_guard() {
         sequence
     );
 }
+
+#[test]
+fn graph_document_read_exposes_caller_metadata_for_active_and_sealed_embedded_rows() {
+    mod namespace_model {
+        use crate as zeppelin_embed;
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/test_support/namespace_model.rs"
+        ));
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let store = Store::open_embedded(
+        directory.path(),
+        native_options(),
+        std::sync::Arc::new(namespace_model::Model),
+    )
+    .unwrap();
+    store.enable_graph().unwrap();
+    let id = DocId::new(42);
+    store
+        .ingest(IngestBatch::new(vec![
+            IngestDocument::new(DocumentVersion::new(id, Revision::new(1)), vec![])
+                .with_text("first|second")
+                .with_metadata(vec![1, 2, 3]),
+        ]))
+        .unwrap();
+    let metadata = || {
+        store
+            .admit_native_read()
+            .unwrap()
+            .document(NodeId::from(id), crate::lifecycle::DocumentFields::METADATA)
+            .unwrap()
+            .unwrap()
+            .metadata
+    };
+    assert_eq!(metadata(), Some(vec![1, 2, 3]));
+    store.seal().unwrap();
+    assert_eq!(metadata(), Some(vec![1, 2, 3]));
+}

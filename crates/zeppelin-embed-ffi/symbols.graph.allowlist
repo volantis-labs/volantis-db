@@ -39,6 +39,7 @@ ze_open_snapshot
 ze_open_with_epoch
 ze_purge
 ze_query
+ze_query_embedded
 ze_query_filtered
 ze_query_result_free
 ze_query_snippet_source_ranges

@@ -549,6 +549,19 @@ class Store {
     return callNative(() => this._native.search(vector, k));
   }
 
+  queryEmbedded(request) {
+    graphObject(request, ['text','leg','k','eligibleIds','filter','timestampRange','deadlineNs','cancelToken'], 'embedded query');
+    return callNative(() => this._native.queryEmbedded({...request,cancelToken: request.cancelToken?.[nativeToken] ?? request.cancelToken ?? 0n}));
+  }
+
+  async queryEmbeddedAsync(request) {
+    graphObject(request, ['text','leg','k','eligibleIds','filter','timestampRange','deadlineNs','cancelToken','signal'], 'embedded query');
+    if (request.signal !== undefined && request.cancelToken != null) throw new TypeError('use signal or cancelToken, not both');
+    try {
+      return await withSignal(request.signal, token => this._native.queryEmbeddedAsync({...request,cancelToken:token ?? request.cancelToken?.[nativeToken] ?? request.cancelToken ?? 0n}));
+    } catch (error) { throw translateError(error); }
+  }
+
   /**
    * One structured query: a vector leg, a lexical leg, or hybrid fusion of
    * both.

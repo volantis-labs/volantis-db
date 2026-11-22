@@ -77,7 +77,7 @@ impl FfiError {
         Self::new(Self::store_code(&error), message)
     }
 
-    fn store_code(error: &zeppelin_embed::lifecycle::StoreError) -> ZeErrorCode {
+    pub(crate) fn store_code(error: &zeppelin_embed::lifecycle::StoreError) -> ZeErrorCode {
         if let Some(code) = format_version_code(error) {
             return code;
         }
@@ -85,6 +85,10 @@ impl FfiError {
             zeppelin_embed::lifecycle::StoreError::Manifest(
                 zeppelin_embed::manifest::ManifestError::GraphUnsupportedBuild,
             ) => ZeErrorCode::ZeErrGraphUnsupportedBuild,
+            zeppelin_embed::lifecycle::StoreError::MissingEmbedder => {
+                ZeErrorCode::ZeErrMissingEmbedder
+            }
+            zeppelin_embed::lifecycle::StoreError::Embedding(_) => ZeErrorCode::ZeErrModel,
             zeppelin_embed::lifecycle::StoreError::NativeGraphDirectory { .. } => {
                 ZeErrorCode::ZeErrLegacyGraphDirectory
             }

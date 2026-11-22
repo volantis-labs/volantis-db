@@ -69,9 +69,14 @@ impl<'a> Binder<'a, '_> {
                     .is_some_and(|n| !matches!(n.kind, NodeKind::Yield { .. }))
             })
             .count();
+        let shared_text = procedure == Procedure::HybridSearch
+            && (3..=4).contains(&arguments)
+            && self.expression(child(clause, 0)?)?.kinds == ValueKinds::STRING
+            && self.expression(child(clause, 1)?)?.kinds == ValueKinds::I64;
         let (required, mode_index) = match procedure {
             Procedure::VectorSearch => (3, Some(2)),
             Procedure::TextSearch => (2, None),
+            Procedure::HybridSearch if shared_text => (3, Some(2)),
             Procedure::HybridSearch => (4, Some(3)),
         };
         if arguments != required && arguments != required + 1 {
@@ -81,7 +86,13 @@ impl<'a> Binder<'a, '_> {
             let root = child(clause, index)?;
             let info = self.expression(root)?;
             let expected = match (procedure, index) {
+                (Procedure::VectorSearch | Procedure::HybridSearch, 0)
+                    if info.kinds == ValueKinds::STRING =>
+                {
+                    ValueKinds::STRING
+                }
                 (Procedure::VectorSearch | Procedure::HybridSearch, 0) => ValueKinds::LIST,
+                (Procedure::HybridSearch, 1) if shared_text => ValueKinds::I64,
                 (Procedure::TextSearch, 0) | (Procedure::HybridSearch, 1) => ValueKinds::STRING,
                 _ if Some(index) == mode_index => ValueKinds::STRING,
                 _ => ValueKinds::I64,
@@ -244,8 +255,8 @@ impl<'a> Binder<'a, '_> {
             },
             Procedure::HybridSearch => BoundSearchRequest::Hybrid {
                 vector: self.invariant_argument(child(clause, 0)?)?,
-                text: self.invariant_argument(child(clause, 1)?)?,
-                k: self.invariant_argument(child(clause, 2)?)?,
+                text: self.invariant_argument(child(clause, usize::from(!shared_text))?)?,
+                k: self.invariant_argument(child(clause, required - 2)?)?,
                 mode: mode.ok_or_else(|| error(clause.span, "missing hybrid mode"))?,
                 eligible: eligibility,
             },

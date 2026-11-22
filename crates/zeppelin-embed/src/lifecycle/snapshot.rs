@@ -401,6 +401,7 @@ pub struct PublishedSnapshot {
     #[cfg(feature = "graph-cypher")]
     pub(crate) graph_manifest: Option<Arc<SnapshotGraphManifest>>,
     epoch_alias: Option<crate::epoch::EpochIdentity>,
+    pub(super) embedded_epoch: Option<crate::epoch::StoreEpoch>,
     graph_profile:
         Result<crate::graph::search::EpochGraphProfile, crate::graph::search::GraphProfileError>,
     schema: crate::meta::Schema,
@@ -428,6 +429,7 @@ impl PublishedSnapshot {
             #[cfg(feature = "graph-cypher")]
             graph_manifest: None,
             epoch_alias: None,
+            embedded_epoch: None,
             graph_profile: Err(crate::graph::search::GraphProfileError::EpochUnstamped),
             schema: crate::meta::Schema::timestamp_only(),
             segments: Arc::new(Accounted::unaccounted_empty()),
@@ -630,6 +632,21 @@ impl PublishedSnapshot {
                 }
             },
             epoch_alias: manifest.epoch_alias,
+            embedded_epoch: manifest
+                .epoch_alias
+                .and_then(|alias| {
+                    manifest.epochs.iter().find(|e| {
+                        e.id == alias.embedding
+                            && e.tokenizer == alias.tokenizer
+                            && e.embedding
+                                .alignment_digest
+                                .starts_with(super::embedded::EPOCH_TAG)
+                    })
+                })
+                .map(|e| crate::epoch::StoreEpoch {
+                    embedding: e.embedding.clone(),
+                    tokenizer: e.tokenizer,
+                }),
             graph_profile,
             schema: manifest.schema.clone(),
             segments: Arc::new(segments),
@@ -652,6 +669,7 @@ impl PublishedSnapshot {
             #[cfg(feature = "graph-cypher")]
             graph_manifest: self.graph_manifest.clone(),
             epoch_alias: self.epoch_alias,
+            embedded_epoch: self.embedded_epoch.clone(),
             graph_profile: self.graph_profile,
             schema: self.schema.clone(),
             segments: Arc::clone(&self.segments),

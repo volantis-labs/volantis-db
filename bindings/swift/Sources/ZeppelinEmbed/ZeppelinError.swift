@@ -63,4 +63,5 @@ public enum ZeppelinError: Int32, Error, Sendable, CaseIterable {
     case graphUnsupportedBuild = 59
     case graphEpochTransition = 60
     case graphDisabled = 61
+    case missingEmbedder = 62
 }

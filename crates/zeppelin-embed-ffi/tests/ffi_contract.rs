@@ -181,6 +181,11 @@ const ERROR_CODE_GOLDEN: &[(ZeErrorCode, i32, &str)] = &[
         "ZE_ERR_GRAPH_EPOCH_TRANSITION",
     ),
     (ZeErrorCode::ZeErrGraphDisabled, 61, "ZE_ERR_GRAPH_DISABLED"),
+    (
+        ZeErrorCode::ZeErrMissingEmbedder,
+        62,
+        "ZE_ERR_MISSING_EMBEDDER",
+    ),
 ];
 
 fn header_error_codes() -> Vec<(String, i32)> {
@@ -489,6 +494,9 @@ fn every_phase_two_struct_has_the_frozen_size_and_field_offsets() {
         abi_size: 0, abi_reserved: 4, scan: 8, order_attribute_id: 120,
         cursor_order: 124, cursor_order_attribute_id: 128
     });
+    assert_layout!(ZeChunkRank, 32, 8, {chunk:0,byte_start:8,byte_end:16,score:24});
+    assert_layout!(ZeEmbeddedNamespaceSpec,104,8,{spec:0,model:48});
+    assert_layout!(ZeEmbeddedQueryRequest,80,8,{abi_size:0,abi_reserved:4,text:8,text_len:16,leg:24,has_eligible:28,eligible_ids:32,eligible_count:40,constraints:48,k:56,cancel_token:64,deadline_ns:72});
     assert_layout!(ZeNamespaceSpec, 48, 8, {
         abi_size: 0, abi_reserved: 4, attributes: 8, attribute_count: 16,
         has_vector_space: 24, dimensions: 28, normalization: 32, epoch: 40
@@ -628,6 +636,7 @@ const POISON_TABLE_NAMES: &[&str] = &[
     "ze_query_snippet_source_ranges",
     "ze_query_with_snippets",
     "ze_query_filtered",
+    "ze_query_embedded",
     "ze_query_v2",
     "ze_scan",
     "ze_scan_ordered",
@@ -1013,6 +1022,15 @@ fn poison_function_table() -> Vec<(&'static str, PoisonCall)> {
                 std::ptr::null(),
                 0,
                 &mut result,
+                std::ptr::null_mut(),
+            )
+        }),
+        ("ze_query_embedded", |context| {
+            ze_query_embedded(
+                context.store.handle,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                0,
                 std::ptr::null_mut(),
             )
         }),

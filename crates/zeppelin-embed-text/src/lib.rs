@@ -32,8 +32,8 @@ pub mod tower;
 
 pub use error::TextError;
 pub use ingest::{
-    ChunkPolicy, IngestControl, IngestOptions, TextDocument, TextFaultSite, TextIngestReport,
-    TextOpenOptions, TextStore,
+    ChunkPolicy, IngestControl, IngestOptions, NamespaceModel, TextDocument, TextFaultSite,
+    TextIngestReport, TextOpenOptions, TextStore,
 };
 pub use model::{
     DEFAULT_MODEL_MANIFEST_SHA256, DEFAULT_MODEL_REPO, DEFAULT_MODEL_REVISION, ModelError,

@@ -55,14 +55,14 @@ pub(crate) struct SearchHit {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum SearchArguments<'a> {
     Vector {
-        vector: QueryList<'a>,
+        vector: QueryValue<'a>,
         mode: SearchMode,
     },
     Text {
         query: &'a str,
     },
     Hybrid {
-        vector: QueryList<'a>,
+        vector: QueryValue<'a>,
         text: &'a str,
         mode: SearchMode,
     },
@@ -446,7 +446,7 @@ fn search_arguments<'a>(
     let first_value = first.1.value(0, 0).ok_or(RuntimeError::Batch)?;
     Ok(match request {
         SearchRequest::Vector { mode, .. } => SearchArguments::Vector {
-            vector: list(first.0, first_value)?,
+            vector: first_value,
             mode,
         },
         SearchRequest::Text { .. } => SearchArguments::Text {
@@ -455,19 +455,12 @@ fn search_arguments<'a>(
         SearchRequest::Hybrid { mode, .. } => {
             let second = second.as_ref().ok_or(RuntimeError::Batch)?;
             SearchArguments::Hybrid {
-                vector: list(first.0, first_value)?,
+                vector: first_value,
                 text: string(second.0, second.1.value(0, 0).ok_or(RuntimeError::Batch)?)?,
                 mode,
             }
         }
     })
-}
-
-fn list(expression: ExprId, value: QueryValue<'_>) -> Result<QueryList<'_>, NativeExecutionError> {
-    match value {
-        QueryValue::List(list) => Ok(list),
-        _ => Err(expression_type(expression)),
-    }
 }
 
 fn string(expression: ExprId, value: QueryValue<'_>) -> Result<&str, NativeExecutionError> {

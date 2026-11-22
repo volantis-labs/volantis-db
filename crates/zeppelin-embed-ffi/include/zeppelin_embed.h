@@ -397,6 +397,10 @@ enum ze_error_code
      This store has no enabled graph writer.
      */
     ZE_ERR_GRAPH_DISABLED = 61,
+    /*
+     A text query requires a registered namespace model.
+     */
+    ZE_ERR_MISSING_EMBEDDER = 62,
 };
 #ifndef __cplusplus
 #if __STDC_VERSION__ >= 202311L
@@ -626,7 +630,7 @@ typedef struct ZeNamespaceSpec {
      */
     size_t attribute_count;
     /*
-     One for a vector namespace, zero for a record-only namespace.
+     Zero for records, one for vectors, two for a ZeEmbeddedNamespaceSpec prefix.
      */
     uint32_t has_vector_space;
     /*
@@ -3646,6 +3650,82 @@ typedef struct ZeTextModelRef {
 } ZeTextModelRef;
 
 /*
+ Text query against a model-bound Store namespace.
+ */
+typedef struct ZeEmbeddedQueryRequest {
+    /*
+     sizeof(ZeEmbeddedQueryRequest).
+     */
+    uint32_t abi_size;
+    /*
+     Must be zero.
+     */
+    uint32_t abi_reserved;
+    /*
+     Borrowed UTF-8 query bytes.
+     */
+    const uint8_t *text;
+    /*
+     Query byte length.
+     */
+    size_t text_len;
+    /*
+     0 dense, 1 lexical, 2 hybrid.
+     */
+    int32_t leg;
+    /*
+     Set to one to intersect with eligible_ids, including an empty set.
+     */
+    uint32_t has_eligible;
+    /*
+     Borrowed full-width parent ids.
+     */
+    const struct ZeDocId *eligible_ids;
+    /*
+     Number of eligible ids.
+     */
+    size_t eligible_count;
+    /*
+     Optional Store attribute and timestamp filter.
+     */
+    const struct ZeQueryFilter *constraints;
+    /*
+     Maximum returned chunks.
+     */
+    size_t k;
+    /*
+     Optional cancellation handle.
+     */
+    ze_cancel_token cancel_token;
+    /*
+     Optional relative deadline in nanoseconds.
+     */
+    uint64_t deadline_ns;
+} ZeEmbeddedQueryRequest;
+
+/*
+ Caller-owned ranking and source coordinates for one returned document entry.
+ */
+typedef struct ZeChunkRank {
+    /*
+     Zero-based chunk number.
+     */
+    size_t chunk;
+    /*
+     Inclusive UTF-8 offset.
+     */
+    size_t byte_start;
+    /*
+     Exclusive UTF-8 offset.
+     */
+    size_t byte_end;
+    /*
+     Larger is better.
+     */
+    double score;
+} ZeChunkRank;
+
+/*
  Store verification request.
  */
 typedef struct ZeVerifyRequest {
@@ -3734,6 +3814,20 @@ typedef struct ZeVerifyResult {
      */
     uint64_t wal_records_checked;
 } ZeVerifyResult;
+
+/*
+ Embedded namespace declaration for open, batch and cascade operations.
+ */
+typedef struct ZeEmbeddedNamespaceSpec {
+    /*
+     Prefix with abi_size = sizeof(ZeEmbeddedNamespaceSpec), has_vector_space = 2.
+     */
+    struct ZeNamespaceSpec spec;
+    /*
+     Immutable model pins, resolved with the standard model cache policy.
+     */
+    struct ZeTextModelRef model;
+} ZeEmbeddedNamespaceSpec;
 
 #ifdef __cplusplus
 extern "C" {
@@ -4410,6 +4504,18 @@ ze_error_code ze_schema_column(ze_handle handle,
  and must not be modified or freed. No matching free call is needed.
  */
 ze_error_code ze_text_default_model(struct ZeTextModelRef *out);
+
+/*
+ Queries chunks in a model-bound namespace. Supply k writable rank slots.
+ Each document entry contains the source id, revision, timestamp, chunk text
+ and parent attributes. Ranks are aligned by index. Release the document
+ arena with ze_get_result_free. Input and rank buffers remain caller-owned.
+ */
+ze_error_code ze_query_embedded(ze_handle handle,
+                                const struct ZeEmbeddedQueryRequest *request,
+                                struct ZeChunkRank *ranks,
+                                size_t rank_capacity,
+                                struct ZeGetResult *out_result);
 
 /*
  Walks the store directory at `request.path` and reports every damaged

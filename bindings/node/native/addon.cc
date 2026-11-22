@@ -1288,7 +1288,13 @@ bool ParseOpenRequest(napi_env env, napi_value options, const std::string &path,
   return true;
 }
 
-bool ParseNamespaceSpec(napi_env env, napi_value value, ZeNamespaceSpec *spec,
+struct NamespaceSpecStorage {
+  ZeEmbeddedNamespaceSpec declaration{};
+  std::string repo, revision, sha;
+};
+
+bool ParseNamespaceSpec(napi_env env, napi_value value,
+                        NamespaceSpecStorage *storage,
                         std::vector<ZeAttributeDefinition> *attributes,
                         std::vector<std::string> *attribute_names) {
   napi_valuetype type;
@@ -1364,6 +1370,7 @@ bool ParseNamespaceSpec(napi_env env, napi_value value, ZeNamespaceSpec *spec,
     native.nullable = nullable ? 1 : 0;
   }
 
+  auto *spec = &storage->declaration.spec;
   *spec = ZeNamespaceSpec{};
   spec->abi_size = sizeof(*spec);
   spec->attributes = attributes->data();
@@ -1372,6 +1379,42 @@ bool ParseNamespaceSpec(napi_env env, napi_value value, ZeNamespaceSpec *spec,
   present = false;
   if (!GetNamed(env, value, "vectorSpace", &vector_space, &present))
     return false;
+  napi_value embedded;
+  bool has_model;
+  if (!GetNamed(env, value, "embeddedModel", &embedded, &has_model))
+    return false;
+  if (has_model) {
+    if (present) {
+      napi_throw_type_error(env, "ERR_INVALID_ARG_VALUE",
+                            "embeddedModel supplies the vector space");
+      return false;
+    }
+    auto read_pin = [&](const char *name, std::string &out) {
+      bool found;
+      if (!GetOptionalString(env, embedded, name, &out, &found))
+        return false;
+      if (!found)
+        napi_throw_type_error(env, "ERR_MISSING_ARGS", name);
+      return found;
+    };
+    if (!read_pin("repo", storage->repo) ||
+        !read_pin("revision", storage->revision) ||
+        !read_pin("manifestSha256", storage->sha))
+      return false;
+    spec->abi_size = sizeof(storage->declaration);
+    spec->has_vector_space = 2;
+    auto &model = storage->declaration.model;
+    model.abi_size = sizeof(model);
+    model.repo = reinterpret_cast<const uint8_t *>(storage->repo.data());
+    model.repo_len = storage->repo.size();
+    model.revision =
+        reinterpret_cast<const uint8_t *>(storage->revision.data());
+    model.revision_len = storage->revision.size();
+    model.manifest_sha256 =
+        reinterpret_cast<const uint8_t *>(storage->sha.data());
+    model.manifest_sha256_len = storage->sha.size();
+    return true;
+  }
   if (!present)
     return true;
   if (!NapiOk(env, napi_typeof(env, vector_space, &type),
@@ -1547,7 +1590,7 @@ napi_value ConstructStore(napi_env env, napi_callback_info info) {
       std::string name;
       if (!GetUtf8(env, args[2], "name", &name))
         return nullptr;
-      ZeNamespaceSpec spec{};
+      NamespaceSpecStorage spec{};
       std::vector<ZeAttributeDefinition> attributes;
       std::vector<std::string> attribute_names;
       if (!ParseNamespaceSpec(env, args[3], &spec, &attributes,
@@ -1561,7 +1604,7 @@ napi_value ConstructStore(napi_env env, napi_callback_info info) {
       namespace_request.name = reinterpret_cast<const uint8_t *>(name.data());
       namespace_request.name_len = name.size();
       namespace_request.open = request;
-      namespace_request.spec = &spec;
+      namespace_request.spec = &spec.declaration.spec;
       std::string profile = "textDefault";
       bool has_profile = false;
       if (!GetOptionalString(env, args[3], "tokenizerProfile", &profile,
@@ -1605,7 +1648,7 @@ napi_value OpenAsync(napi_env env, napi_callback_info info) {
       std::string path, name;
       ZeOpenRequest request{};
       ZeNamespaceOpenRequest ns{};
-      ZeNamespaceSpec spec{};
+      NamespaceSpecStorage spec{};
       std::vector<ZeAttributeDefinition> attributes;
       std::vector<std::string> attribute_names;
       ze_handle handle = 0;
@@ -1646,7 +1689,7 @@ napi_value OpenAsync(napi_env env, napi_callback_info info) {
       ns.name = reinterpret_cast<const uint8_t *>(data->name.data());
       ns.name_len = data->name.size();
       ns.open = data->request;
-      ns.spec = &data->spec;
+      ns.spec = &data->spec.declaration.spec;
       std::string profile = "textDefault";
       bool present = false;
       const char *profiles[] = {"textDefault", "code", "voice"};
@@ -2173,7 +2216,7 @@ napi_value NamespaceOperationCall(napi_env env, napi_callback_info info,
     }
     struct Participant {
       std::string name;
-      ZeNamespaceSpec spec{};
+      NamespaceSpecStorage spec{};
       std::vector<ZeAttributeDefinition> attributes;
       std::vector<std::string> attribute_names;
       UpsertStorage upserts;
@@ -2235,7 +2278,7 @@ napi_value NamespaceOperationCall(napi_env env, napi_callback_info info,
       }
       native.name = reinterpret_cast<const uint8_t *>(owned.name.data());
       native.name_len = owned.name.size();
-      native.spec = &owned.spec;
+      native.spec = &owned.spec.declaration.spec;
       if (!GetNamed(env, value, "upserts", &field, &present))
         return nullptr;
       if (!present &&
@@ -4270,7 +4313,7 @@ bool CreateSnippet(napi_env env, const ZeQuerySnippet &snippet,
  * neither depends on a JavaScript object surviving the call. Every other field
  * is a scalar read straight into the request.
  */
-template <bool Async = false>
+template <bool Async = false, bool Embedded = false>
 napi_value Query(napi_env env, napi_callback_info info) {
   return Guard(env, [&]() -> napi_value {
     size_t argc = 1;
@@ -4376,6 +4419,93 @@ napi_value Query(napi_env env, napi_callback_info info) {
     if (!GetOptionalString(env, args[0], "text", &text, &has_text))
       return nullptr;
 
+    if constexpr (Embedded) {
+      std::string leg;
+      bool has_leg;
+      uint32_t k;
+      ZeEmbeddedQueryRequest q{};
+      q.abi_size = sizeof(q);
+      if (!GetOptionalString(env, args[0], "leg", &leg, &has_leg) ||
+          !GetOptionalUint32(env, args[0], "k", 10, &k) ||
+          !GetOptionalUint64(env, args[0], "deadlineNs", 0, &q.deadline_ns) ||
+          !GetOptionalUint64(env, args[0], "cancelToken", 0, &q.cancel_token))
+        return nullptr;
+      const char *legs[] = {"dense", "lexical", "hybrid"};
+      if (!has_text || !has_leg || !ParseEnum(leg, legs, 3, &q.leg) || !k ||
+          k > 4096) {
+        napi_throw_type_error(
+            env, "ERR_INVALID_ARG_VALUE",
+            "queryEmbedded requires text, leg and k in 1..4096");
+        return nullptr;
+      }
+      q.text = reinterpret_cast<const uint8_t *>(text.data());
+      q.text_len = text.size();
+      q.constraints = &constraints;
+      q.eligible_ids = request_v2.eligible_ids;
+      q.eligible_count = request_v2.eligible_count;
+      q.has_eligible = request_v2.has_eligible;
+      q.k = k;
+      struct Result {
+        ZeGetResult docs{};
+        std::vector<ZeChunkRank> ranks;
+        ResultOwner<ZeGetResult, ze_get_result_free> owner{&docs};
+      };
+      auto result = std::make_shared<Result>();
+      result->ranks.resize(k);
+      result->docs.abi_size = sizeof(result->docs);
+      auto handle = store->handle;
+      return RunNative<Async>(
+          env, receiver, handle,
+          [q, handle, result, data]() {
+            (void)data; // Retains query and filter bytes through worker
+                        // completion.
+            return ze_query_embedded(handle, &q, result->ranks.data(), q.k,
+                                     &result->docs);
+          },
+          [result, env](ze_error_code status,
+                        const std::string &message) -> napi_value {
+            if (status != ZE_OK)
+              return ThrowWorkerError(env, status, message);
+            napi_value array;
+            auto &docs = result->docs;
+            if (!NapiOk(env,
+                        napi_create_array_with_length(env, docs.document_count,
+                                                      &array),
+                        "chunk hits"))
+              return nullptr;
+            for (size_t i = 0; i < docs.document_count; ++i) {
+              napi_value hit;
+              const auto &doc = docs.documents[i];
+              if (!CreateStoredDocument(env, doc, &hit))
+                return nullptr;
+              napi_value empty;
+              if (!doc.text &&
+                  (!NapiOk(env, napi_create_string_utf8(env, "", 0, &empty),
+                           "empty text") ||
+                   !SetNamed(env, hit, "text", empty)))
+                return nullptr;
+              if (!doc.attributes &&
+                  (!NapiOk(env, napi_create_array(env, &empty),
+                           "empty attributes") ||
+                   !SetNamed(env, hit, "attributes", empty)))
+                return nullptr;
+              auto number = [&](const char *key, double n) {
+                napi_value v;
+                return NapiOk(env, napi_create_double(env, n, &v), key) &&
+                       SetNamed(env, hit, key, v);
+              };
+              const auto &rank = result->ranks[i];
+              if (!number("chunk", rank.chunk) ||
+                  !number("byteStart", rank.byte_start) ||
+                  !number("byteEnd", rank.byte_end) ||
+                  !number("score", rank.score) ||
+                  !NapiOk(env, napi_set_element(env, array, i, hit),
+                          "chunk hit"))
+                return nullptr;
+            }
+            return array;
+          });
+    }
     auto &vector = data->vector;
     napi_value vector_value;
     bool has_vector = false;
@@ -4947,6 +5077,10 @@ napi_value Initialize(napi_env env, napi_value exports) {
        napi_default, nullptr},
       {"search", nullptr, Search, nullptr, nullptr, nullptr, napi_default,
        nullptr},
+      {"queryEmbedded", nullptr, Query<false, true>, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
+      {"queryEmbeddedAsync", nullptr, Query<true, true>, nullptr, nullptr,
+       nullptr, napi_default, nullptr},
       {"queryAsync", nullptr, Query<true>, nullptr, nullptr, nullptr,
        napi_default, nullptr},
       {"query", nullptr, Query<false>, nullptr, nullptr, nullptr, napi_default,

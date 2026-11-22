@@ -128,6 +128,8 @@ export interface VectorSpace {
 }
 
 export interface NamespaceSpec {
+  /** Model supplying both towers. Mutually exclusive with vectorSpace. */
+  readonly embeddedModel?: TextModelRef;
   /**
    * Persisted tokenizer profile; defaults to textDefault. Supply the same
    * profile on reopen or receive ZE_ERR_EPOCH_MISMATCH. No vector space or
@@ -411,6 +413,23 @@ export type SearchResult = SearchHit[];
 /** Which legs a structured query runs, and therefore which mode executes. */
 export type QueryMode = 'vector' | 'lexical' | 'hybrid';
 
+export interface EmbeddedQuery extends Pick<QueryRequest, 'k' | 'eligibleIds' | 'filter' | 'timestampRange' | 'deadlineNs' | 'cancelToken'> {
+  readonly text: string;
+  readonly leg: 'dense' | 'lexical' | 'hybrid';
+}
+
+export interface EmbeddedHit {
+  readonly id: DocumentId;
+  readonly revision: bigint;
+  readonly timestamp: bigint;
+  readonly attributes: readonly AttributeValue[];
+  readonly chunk: number;
+  readonly byteStart: number;
+  readonly byteEnd: number;
+  readonly text: string;
+  readonly score: number;
+}
+
 export interface QueryRequest {
   /** Document ids allowed on both legs before ranking/fusion; [] selects no hits. Maximum 524288 ids. */
   readonly eligibleIds?: readonly bigint[];
@@ -638,6 +657,9 @@ export declare class Store {
    * All failures (including validation) reject with the sync API's error types.
    */
   upsertAsync(documents: readonly UpsertDocument[]): Promise<MutationReport>;
+  /** Rank source chunks of eligible documents using the namespace model and tokenizer. */
+  queryEmbedded(request: EmbeddedQuery): EmbeddedHit[];
+  queryEmbeddedAsync(request: EmbeddedQuery & { readonly signal?: AbortSignal }): Promise<EmbeddedHit[]>;
   /** AbortSignal cancels engine work cooperatively and rejects with
    * ZeppelinError (ZE_ERR_CANCELLED), never partial results. The promise settles
    * after the worker stops. Use either signal or cancelToken, not both; keep a

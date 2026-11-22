@@ -586,3 +586,27 @@ fn parameter_and_mode_aliases_lower_to_canonical_backing() {
         .unwrap();
     });
 }
+
+#[test]
+fn text_arguments_lower_for_dense_and_hybrid_search() {
+    for query in [
+        "CALL ze.vector_search('bronze', 2, 'exact') YIELD node RETURN node",
+        "CALL ze.hybrid_search('bronze', 'bronze', 2, 'exact') YIELD node RETURN node",
+        "CALL ze.hybrid_search('bronze', 2, 'exact') YIELD node RETURN node",
+    ] {
+        with_memory(|memory, context| {
+            compile_read_in(
+                query,
+                &[],
+                CompileLimits::default(),
+                memory,
+                context,
+                |read, _| {
+                    assert_eq!(read.plan().description().eager_searches.len(), 1);
+                    Ok(())
+                },
+            )
+            .unwrap();
+        });
+    }
+}

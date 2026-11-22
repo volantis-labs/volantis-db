@@ -20,6 +20,7 @@ use super::*;
 use crate::lifecycle::durability::{CommitTier, DurabilityMode};
 use crate::lifecycle::native_graph::NativeReadConsumer;
 use crate::lifecycle::{CancelToken, OpenOptions, QueryControl, Store};
+use crate::property_graph::query::QueryValue;
 use crate::property_graph::query::eligibility::Eligibility;
 use crate::property_graph::query::expression::ExpressionCapacity;
 use crate::property_graph::query::pattern::{SearchArguments, SearchHit, SearchInvocation};
@@ -80,7 +81,7 @@ impl<'v, 'm, 'g> SearchAdapter<'v, 'm, 'g> for Scripted {
         match invocation.arguments {
             SearchArguments::Text { query } => assert_eq!(query, "q"),
             SearchArguments::Vector { vector, mode } => {
-                assert_eq!(vector.len(), 2);
+                assert!(matches!(vector, QueryValue::List(list) if list.len() == 2));
                 assert_eq!(mode, SearchMode::Default);
             }
             SearchArguments::Hybrid { .. } => panic!("no hybrid call is scripted"),

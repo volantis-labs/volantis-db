@@ -43,6 +43,11 @@ pub(crate) fn write_output<T>(pointer: *mut T, value: T) {
     unsafe { std::ptr::write(pointer, value) };
 }
 
+/// The caller validates alignment and destination capacity before publication.
+pub(crate) fn write_slice<T: Copy>(output: *mut T, values: &[T]) {
+    unsafe { std::ptr::copy_nonoverlapping(values.as_ptr(), output, values.len()) };
+}
+
 pub(crate) fn write_scalar<T>(pointer: *mut T, value: T) {
     unsafe { std::ptr::write(pointer, value) };
 }

@@ -14,6 +14,8 @@ pub const REQUIRED: &[&str] = &[
     "storage-durability.mixed-batch.append-member-2",
     "storage-durability.mixed-batch.sync",
     "storage-durability.mixed-batch.comparator",
+    "storage-durability.embedded-batch.encoder-fault",
+    "storage-durability.embedded-batch.clean",
 ];
 
 pub const PART_A_REQUIRED: &[&str] = &[
@@ -294,7 +296,66 @@ fn mixed_batch(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String>
         coverage.hit(key);
     }
     coverage.hit(REQUIRED[10]);
+    embedded_batch(seed, coverage).map_err(|e| e.to_string())?;
     coverage.hit("op.MixedBatch");
+    Ok(())
+}
+
+#[path = "../../crates/zeppelin-embed/tests/test_support/namespace_model.rs"]
+mod namespace_model;
+
+fn embedded_batch(
+    seed: u64,
+    coverage: &mut CoverageRegistry,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use zeppelin_embed::ingest::{DocId, DocumentVersion, IngestDocument, Revision};
+    use zeppelin_embed::lifecycle::{
+        DocumentFields, NamespaceMutation, OpenOptions, Store, StoreError, namespace_batch,
+    };
+    let root = tempfile::tempdir()?;
+    let options = OpenOptions::new().with_embedder(std::sync::Arc::new(namespace_model::Model))?;
+    let id = DocId::new(u128::MAX - u128::from(seed));
+    for name in ["first", "second"] {
+        drop(Store::open(root.path().join(name), options.clone())?);
+    }
+    for (text, expected) in [("!fail", false), ("clean", true)] {
+        let batch = [("first", "first"), ("second", text)]
+            .into_iter()
+            .map(|(name, source)| NamespaceMutation {
+                name: name.into(),
+                options: options.clone(),
+                deletes: vec![],
+                delete_where: None,
+                upserts: vec![
+                    IngestDocument::new(DocumentVersion::new(id, Revision::new(1)), vec![])
+                        .with_text(source),
+                ],
+            })
+            .collect();
+        let result = namespace_batch(root.path(), batch);
+        match result {
+            Ok(_) if expected => {}
+            Err(StoreError::Embedding(_)) if !expected => {}
+            other => return Err(format!("unexpected encoder outcome {other:?}").into()),
+        }
+        for name in ["first", "second"] {
+            let store = Store::open(root.path().join(name), options.clone())?;
+            if store
+                .get_documents(&[id], DocumentFields::ALL)?
+                .into_iter()
+                .flatten()
+                .count()
+                != usize::from(expected)
+            {
+                return Err("encoder fault crossed the atomic publication boundary".into());
+            }
+        }
+        coverage.hit(if expected {
+            "storage-durability.embedded-batch.clean"
+        } else {
+            "storage-durability.embedded-batch.encoder-fault"
+        });
+    }
     Ok(())
 }
 

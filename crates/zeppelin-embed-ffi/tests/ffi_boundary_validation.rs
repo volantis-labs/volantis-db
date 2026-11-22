@@ -697,6 +697,38 @@ fn namespace_schema_rejects_invalid_columns_flags_and_epoch_geometry() {
 }
 
 #[test]
+fn embedded_namespace_validates_normalization_before_rejecting_explicit_geometry() {
+    let _guard = global_error_guard();
+    let directory = tempfile::tempdir().expect("namespace fixture");
+    let root = directory.path().to_string_lossy();
+    let mut embedded: ZeEmbeddedNamespaceSpec = common::sized_zeroed();
+    embedded.spec.has_vector_space = 2;
+    embedded.spec.dimensions = 1;
+    for (normalization, message) in [
+        (99, "normalization discriminant is out of range"),
+        (0, "model determines embedded namespace vector space"),
+    ] {
+        embedded.spec.normalization = normalization;
+        let request = ZeNamespaceOpenRequest {
+            root: root.as_ptr(),
+            root_len: root.len(),
+            name: b"notes".as_ptr(),
+            name_len: 5,
+            open: open_request(&[]),
+            spec: &embedded.spec,
+            ..common::sized_zeroed()
+        };
+        let mut handle = 0;
+        assert_eq!(
+            ze_namespace_open(&request, &mut handle),
+            ZeErrorCode::ZeErrInvalidArgument
+        );
+        assert_eq!(last_error(0), message);
+        assert_eq!(handle, 0);
+    }
+}
+
+#[test]
 fn error_copy_and_scalar_outputs_reject_invalid_buffers_without_writing_them() {
     let _guard = global_error_guard();
     let mut aligned = [0_u64; 4];

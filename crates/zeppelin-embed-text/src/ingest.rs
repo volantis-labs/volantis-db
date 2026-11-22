@@ -1,3 +1,5 @@
+mod namespace_model;
+pub use namespace_model::NamespaceModel;
 use std::collections::{BTreeMap, VecDeque};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

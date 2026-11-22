@@ -134,6 +134,9 @@ fn execute_live(
             "namespace batch requires 2..128 participants",
         ));
     }
+    for p in &mut participants {
+        p.store.prepare_embedded(&mut p.mutation.upserts)?;
+    }
     let _coordinator = match coordinator {
         Some(_) => None,
         None => Some(StoreLock::acquire(&root).map_err(StoreError::Lock)?),

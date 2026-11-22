@@ -725,6 +725,8 @@ pub(crate) fn document_items(
             .ok_or_else(|| invalid("graph document node image is out of range"))?;
         let vector = if image.has_vector == 1 {
             range(pool.vectors, image.vector, "graph document vector")?.to_vec()
+        } else if store.is_embedded() {
+            Vec::new()
         } else if record_only || store.epoch_identity().is_none() {
             vec![1.0]
         } else {

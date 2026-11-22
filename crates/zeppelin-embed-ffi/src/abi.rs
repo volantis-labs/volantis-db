@@ -127,6 +127,8 @@ pub enum ZeErrorCode {
     ZeErrGraphEpochTransition = 60,
     /// This store has no enabled graph writer.
     ZeErrGraphDisabled = 61,
+    /// A text query requires a registered namespace model.
+    ZeErrMissingEmbedder = 62,
 }
 
 /// Opaque generation-tagged store handle.
@@ -204,7 +206,7 @@ pub struct ZeNamespaceSpec {
     pub attributes: *const ZeAttributeDefinition,
     /// Number of attribute definitions.
     pub attribute_count: usize,
-    /// One for a vector namespace, zero for a record-only namespace.
+    /// Zero for records, one for vectors, two for a ZeEmbeddedNamespaceSpec prefix.
     pub has_vector_space: u32,
     /// Vector dimensions, or zero or one for a record-only namespace.
     pub dimensions: u32,
@@ -2092,4 +2094,58 @@ pub struct ZeTextModelRef {
     pub manifest_sha256: *const u8,
     /// Number of manifest checksum bytes.
     pub manifest_sha256_len: usize,
+}
+
+/// Embedded namespace declaration for open, batch and cascade operations.
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct ZeEmbeddedNamespaceSpec {
+    /// Prefix with abi_size = sizeof(ZeEmbeddedNamespaceSpec), has_vector_space = 2.
+    pub spec: ZeNamespaceSpec,
+    /// Immutable model pins, resolved with the standard model cache policy.
+    pub model: ZeTextModelRef,
+}
+
+/// Text query against a model-bound Store namespace.
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct ZeEmbeddedQueryRequest {
+    /// sizeof(ZeEmbeddedQueryRequest).
+    pub abi_size: u32,
+    /// Must be zero.
+    pub abi_reserved: u32,
+    /// Borrowed UTF-8 query bytes.
+    pub text: *const u8,
+    /// Query byte length.
+    pub text_len: usize,
+    /// 0 dense, 1 lexical, 2 hybrid.
+    pub leg: i32,
+    /// Set to one to intersect with eligible_ids, including an empty set.
+    pub has_eligible: u32,
+    /// Borrowed full-width parent ids.
+    pub eligible_ids: *const ZeDocId,
+    /// Number of eligible ids.
+    pub eligible_count: usize,
+    /// Optional Store attribute and timestamp filter.
+    pub constraints: *const ZeQueryFilter,
+    /// Maximum returned chunks.
+    pub k: usize,
+    /// Optional cancellation handle.
+    pub cancel_token: ZeCancelToken,
+    /// Optional relative deadline in nanoseconds.
+    pub deadline_ns: u64,
+}
+
+/// Caller-owned ranking and source coordinates for one returned document entry.
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct ZeChunkRank {
+    /// Zero-based chunk number.
+    pub chunk: usize,
+    /// Inclusive UTF-8 offset.
+    pub byte_start: usize,
+    /// Exclusive UTF-8 offset.
+    pub byte_end: usize,
+    /// Larger is better.
+    pub score: f64,
 }

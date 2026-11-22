@@ -499,10 +499,16 @@ impl<'a, 'b, 'c> GraphBatch<'a, 'b, 'c> {
         let mut writes = std::borrow::Cow::Borrowed(self.writes);
         if self.node_documents.is_empty() {
             admit_preparation(store, &writes)?;
-            return Ok(BoundGraphBatch {
-                writes,
-                documents: self.documents.map(std::borrow::Cow::Borrowed),
-            });
+            let mut documents = self.documents.map(std::borrow::Cow::Borrowed);
+            if store.is_embedded()
+                && let Some(batch) = &mut documents
+            {
+                batch
+                    .to_mut()
+                    .embed_documents(store)
+                    .map_err(|error| GraphStoreError::graph(NativeGraphError::Store(error)))?;
+            }
+            return Ok(BoundGraphBatch { writes, documents });
         }
         if self.documents.is_some() {
             return Err(GraphStoreError::graph(NativeGraphError::Stage(
@@ -548,6 +554,9 @@ impl<'a, 'b, 'c> GraphBatch<'a, 'b, 'c> {
             };
             documents.push(linked.document.clone());
         }
+        store
+            .prepare_embedded(&mut documents)
+            .map_err(|error| GraphStoreError::graph(NativeGraphError::Store(error)))?;
         let mut input_bytes = 0_u64;
         // Minimum Begin/Commit envelope (512 bytes) and its mixed wrapper.
         // Count submitted mutation/document bytes before staging. Inventory
@@ -987,6 +996,20 @@ impl GraphStoreError {
     #[must_use]
     pub fn nothing_committed(&self) -> bool {
         self.kind() != GraphStoreErrorKind::WriteIndeterminate
+    }
+
+    /// Model refusal while resolving a query string to vector coordinates.
+    pub fn embedding_error(&self) -> Option<&crate::lifecycle::StoreError> {
+        use crate::property_graph::query::runtime::NativeExecutionError;
+        use crate::property_graph::retrieval::RetrievalError;
+        if let Cause::Query(query) = &self.cause
+            && let GraphQueryCause::Execution(NativeExecutionError::Retrieval(
+                RetrievalError::Embedding(error),
+            )) = query.cause()
+        {
+            return Some(error);
+        }
+        None
     }
 
     /// The staging refusal, when staging rejected the batch. Key lifecycle

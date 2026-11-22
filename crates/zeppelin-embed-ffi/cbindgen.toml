@@ -15,6 +15,9 @@ usize_is_size_t = true
 tab_width = 4
 line_length = 80
 
+[export]
+include = ["ZeEmbeddedNamespaceSpec"]
+
 [export.rename]
 "ZeHandle" = "ze_handle"
 "ZeCancelToken" = "ze_cancel_token"

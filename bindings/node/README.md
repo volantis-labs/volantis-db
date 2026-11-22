@@ -720,3 +720,51 @@ overrides the download endpoint. `TextStore.openAsync(path, bundlePath)` opens a
 preinstalled bundle. See the [model card](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/d64b817c4021a3f1b9bded3152d9afdf9ac813e7/README.md)
 and [root text API guide](../../README.md#text-api-macos-apple-silicon) for model
 limits, download size, and measured performance.
+
+### Embedded namespaces
+
+`openNamespace` and `openNamespaceAsync` accept an `embeddedModel` with
+`repo`, `revision` and `manifestSha256`. Use the same pinned spec when reopening
+the namespace or naming it in a namespace batch. The model supplies the vector
+dimensions. A text-enabled build and the resolved model are required.
+
+```js
+const spec = {
+  embeddedModel: modelRef,
+  attributes: [{ id: 1, name: 'meeting', type: 'id128', nullable: false }]
+};
+const notes = await openNamespaceAsync(root, 'notes', spec, options);
+const meeting = { id: 1, type: 'id128', value: meetingId };
+await notes.upsertAsync([{ id: noteId, revision: 1n, text: transcript, attributes: [meeting] }]);
+const hits = await notes.queryEmbeddedAsync({
+  text: 'delivery dates', leg: 'hybrid', k: 5,
+  filter: { op: 'eq', attributeId: 1, values: [meeting] }
+});
+```
+
+The synchronous form is `notes.queryEmbedded(request)`. Choose `dense`,
+`lexical` or `hybrid`. Dense search uses the query tower and exact squared L2.
+Lexical search uses BM25. Hybrid combines both rankings by reciprocal rank.
+The Store filter AST, timestamp range and eligible document IDs restrict both
+legs before ranking. Hits contain `id`, `revision`, `timestamp`, `attributes`,
+`score`, zero-based `chunk`, `text`, and half-open UTF-8 offsets `byteStart`
+and `byteEnd`. Slice `Buffer.from(transcript)` to use these byte offsets.
+
+After `enableGraph()`, use `CALL ze.vector_search($text, 5, 'exact') YIELD node
+RETURN node` or `CALL ze.hybrid_search($text, 5, 'exact') YIELD node RETURN node`.
+Cypher returns one result per document and uses its first chunk as the document
+vector and its whole source for lexical search. Chunk search scores each chunk.
+A text vector argument requires a registered embedder and otherwise reports
+`ZE_ERR_MISSING_EMBEDDER`.
+
+Each source revision occupies one Store row. The namespace epoch carries the
+pinned model declaration. The row metadata envelope stores the caller metadata
+followed by chunk byte ranges and little-endian float vectors. Normal Store
+reads expose the caller metadata. Replacing or deleting the row retires all of
+its chunks. Store verification covers the persisted row bytes.
+
+C callers pass a size-versioned `ZeEmbeddedNamespaceSpec` through its
+`ZeNamespaceSpec` prefix with `has_vector_space = 2`. Pass a
+`ZeEmbeddedQueryRequest` to `ze_query_embedded` with space for `k` chunk ranks.
+The returned `ZeGetResult` owns the parallel hit rows, text and attributes.
+Release that result with `ze_get_result_free`.

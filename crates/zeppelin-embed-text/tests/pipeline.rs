@@ -126,3 +126,50 @@ fn back_pressure_bounds_in_flight_batches_to_the_channel_capacity() {
 
     assert!(report.max_in_flight_batches <= capacity);
 }
+
+#[test]
+fn namespace_model_chunks_and_queries_the_source_document() {
+    use zeppelin_embed::ingest::{DocId, DocumentVersion, IngestBatch, IngestDocument, Revision};
+    use zeppelin_embed::lifecycle::{
+        CancelToken, OpenOptions, QueryControl, Store, embedded::EmbeddedLeg,
+    };
+    let dir = tempdir().expect("directory");
+    let path = dir.path().join("fixture.zem");
+    common::write_fixture_bundle(
+        &path,
+        &[
+            common::FixtureTower::document("document"),
+            common::FixtureTower::query("query"),
+        ],
+        b"pair",
+    );
+    let model = zeppelin_embed_text::NamespaceModel::open_bundle(&path).expect("fixture model");
+    let store = Store::open_embedded(
+        dir.path().join("notes"),
+        OpenOptions::new(),
+        std::sync::Arc::new(model),
+    )
+    .expect("namespace");
+    let text = "bronze zeppelin ".repeat(32);
+    let id = DocId::new(u128::MAX);
+    store
+        .ingest(IngestBatch::new(vec![
+            IngestDocument::new(DocumentVersion::new(id, Revision::new(6)), vec![])
+                .with_text(&text),
+        ]))
+        .expect("ingest");
+    let hits = store
+        .query_embedded(
+            "bronze",
+            EmbeddedLeg::Hybrid,
+            2,
+            None,
+            QueryControl::Cancel(CancelToken::new()),
+        )
+        .expect("query");
+    assert_eq!(hits.len(), 2);
+    for hit in hits {
+        assert_eq!(hit.version.doc_id(), id);
+        assert_eq!(text.get(hit.bytes), Some(hit.text.as_str()));
+    }
+}

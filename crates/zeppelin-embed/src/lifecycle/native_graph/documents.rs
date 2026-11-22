@@ -137,6 +137,9 @@ impl NativeReadLease {
                 )?);
             }
         }
+        if let Some(doc) = &mut result {
+            documents.snapshot.expose_metadata(doc, fields)?;
+        }
         Ok(result)
     }
 

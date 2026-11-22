@@ -13,6 +13,7 @@ pub(crate) enum RetrievalError {
     Control(RuntimeError),
     Eligibility(QueryError),
     NoVectorSpace,
+    Embedding(crate::lifecycle::StoreError),
     Dimension {
         expected: usize,
         actual: usize,

@@ -372,3 +372,19 @@ python -m build --wheel bindings/python
 
 Zeppelin Embed is free software licensed under the
 [GNU General Public License v3.0](LICENSE).
+
+### Embedded text in a Store namespace
+
+Declare a Node namespace with `embeddedModel` and the same immutable model
+reference used by `TextStore.openModel`. Supply source text on ordinary Store
+upserts. The engine chunks the source with the document tokenizer and generates
+its vectors. The parent ID stays 128 bits. Its revision, attributes, namespace
+transaction and cascade rules govern every chunk. Store backups and read-only
+snapshots carry the source and vectors. Reopen with the same model declaration
+to embed new queries.
+
+Use `queryEmbedded` or `queryEmbeddedAsync` to retrieve chunks, or use Cypher
+text arguments to retrieve document nodes. The separate `TextStore` API remains
+available. This surface ships in Rust, C and Node with TypeScript declarations.
+Python and Swift bindings are outside the scope of this feature.
+[Node usage and C ownership](bindings/node/README.md#embedded-namespaces)

@@ -147,7 +147,9 @@ fn stage_code(error: &StageError) -> ZeErrorCode {
 /// classification is `ZE_ERR_ENDPOINT` for statements (incident and entity
 /// rules) and `ZE_ERR_KEY_CONFLICT` otherwise.
 pub(crate) fn store_error(error: &GraphStoreError, statement: bool) -> FfiError {
-    let code = if let Some(stage) = error.stage_error() {
+    let code = if let Some(model) = error.embedding_error() {
+        FfiError::store_code(model)
+    } else if let Some(stage) = error.stage_error() {
         stage_code(stage)
     } else {
         store_error_code(error.kind(), statement)

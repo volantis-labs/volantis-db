@@ -305,6 +305,18 @@ const ABI_REGISTRY: &[AbiEntry] = &[
         coverage: AbiCoverage::InvalidProbe(probe_query_with_snippets),
     },
     AbiEntry {
+        name: "ze_query_embedded",
+        coverage: AbiCoverage::InvalidProbe(|context| {
+            ProbeResult::Status(ze_query_embedded(
+                context.store.handle,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+            ))
+        }),
+    },
+    AbiEntry {
         name: "ze_query_filtered",
         coverage: AbiCoverage::InvalidProbe(probe_query_filtered),
     },

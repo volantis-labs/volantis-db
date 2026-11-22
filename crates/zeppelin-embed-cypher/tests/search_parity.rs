@@ -394,3 +394,48 @@ fn ze58_modality_values_and_reports_match_independent_plans() {
         assert_eq!(actual.metadata().generation, expected.metadata().generation);
     }
 }
+
+#[path = "../../zeppelin-embed/tests/test_support/namespace_model.rs"]
+mod namespace_model;
+
+#[test]
+fn cypher_query_text_finds_the_embedded_store_document() {
+    use zeppelin_embed::ingest::{DocId, DocumentVersion, IngestBatch, IngestDocument, Revision};
+    use zeppelin_embed_cypher::{CompileLimits, execute};
+    let path = support::unique_temp_dir("embedded-cypher");
+    let store = Store::open_embedded(
+        &path,
+        zeppelin_embed::lifecycle::OpenOptions::new().with_max_resident_bytes(256 * 1024 * 1024),
+        std::sync::Arc::new(namespace_model::Model),
+    )
+    .unwrap();
+    store.enable_graph().unwrap();
+    store
+        .ingest(IngestBatch::new(vec![
+            IngestDocument::new(
+                DocumentVersion::new(DocId::new(u128::MAX), Revision::new(4)),
+                vec![],
+            )
+            .with_text("target"),
+        ]))
+        .unwrap();
+    for procedure in [
+        "vector_search('target',1,'exact')",
+        "hybrid_search('target',1,'exact')",
+    ] {
+        let query = format!("CALL ze.{procedure} YIELD node RETURN ze.node_id(node) AS id");
+        let result = execute(
+            &store,
+            &search::control(),
+            &GraphQueryOptions::default(),
+            &query,
+            &[],
+            CompileLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(result.metadata().rows, 1);
+        assert!(bag(&result)[0].contains("ffffffffffffffffffffffffffffffff"));
+    }
+    drop(store);
+    std::fs::remove_dir_all(path).unwrap();
+}

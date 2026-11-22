@@ -329,7 +329,11 @@ impl Walk<'_> {
         let schema = Arc::new(manifest.schema.clone());
         for expected in &manifest.segments {
             self.report.segments_checked = self.report.segments_checked.saturating_add(1);
-            self.segment(expected, &schema);
+            self.segment(
+                expected,
+                &schema,
+                embedded_dims(manifest, expected.epoch_id),
+            );
         }
     }
 
@@ -534,7 +538,7 @@ impl Walk<'_> {
         }
     }
 
-    fn segment(&mut self, expected: &SegmentMeta, schema: &Arc<Schema>) {
+    fn segment(&mut self, expected: &SegmentMeta, schema: &Arc<Schema>, embedded: Option<usize>) {
         let file = expected.id.file_name();
         let path = self.directory.join(&file);
         let reader = match SegmentReader::open_with_collection_schema(
@@ -597,6 +601,25 @@ impl Walk<'_> {
         if let Err(error) = reader.validate_all() {
             self.record(FindingKind::SegmentCorrupt, &file, None, error.to_string());
             return;
+        }
+        if let Some(dims) = embedded
+            && let (Ok(text), Ok(metadata)) = (reader.stored_text(), reader.stored_metadata())
+        {
+            for row in 0..expected.row_count as usize {
+                if let Err(error) = crate::lifecycle::embedded::verify_row(
+                    text.and_then(|t| t.row(row)).flatten(),
+                    metadata.and_then(|m| m.row(row)),
+                    dims,
+                ) {
+                    self.record(
+                        FindingKind::SegmentIndexInvalid,
+                        &file,
+                        None,
+                        format!("embedded row {row}: {error}"),
+                    );
+                    break;
+                }
+            }
         }
         if let Err(error) = decode_regions(&reader) {
             self.record(
@@ -797,11 +820,33 @@ impl Walk<'_> {
             None,
         );
         match recovered {
-            Ok(_recovered) =>
-            {
+            Ok(recovered) => {
+                if let Some(dims) =
+                    decoded.and_then(|m| embedded_dims(m, m.epoch_alias.map(|e| e.embedding)))
+                {
+                    let segment = &recovered.active.segment;
+                    for row in 0..segment.row_count() {
+                        let validation = segment.text(row).and_then(|text| {
+                            crate::lifecycle::embedded::verify_row(
+                                text,
+                                segment.metadata(row),
+                                dims,
+                            )
+                        });
+                        if let Err(error) = validation {
+                            self.record(
+                                FindingKind::WalRecordInvalid,
+                                WAL_FILE,
+                                None,
+                                format!("embedded row {row}: {error}"),
+                            );
+                            break;
+                        }
+                    }
+                }
                 #[cfg(feature = "graph-cypher")]
                 if let Some(manifest) = decoded {
-                    self.graph_replay(manifest, &_recovered.graph);
+                    self.graph_replay(manifest, &recovered.graph);
                 }
             }
             Err(error) => {
@@ -826,6 +871,20 @@ impl Walk<'_> {
         }
         Ok(())
     }
+}
+
+fn embedded_dims(manifest: &Manifest, id: Option<crate::epoch::EpochId>) -> Option<usize> {
+    manifest
+        .epochs
+        .iter()
+        .find(|epoch| {
+            Some(epoch.id) == id
+                && epoch
+                    .embedding
+                    .alignment_digest
+                    .starts_with(crate::lifecycle::embedded::EPOCH_TAG)
+        })
+        .map(|e| e.embedding.document.dims as usize)
 }
 
 /// Runs every typed decoder whose region is present. Each decoder also checks

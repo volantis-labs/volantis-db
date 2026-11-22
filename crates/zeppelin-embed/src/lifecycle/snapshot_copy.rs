@@ -119,7 +119,24 @@ impl Store {
     /// read-write restores exactly the state at the returned generation.
     pub fn write_snapshot(&self, target: impl AsRef<Path>) -> Result<u64, StoreError> {
         let target = resolve_target(&self.directory, target.as_ref())?;
-        let pinned = self.pin_snapshot()?;
+        let mut pinned = self.pin_snapshot()?;
+        // A standalone backup has no namespace coordinator. Absorb prepared
+        // frames into ordinary segments before exporting an embedded namespace.
+        while self.is_embedded()
+            && pinned
+                .wal_records
+                .iter()
+                .any(|r| r.op == crate::ingest::wal_payload::PREPARED_MUTATION_V1)
+        {
+            let generation = pinned.lease.generation();
+            drop(pinned);
+            if self.seal()? == generation {
+                return Err(StoreError::SnapshotPin {
+                    detail: "could not checkpoint prepared namespace records",
+                });
+            }
+            pinned = self.pin_snapshot()?;
+        }
         let vfs = self.vfs.as_ref();
         let staging = target.staging_path();
         vfs.create_directory(&staging)
@@ -242,6 +259,7 @@ impl Store {
         // A standalone copy cannot carry the parent transaction authority.
         #[cfg(feature = "graph-cypher")]
         if published.graph_enabled
+            && !self.is_embedded()
             && wal_records
                 .iter()
                 .any(|record| record.op == crate::ingest::wal_payload::PREPARED_MUTATION_V1)
@@ -267,6 +285,40 @@ impl Store {
             }
         } else {
             wal_first_seq
+        };
+        // With an empty active segment, all live documents and tombstones
+        // already reside in the pinned segments. The graph tail was folded
+        // above. The exported manifest can therefore cover the entire WAL,
+        // including a delete-only namespace batch with no segment to seal.
+        let (manifest, wal_first_seq, wal_records) = if self.is_embedded()
+            && active.segment.is_empty()
+            && wal_records
+                .iter()
+                .any(|r| r.op == crate::ingest::wal_payload::PREPARED_MUTATION_V1)
+        {
+            let bytes = manifest.as_deref().ok_or(StoreError::SnapshotPin {
+                detail: "prepared namespace lacks a manifest",
+            })?;
+            let mut portable =
+                decode_manifest("snapshot manifest", bytes).map_err(StoreError::Manifest)?;
+            portable.generation = generation;
+            portable.log_seq = writer.durable_end();
+            #[cfg(feature = "graph-cypher")]
+            if let Some(graph) = &mut portable.graph {
+                graph.graph_absorbed_through = portable.log_seq;
+                graph.generation_absorbed_through = Some(portable.log_seq);
+            }
+            let next = portable
+                .log_seq
+                .checked_add(1)
+                .ok_or(StoreError::GenerationOverflow)?;
+            (
+                Some(crate::manifest::encode_manifest(&portable).map_err(StoreError::Manifest)?),
+                LogSeq::new(next),
+                Vec::new(),
+            )
+        } else {
+            (manifest, wal_first_seq, wal_records)
         };
         drop(active_slot);
         drop(wal);

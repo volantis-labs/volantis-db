@@ -314,11 +314,26 @@ impl<'v, 'm, 'g> SearchAdapter<'v, 'm, 'g> for NativeSearchAdapter<'_> {
                 }
                 SearchArguments::Vector { vector, mode }
                 | SearchArguments::Hybrid { vector, mode, .. } => {
+                    let coordinates = match vector {
+                        QueryValue::String(text) => {
+                            let values = self
+                                .store
+                                .embed_query(text)
+                                .map_err(RetrievalError::Embedding)?;
+                            let mut coords = QueryArena::new(context.memory(), values.len())
+                                .map_err(RuntimeError::Memory)?;
+                            for value in values {
+                                coords.push(value).map_err(RuntimeError::Memory)?;
+                            }
+                            coords
+                        }
+                        QueryValue::List(list) => copy_vector(context.memory(), list)?,
+                        _ => return Err(RuntimeError::Value(QueryError::Type).into()),
+                    };
                     let tower = binding
                         .interpretation
                         .embedding()
                         .ok_or(RetrievalError::NoVectorSpace)?;
-                    let coordinates = copy_vector(context.memory(), vector)?;
                     context.charge(
                         crate::property_graph::query::runtime::WorkKind::VectorCoordinates,
                         coordinates.len() as u64,

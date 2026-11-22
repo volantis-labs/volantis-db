@@ -131,6 +131,7 @@ impl Store {
             #[cfg(any(test, feature = "test-seams"))]
             text_materialization_work: super::materialize::TestMaterializationWork::default(),
             epoch: self.epoch.clone(),
+            embedder: self.embedder.clone(),
             epoch_alias: crate::epoch::EpochAliasCell::new(self.epoch_alias.load()),
             tokenizer: self.tokenizer.clone(),
             schema: self.schema.clone(),

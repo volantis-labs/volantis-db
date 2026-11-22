@@ -158,6 +158,11 @@ pub struct IngestDocument {
 }
 
 impl IngestDocument {
+    pub(crate) fn set_embedded(&mut self, vector: Vec<f32>, metadata: Vec<u8>) {
+        self.vector = vector;
+        self.metadata = metadata;
+        self.metadata_present = true;
+    }
     /// Constructs one document upsert.
     #[must_use]
     pub fn new(version: DocumentVersion, vector: Vec<f32>) -> Self {
@@ -330,6 +335,12 @@ impl DeleteBatch {
 }
 
 impl IngestBatch {
+    pub(crate) fn embed_documents(&mut self, store: &Store) -> Result<(), StoreError> {
+        store.prepare_embedded(&mut self.documents)?;
+        self.epoch = self.epoch.or(store.epoch_identity());
+        Ok(())
+    }
+
     /// Takes ownership of the upserts in caller order.
     #[must_use]
     pub const fn new(documents: Vec<IngestDocument>) -> Self {
@@ -1253,7 +1264,10 @@ impl Store {
     }
 
     /// Commits one active-segment upsert and returns its WAL/generation coordinates.
-    pub fn ingest(&self, batch: IngestBatch) -> Result<IngestAck, IngestError> {
+    pub fn ingest(&self, mut batch: IngestBatch) -> Result<IngestAck, IngestError> {
+        if self.is_embedded() {
+            batch.embed_documents(self)?;
+        }
         #[cfg(feature = "graph-cypher")]
         {
             self.with_native_document_recovery(

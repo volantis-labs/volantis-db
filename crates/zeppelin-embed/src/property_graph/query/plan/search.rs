@@ -52,7 +52,14 @@ pub(super) fn validate(
             eligible,
             ..
         } => {
-            argument(description, vector, ValueKinds::LIST, input, seen, context)?;
+            argument(
+                description,
+                vector,
+                ValueKinds::LIST.union(ValueKinds::STRING),
+                input,
+                seen,
+                context,
+            )?;
             (k, eligible)
         }
         SearchRequest::Hybrid {
@@ -62,7 +69,14 @@ pub(super) fn validate(
             eligible,
             ..
         } => {
-            argument(description, vector, ValueKinds::LIST, input, seen, context)?;
+            argument(
+                description,
+                vector,
+                ValueKinds::LIST.union(ValueKinds::STRING),
+                input,
+                seen,
+                context,
+            )?;
             argument(description, text, ValueKinds::STRING, input, seen, context)?;
             (k, eligible)
         }
