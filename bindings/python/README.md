@@ -30,6 +30,13 @@ An invalid override fails loudly and does not fall back to another library.
 The arm64 wheel (the only published wheel, including text) requires macOS 13
 or newer on Apple silicon. Other platforms are not part of this PyPI release.
 
+## Graph support
+
+The Python wheel ships without graph support. The `Store` methods
+`enable_graph()`, `graph_apply()`, `graph_query()`, `cypher()`, `get_nodes()`,
+`get_relationships()`, and `graph_resources()` raise
+`zeppelin_embed.UnsupportedBuild` (`ZE_ERR_GRAPH_UNSUPPORTED_BUILD`).
+
 ## Text API (macOS arm64)
 
 Apple silicon wheels include the text feature and MLX's `mlx.metallib` beside

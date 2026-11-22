@@ -93,13 +93,13 @@ cargo add zeppelin-embed
 
 ## Language APIs
 
-| API | Distribution | Example |
-|---|---|---|
-| Python | PyPI wheel with the native library included | [`five_vectors_search.py`](bindings/python/examples/five_vectors_search.py) |
-| Rust | [`zeppelin-embed`](crates/zeppelin-embed) on crates.io | [`five_vectors_search.rs`](crates/zeppelin-embed/examples/five_vectors_search.rs) |
-| Swift | Swift Package Manager with a downloadable XCFramework | [`five_vectors_search.swift`](bindings/swift/Examples/FiveVectorsSearch/Sources/FiveVectorsSearch/five_vectors_search.swift) |
-| C/C++ | GitHub release archive with the header and `.a`/`.dylib` libraries | [`five_vectors_search.c`](crates/zeppelin-embed-ffi/examples/five_vectors_search.c) |
-| Node.js / TypeScript | [`@zepdb/zeppelin-embed`](https://www.npmjs.com/package/@zepdb/zeppelin-embed) with the native addon included | [`javascript.cjs`](bindings/node/examples/javascript.cjs) / [`typescript.ts`](bindings/node/examples/typescript.ts) |
+| Language | Distribution | API reference | Example |
+|---|---|---|---|
+| Python | PyPI wheel with the native library included | [Package exports](bindings/python/zeppelin_embed/__init__.pyi), [Store methods](bindings/python/zeppelin_embed/_store.py), [guide](bindings/python/README.md) | [`five_vectors_search.py`](bindings/python/examples/five_vectors_search.py) |
+| Rust | [`zeppelin-embed`](crates/zeppelin-embed) on crates.io | [Public exports](crates/zeppelin-embed/src/lib.rs) | [`five_vectors_search.rs`](crates/zeppelin-embed/examples/five_vectors_search.rs) |
+| Swift | Swift Package Manager with a downloadable XCFramework | [Public types and methods](bindings/swift/Sources/ZeppelinEmbed), [guide](bindings/swift/README.md) | [`five_vectors_search.swift`](bindings/swift/Examples/FiveVectorsSearch/Sources/FiveVectorsSearch/five_vectors_search.swift) |
+| C/C++ | GitHub release archive with the header and `.a`/`.dylib` libraries | [C ABI](crates/zeppelin-embed-ffi/include/zeppelin_embed.h), [graph C ABI](crates/zeppelin-embed-ffi/include/zeppelin_graph_contracts.h) | [`five_vectors_search.c`](crates/zeppelin-embed-ffi/examples/five_vectors_search.c) |
+| Node.js / TypeScript | [`@zepdb/zeppelin-embed`](https://www.npmjs.com/package/@zepdb/zeppelin-embed) with the native addon included | [TypeScript declarations](bindings/node/index.d.ts), [guide](bindings/node/README.md) | [`javascript.cjs`](bindings/node/examples/javascript.cjs) / [`typescript.ts`](bindings/node/examples/typescript.ts) |
 
 The C ABI uses size-versioned requests and responses, typed error codes, and
 matching free functions for every callee-owned result. Python wheels include
@@ -273,34 +273,43 @@ strings and must be freed once with `ze_text_query_result_free`. The V2 ingest
 and query functions add cancellation, deadlines, and diagnostics; the original
 functions above remain supported.
 
-## Graph APIs in 0.6.0
+## Graph APIs
 
-`@zepdb/zeppelin-embed` ships a labelled graph MVP on darwin-arm64,
-darwin-x64 and win32-x64 (Node-API 8 and Electron 44). The macOS deployment
-target remains 11; `GraphStore` requires macOS 14 and refuses older systems.
+Node ships graph support in the `darwin-arm64`, `darwin-x64` and `win32-x64`
+prebuilds. On macOS, graph operations require macOS 14 or newer. Check
+`Store.graphSupported()` for availability and call `enableGraph()` on the
+`Store` before using its graph. When graph is unavailable, graph methods throw
+`ZeppelinError` with code `ZE_ERR_GRAPH_UNSUPPORTED_BUILD`.
 
 ```js
-const { GraphStore } = require('@zepdb/zeppelin-embed');
-const graph = GraphStore.open('/path/to/new-graph');
+const { Store } = require('@zepdb/zeppelin-embed');
+const store = new Store('/path/to/store', { maxResidentBytes: 268435456n });
 try {
-  graph.apply([{ kind: 'node', operation: 'create', namespace: 'notes',
+  store.enableGraph();
+  store.graphApply([{ kind: 'node', operation: 'create', namespace: 'notes',
     key: 'first', revision: 1n, labels: ['Note'],
     properties: { title: 'Planning' } }]);
-  console.log(graph.cypher('MATCH (n:Note) RETURN n.title').rows);
+  console.log(store.cypher('MATCH (n:Note) RETURN n.title').rows);
 } finally {
-  graph.close();
+  store.close();
 }
 ```
 
-See the [Node graph API](bindings/node/README.md#graph-documents-and-cypher--060-mvp)
-and [release limits](CHANGELOG.md#distribution-limits). Cypher writes are bounded
-(about 121 created nodes per statement); results default to 1,024 rows with
-`maxRows` up to 65,536. Graph search in Cypher and full graph qualification
-are deferred. Only the Rust core publishes to crates.io. The graph C SDK and
-`ZeppelinEmbedGraph` XCFramework ship as GitHub release assets for macOS 14+
-arm64. The Swift graph subpackage is not yet remotely resolvable through
-SwiftPM (ZE-322). Node does not yet expose structured graph query,
-node/relationship getters or resource APIs.
+Use `graphQuery()` to execute a structured plan, `graphGetNodes()` and
+`graphGetRelationships()` to fetch records by ID, and `graphResources()` to read
+allocation counters. Cypher results default to 1,024 rows. Set `maxRows` up to
+65,536, subject to engine budgets. A Cypher write creates about 121 nodes
+per statement under default budgets. See the
+[Node graph API](bindings/node/README.md#graph-documents-and-cypher).
+
+The graph C SDK and `ZeppelinEmbedGraph` XCFramework ship as GitHub release
+assets for macOS 14+ on Apple silicon. Set `ZE_ENABLE_GRAPH=1` when resolving
+and building the Swift package to select the graph XCFramework and expose
+graph methods on `ZeppelinStore`. See the [Swift guide](bindings/swift/README.md).
+
+The Python wheel ships without graph support. Its `Store` graph methods raise
+`zeppelin_embed.UnsupportedBuild`. See the
+[Python graph support statement](bindings/python/README.md#graph-support).
 
 The model-backed text C ABI ships in the macOS 14+ arm64 full artifact
 (`ZeppelinEmbedGraph` / graph-cypher SDK); the universal, Intel and non-macOS
