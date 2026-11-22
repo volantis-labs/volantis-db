@@ -36,6 +36,40 @@ final class RecordStoreTests: XCTestCase {
         }
     }
 
+    func testIngestRejectsAttributesBeforeWritingBatch() async throws {
+        let root = try namespaceRoot(#function)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await ZeppelinStore.openNamespace(
+            root: root,
+            name: "ingest",
+            spec: NamespaceSpec(
+                attributes: [
+                    AttributeDefinition(id: 1, name: "category", type: .dictionaryString, nullable: true)
+                ],
+                vectorSpace: VectorSpace(dimensions: 2, normalization: .unitL2)
+            )
+        )
+        let plain = DocumentID(high: 0, low: 1)
+        let attributed = DocumentID(high: 0, low: 2)
+        do {
+            _ = try await store.ingest([
+                IngestDocument(id: plain, revision: 1, timestamp: 1, vector: [1, 0]),
+                IngestDocument(
+                    id: attributed, revision: 1, timestamp: 1, vector: [0, 1],
+                    attributes: [1: .string("alpha")]
+                )
+            ])
+            XCTFail("ingest accepted a batch containing document attributes")
+        } catch let error as ZeppelinIngestError {
+            XCTAssertEqual(error, .attributesRequireUpsert)
+            XCTAssertTrue(error.localizedDescription.contains("upsert"))
+        }
+
+        let result = try await store.get([plain, attributed])
+        XCTAssertEqual(result.missingCount, 2)
+        try await store.close()
+    }
+
     func testUpsertEveryAttributeTypeRoundTripsThroughGet() async throws {
         let root = try namespaceRoot(#function)
         defer { try? FileManager.default.removeItem(at: root) }

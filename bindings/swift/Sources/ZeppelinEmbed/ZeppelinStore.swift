@@ -8,6 +8,14 @@ struct ReopenConfiguration: Sendable {
     var namespace: NamespaceReopenConfiguration? = nil
 }
 
+public enum ZeppelinIngestError: LocalizedError, Sendable {
+    case attributesRequireUpsert
+
+    public var errorDescription: String? {
+        "Use ZeppelinStore.upsert(_:) to write documents with attributes."
+    }
+}
+
 @available(macOS 14.0, iOS 17.0, *)
 public actor ZeppelinStore {
     private var handle: UInt64?
@@ -145,8 +153,12 @@ public actor ZeppelinStore {
         }
     }
 
+    /// Ingests an attribute-free batch. Use `upsert(_:)` to write attributes.
     public func ingest(_ documents: [IngestDocument]) async throws -> MutationReport {
         let current = try openHandle()
+        guard documents.allSatisfy({ $0.attributes.isEmpty }) else {
+            throw ZeppelinIngestError.attributesRequireUpsert
+        }
         let vectors = documents.flatMap(\.vector)
         let metadata = documents.flatMap { Array($0.metadata) }
         let texts = documents.flatMap { document in

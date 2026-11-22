@@ -21,6 +21,13 @@ folder: the engine owns its rename, lock, and durability protocol.
 The host owns maintenance scheduling. The package does not register or schedule
 background work.
 
+### Write documents with attributes
+
+Use `try await store.upsert(documents)` to store `IngestDocument.attributes`.
+`ZeppelinStore.ingest(_:)` accepts attribute-free batches. If any document
+carries attributes, ingest throws `ZeppelinIngestError.attributesRequireUpsert`
+before writing any document in the batch.
+
 ### Prepare lexical queries after open
 
 Use `try await store.warmLexical()` before exact or `lastAsPrefix` queries.
