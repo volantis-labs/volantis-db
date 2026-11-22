@@ -7,11 +7,27 @@ public enum ScanOrder: Int32, Sendable {
     case timestampDescending = 2
 }
 
+public struct AttributeScanOrder: Sendable {
+    public enum Direction: Sendable {
+        case ascending
+        case descending
+    }
+
+    public let attributeID: UInt32
+    public let direction: Direction
+
+    public init(attributeID: UInt32, direction: Direction) {
+        self.attributeID = attributeID
+        self.direction = direction
+    }
+}
+
 public struct ScanCursor: Sendable {
     let generation: UInt64
     let segmentID: [UInt8]
     let row: UInt32
     let phase: UInt32
+    let order: (code: Int32, attributeID: UInt32)
 }
 
 public struct ScanPage: Sendable {
@@ -23,6 +39,28 @@ public struct ScanPage: Sendable {
 public struct CountResult: Sendable {
     public let count: UInt64
     public let generation: UInt64
+}
+
+public struct CountGroupBy: Sendable {
+    public let attributeID: UInt32
+    public let limit: Int
+
+    public init(attributeID: UInt32, limit: Int = 1_024) {
+        self.attributeID = attributeID
+        self.limit = limit
+    }
+}
+
+public struct CountGroup: Sendable {
+    public let value: AttributeValue
+    public let count: UInt64
+}
+
+public struct GroupedCountResult: Sendable {
+    public let count: UInt64
+    public let generation: UInt64
+    public let missingCount: UInt64
+    public let groups: [CountGroup]
 }
 
 private actor DocumentStreamPager {
@@ -76,39 +114,87 @@ extension ZeppelinStore {
         cancellationToken: ZeppelinCancellationToken? = nil,
         deadlineNanoseconds: UInt64 = 0
     ) async throws -> ScanPage {
+        try await scan(
+            after: cursor,
+            limit: limit,
+            order: (order.rawValue, 0),
+            fields: fields,
+            timestampRange: timestampRange,
+            filter: filter,
+            cancellationToken: cancellationToken,
+            deadlineNanoseconds: deadlineNanoseconds
+        )
+    }
+
+    public func scan(
+        after cursor: ScanCursor? = nil,
+        limit: Int = 1_024,
+        order: AttributeScanOrder,
+        fields: DocumentFields = .all,
+        timestampRange: Range<Int64>? = nil,
+        filter: Filter? = nil,
+        cancellationToken: ZeppelinCancellationToken? = nil,
+        deadlineNanoseconds: UInt64 = 0
+    ) async throws -> ScanPage {
+        try await scan(
+            after: cursor,
+            limit: limit,
+            order: (order.direction == .ascending ? 3 : 4, order.attributeID),
+            fields: fields,
+            timestampRange: timestampRange,
+            filter: filter,
+            cancellationToken: cancellationToken,
+            deadlineNanoseconds: deadlineNanoseconds
+        )
+    }
+
+    private func scan(
+        after cursor: ScanCursor?,
+        limit: Int,
+        order: (code: Int32, attributeID: UInt32),
+        fields: DocumentFields,
+        timestampRange: Range<Int64>?,
+        filter: Filter?,
+        cancellationToken: ZeppelinCancellationToken?,
+        deadlineNanoseconds: UInt64
+    ) async throws -> ScanPage {
         let current = try openHandle()
         let token = try cancellationToken?.rawValue() ?? 0
         return try await Self.runBlocking {
             try withUnsafeFilter(filter) { filterPointer in
-                var request = ZeScanRequest()
-                request.abi_size = abiSize(ZeScanRequest.self)
+                var request = ZeScanOrderedRequest()
+                request.abi_size = abiSize(ZeScanOrderedRequest.self)
+                request.scan.abi_size = abiSize(ZeScanRequest.self)
                 if let cursor {
-                    request.cursor_generation = cursor.generation
-                    withUnsafeMutableBytes(of: &request.cursor_segment_id) { bytes in
+                    request.scan.cursor_generation = cursor.generation
+                    withUnsafeMutableBytes(of: &request.scan.cursor_segment_id) { bytes in
                         bytes.copyBytes(from: cursor.segmentID)
                     }
-                    request.cursor_next_row = cursor.row
-                    request.cursor_phase = cursor.phase
+                    request.scan.cursor_next_row = cursor.row
+                    request.scan.cursor_phase = cursor.phase
+                    request.cursor_order = cursor.order.code
+                    request.cursor_order_attribute_id = cursor.order.attributeID
                 }
-                request.limit = limit
-                request.order = order.rawValue
-                request.include_vector = fields.contains(.vector) ? 1 : 0
-                request.include_text = fields.contains(.text) ? 1 : 0
-                request.include_metadata = fields.contains(.metadata) ? 1 : 0
-                request.include_attributes = fields.contains(.attributes) ? 1 : 0
+                request.scan.limit = limit
+                request.scan.order = order.code
+                request.order_attribute_id = order.attributeID
+                request.scan.include_vector = fields.contains(.vector) ? 1 : 0
+                request.scan.include_text = fields.contains(.text) ? 1 : 0
+                request.scan.include_metadata = fields.contains(.metadata) ? 1 : 0
+                request.scan.include_attributes = fields.contains(.attributes) ? 1 : 0
                 if let timestampRange {
-                    request.has_timestamp_range = 1
-                    request.start_ts = timestampRange.lowerBound
-                    request.end_ts = timestampRange.upperBound
+                    request.scan.has_timestamp_range = 1
+                    request.scan.start_ts = timestampRange.lowerBound
+                    request.scan.end_ts = timestampRange.upperBound
                 }
-                request.filter = filterPointer
-                request.cancel_token = token
-                request.deadline_ns = deadlineNanoseconds
+                request.scan.filter = filterPointer
+                request.scan.cancel_token = token
+                request.scan.deadline_ns = deadlineNanoseconds
 
                 var result = ZeScanResult()
                 result.abi_size = abiSize(ZeScanResult.self)
+                try checkZeppelin(ze_scan_ordered(current, &request, &result))
                 defer { _ = ze_scan_result_free(&result) }
-                try checkZeppelin(ze_scan(current, &request, &result))
                 let copied = try Self.copyStoredDocuments(
                     result.documents,
                     count: result.document_count,
@@ -130,7 +216,8 @@ extension ZeppelinStore {
                         generation: result.generation,
                         segmentID: bytes,
                         row: result.next_row,
-                        phase: result.next_phase
+                        phase: result.next_phase,
+                        order: order
                     )
                 default:
                     throw ZeppelinError.internalError
@@ -170,6 +257,53 @@ extension ZeppelinStore {
                 result.abi_size = abiSize(ZeCountResult.self)
                 try checkZeppelin(ze_count(current, &request, &result))
                 return CountResult(count: result.count, generation: result.generation)
+            }
+        }
+    }
+
+    public func count(
+        groupBy: CountGroupBy,
+        filter: Filter? = nil,
+        timestampRange: Range<Int64>? = nil
+    ) async throws -> GroupedCountResult {
+        let current = try openHandle()
+        return try await Self.runBlocking {
+            try withUnsafeFilter(filter) { filterPointer in
+                var request = ZeCountGroupedRequest()
+                request.abi_size = abiSize(ZeCountGroupedRequest.self)
+                request.count.abi_size = abiSize(ZeCountRequest.self)
+                request.count.filter = filterPointer
+                if let timestampRange {
+                    request.count.has_timestamp_range = 1
+                    request.count.start_ts = timestampRange.lowerBound
+                    request.count.end_ts = timestampRange.upperBound
+                }
+                request.group_attribute_id = groupBy.attributeID
+                request.group_limit = groupBy.limit
+
+                var result = ZeCountGroupedResult()
+                result.abi_size = abiSize(ZeCountGroupedResult.self)
+                try checkZeppelin(ze_count_grouped(current, &request, &result))
+                defer { _ = ze_count_grouped_result_free(&result) }
+
+                guard let base = result.groups, result.group_count >= 0 else {
+                    throw ZeppelinError.internalError
+                }
+                let groups = try UnsafeBufferPointer(start: base, count: result.group_count).map { group in
+                    let value = try Self.attributeValue(group.value)
+                    switch value {
+                    case .u64, .i64, .string:
+                        return CountGroup(value: value, count: group.count)
+                    default:
+                        throw ZeppelinError.internalError
+                    }
+                }
+                return GroupedCountResult(
+                    count: result.count,
+                    generation: result.generation,
+                    missingCount: result.missing_count,
+                    groups: groups
+                )
             }
         }
     }

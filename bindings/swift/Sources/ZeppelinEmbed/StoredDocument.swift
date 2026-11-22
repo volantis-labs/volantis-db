@@ -143,7 +143,7 @@ extension ZeppelinStore {
         }
     }
 
-    private static func attributeValue(_ raw: ZeAttributeValue) throws -> AttributeValue {
+    static func attributeValue(_ raw: ZeAttributeValue) throws -> AttributeValue {
         switch raw.value_type {
         case 0:
             return .null

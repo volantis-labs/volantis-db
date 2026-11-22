@@ -28,6 +28,52 @@ Use `try await store.upsert(documents)` to store `IngestDocument.attributes`.
 carries attributes, ingest throws `ZeppelinIngestError.attributesRequireUpsert`
 before writing any document in the batch.
 
+### Scan in attribute order
+
+Pass an `AttributeScanOrder` to order a page by a declared `u64`, `i64`, or
+`f64` attribute. A scan accepts 1 through 1,048,576 documents per page
+and defaults to 1,024.
+
+```swift
+let order = AttributeScanOrder(attributeID: 1, direction: .descending)
+let page = try await store.scan(limit: 50, order: order)
+if let cursor = page.next {
+    let next = try await store.scan(after: cursor, limit: 50, order: order)
+    print(next.documents)
+}
+```
+
+Equal values sort by ascending document ID. Floating-point values sort
+numerically with signed zeros treated as equal. Missing and NaN values sort
+last in both directions. An unsupported or undeclared attribute, or a cursor
+used with a different order, attribute, or direction, throws
+`ZeppelinError.invalidArgument`. If a write invalidates a cursor, the next
+page throws `ZeppelinError.scanStale`. Restart the scan without a cursor.
+
+### Count by attribute
+
+Use `count(groupBy:filter:timestampRange:)` to group matching live documents
+by a declared `u64`, `i64`, `dictionaryString`, or `rawString` attribute.
+The filter and half-open timestamp range are optional.
+
+```swift
+let result = try await store.count(
+    groupBy: CountGroupBy(attributeID: 2, limit: 100),
+    timestampRange: 100..<200
+)
+for group in result.groups {
+    print(group.value, group.count)
+}
+```
+
+Group values are returned as `AttributeValue` in ascending order, using
+numeric order for integers and byte order for strings. The result reports
+one `generation`, and `count` includes both the group counts and `missingCount`
+for documents with a null attribute. The group limit defaults to 1,024 and
+accepts 1 through 65,536. Exceeding the limit throws
+`ZeppelinError.budgetExceeded`. An unsupported attribute or an out-of-range
+limit throws `ZeppelinError.invalidArgument`.
+
 ### Prepare lexical queries after open
 
 Use `try await store.warmLexical()` before exact or `lastAsPrefix` queries.
