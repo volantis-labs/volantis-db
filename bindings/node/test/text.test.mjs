@@ -166,6 +166,14 @@ test('openModel downloads pinned local fixture with progress and opens offline c
     store = await TextStore.openModel({...options, offline: true});
     assert.equal(requests.length, 2);
     assert.equal(store.query({text: 'bronze', legs: 'lexical'}).hits[0].id, id);
+    store.close(); store = undefined;
+    const limit = BigInt(process.env.ZE_MLX_CACHE_LIMIT_BYTES ?? (4n << 30n));
+    const other = {mlxCacheLimitBytes: limit ^ 1n};
+    const conflict = error => error.code === 'ZE_ERR_MLX_CACHE_LIMIT_CONFLICT' && error.errorCode === 63;
+    (await TextStore.openAsync(options.path, bundle, {mlxCacheLimitBytes: limit})).close();
+    assert.throws(() => TextStore.open(options.path, bundle, other), conflict);
+    await assert.rejects(TextStore.openAsync(options.path, bundle, other), conflict);
+    await assert.rejects(TextStore.openModel({...options, ...other, offline: true}), conflict);
     await assert.rejects(TextStore.openModel({...options, path: join(root, 'miss'), cacheDir: join(root, 'missing'), offline: true}),
       error => error.code === 'ZE_ERR_NOT_FOUND' && /offline/i.test(error.message));
   } finally {
@@ -206,4 +214,14 @@ test('default model matches Rust constant and requires complete pins', {skip: !s
     await assert.rejects(TextStore.openModel({path: join(root, 'store'), cacheDir: join(root, 'cache'), offline: true}),
       error => error.code === 'ZE_ERR_NOT_FOUND');
   } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('all text opens validate mlxCacheLimitBytes as an unsigned bigint', {skip: !supported}, async () => {
+  for (const mlxCacheLimitBytes of [-1n, 1n << 64n, 256]) {
+    const options = {mlxCacheLimitBytes};
+    const invalid = /mlxCacheLimitBytes must be an unsigned 64-bit bigint/;
+    assert.throws(() => TextStore.open('/unused', '/missing.zem', options), invalid);
+    await assert.rejects(TextStore.openAsync('/unused', '/missing.zem', options), invalid);
+    await assert.rejects(TextStore.openModel({path: '/unused', offline: true, ...options}), invalid);
+  }
 });

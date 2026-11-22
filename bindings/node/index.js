@@ -848,13 +848,13 @@ const DEFAULT_MODEL = Object.freeze({
 
 class TextStore {
   constructor(native) { this._native = native; }
-  static open(path, bundlePath) {
+  static open(path, bundlePath, {mlxCacheLimitBytes} = {}) {
     requireText();
-    return new TextStore(callNative(() => binding.textOpen({path, bundlePath})));
+    return new TextStore(callNative(() => binding.textOpen({path, bundlePath, mlxCacheLimitBytes})));
   }
-  static async openAsync(path, bundlePath) {
+  static async openAsync(path, bundlePath, {mlxCacheLimitBytes} = {}) {
     requireText();
-    try { return new TextStore(await binding.textOpenAsync({path, bundlePath})); }
+    try { return new TextStore(await binding.textOpenAsync({path, bundlePath, mlxCacheLimitBytes})); }
     catch (error) { throw translateError(error); }
   }
   static get defaultModel() { return DEFAULT_MODEL; }

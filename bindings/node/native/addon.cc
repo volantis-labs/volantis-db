@@ -213,16 +213,7 @@ bool GetOptionalBool(napi_env env, napi_value object, const char *name,
   return NapiOk(env, napi_get_value_bool(env, value, output), "read boolean");
 }
 
-bool GetOptionalUint64(napi_env env, napi_value object, const char *name,
-                       uint64_t default_value, uint64_t *output) {
-  napi_value value;
-  bool present = false;
-  if (!GetNamed(env, object, name, &value, &present))
-    return false;
-  if (!present) {
-    *output = default_value;
-    return true;
-  }
+bool GetUint64(napi_env env, napi_value value, const char *name, uint64_t *output) {
   napi_valuetype type;
   bool lossless = false;
   if (!NapiOk(env, napi_typeof(env, value, &type), "inspect bigint") ||
@@ -236,6 +227,19 @@ bool GetOptionalUint64(napi_env env, napi_value object, const char *name,
     return false;
   }
   return true;
+}
+
+bool GetOptionalUint64(napi_env env, napi_value object, const char *name,
+                       uint64_t default_value, uint64_t *output) {
+  napi_value value;
+  bool present = false;
+  if (!GetNamed(env, object, name, &value, &present))
+    return false;
+  if (!present) {
+    *output = default_value;
+    return true;
+  }
+  return GetUint64(env, value, name, output);
 }
 
 bool ParseEnum(const std::string &value, const char *const *names, size_t count,

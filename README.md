@@ -163,11 +163,22 @@ Both measurements used a warm OS file cache (ZE-503).
 MLX keeps a process-global buffer cache, capped at 4 GiB by default during text
 ingest. On an Apple M3 Max with 128 GiB, a full FiQA ingest (57,638 documents)
 with the release FP16 default model peaked at about 7.3 GB process footprint
-(about 112 GB before the cap), with max RSS about 4.8 GB. Override the cap with
-Rust's `TextOpenOptions::with_mlx_cache_limit_bytes` or
-`ZE_MLX_CACHE_LIMIT_BYTES` (bytes). Bindings expose no cache-limit option: set
-the environment variable before the first text open. Invalid values are errors;
-the first setter in a process wins.
+(about 112 GB before the cap), with max RSS about 4.8 GB. At the first text open, an explicit byte limit overrides
+`ZE_MLX_CACHE_LIMIT_BYTES`. Zero disables the buffer cache. Node accepts
+`mlxCacheLimitBytes` as a bigint on `openModel` or in the third argument to
+`open` and `openAsync`. Python accepts `mlx_cache_limit_bytes`, Swift accepts
+`mlxCacheLimitBytes`, and Rust provides `TextOpenOptions::with_mlx_cache_limit_bytes`.
+Later opens can omit the limit or repeat it. A different explicit limit returns
+`ZE_ERR_MLX_CACHE_LIMIT_CONFLICT`, even after the first store closes.
+
+**Recommended limit for an 8 GB Apple silicon Mac: 512 MiB.** Ingesting
+5,000 chunks of 200 tokens with the release model peaked at a 2.96 GiB
+footprint and 2.00 GiB RSS at 69-71 chunks/s with a 256 or 512 MiB limit;
+1 GiB raised the peak to 3.38 GiB and was slower (63 chunks/s). At rest
+after ingest RSS is about 1.6 GiB, and the document tower is released only
+when the store closes. Measured on an M3 Max with 128 GiB; an 8 GB host has
+not been measured yet.
+[Run the memory benchmark](scripts/bench-text-memory.sh).
 
 Verified-cache resolution is **about 0.19 ms** for a synthetic warm-cache
 payload (ZE-517). This measures resolution, excluding model/runtime loading.

@@ -25,7 +25,7 @@ public actor TextStore {
     deinit { if let handle { _ = ze_close(handle) } }
 
     public static func open(
-        at path: URL, bundle: URL, options: OpenOptions = OpenOptions()
+        at path: URL, bundle: URL, options: OpenOptions = OpenOptions(), mlxCacheLimitBytes: UInt64? = nil
     ) async throws -> TextStore {
         let handle = try await ZeppelinStore.runBlocking {
             try ZeppelinStore.prepareDirectory(path, options: options)
@@ -37,7 +37,15 @@ public actor TextStore {
                     request.bundle_path = bundleBytes.baseAddress
                     request.bundle_path_len = bundleBytes.count
                     var handle: UInt64 = 0
-                    try checkZeppelin(ze_text_open(&request, &handle))
+                    if let mlxCacheLimitBytes {
+                        var extended = ZeTextOpenRequestV2()
+                        extended.abi_size = abiSize(ZeTextOpenRequestV2.self)
+                        extended.open = request
+                        extended.mlx_cache_limit_bytes = mlxCacheLimitBytes
+                        try checkZeppelin(ze_text_open_v2(&extended, &handle))
+                    } else {
+                        try checkZeppelin(ze_text_open(&request, &handle))
+                    }
                     return handle
                 }
             }
@@ -50,6 +58,7 @@ public actor TextStore {
     public static func open(
         at path: URL, model: TextModel = .default, cacheDirectory: URL? = nil, offline: Bool = false,
         options: OpenOptions = OpenOptions(),
+        mlxCacheLimitBytes: UInt64? = nil,
         progress: (@Sendable (TextDownloadProgress) -> Void)? = nil
     ) async throws -> TextStore {
         let handle = try await ZeppelinStore.runBlocking {
@@ -83,7 +92,15 @@ public actor TextStore {
                                         }
                                     }
                                     var handle: UInt64 = 0
-                                    try checkZeppelin(ze_text_open_model(&request, &handle))
+                                    if let mlxCacheLimitBytes {
+                                        var extended = ZeTextOpenModelRequestV2()
+                                        extended.abi_size = abiSize(ZeTextOpenModelRequestV2.self)
+                                        extended.open = request
+                                        extended.mlx_cache_limit_bytes = mlxCacheLimitBytes
+                                        try checkZeppelin(ze_text_open_model_v2(&extended, &handle))
+                                    } else {
+                                        try checkZeppelin(ze_text_open_model(&request, &handle))
+                                    }
                                     return handle
                                 }
                             }

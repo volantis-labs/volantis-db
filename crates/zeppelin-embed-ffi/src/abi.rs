@@ -129,6 +129,8 @@ pub enum ZeErrorCode {
     ZeErrGraphDisabled = 61,
     /// A text query requires a registered namespace model.
     ZeErrMissingEmbedder = 62,
+    /// A text open requested a different process-global MLX cache limit.
+    ZeErrMlxCacheLimitConflict = 63,
 }
 
 /// Opaque generation-tagged store handle.
@@ -900,6 +902,20 @@ pub struct ZeTextOpenRequest {
     pub bundle_path_len: usize,
 }
 
+/// Size-versioned text open with an explicit MLX buffer cache limit.
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct ZeTextOpenRequestV2 {
+    /// Caller-provided structure size.
+    pub abi_size: u32,
+    /// Must be zero.
+    pub abi_reserved: u32,
+    /// Complete v1 request with its own size header.
+    pub open: ZeTextOpenRequest,
+    /// Process-global limit in bytes. Zero disables the cache.
+    pub mlx_cache_limit_bytes: u64,
+}
+
 /// Permit plain HTTP model downloads for test fixtures; tokens still require HTTPS.
 pub const ZE_MODEL_ALLOW_HTTP: u32 = 1;
 /// Authorize HF_TOKEN on HTTPS requests to the model endpoint's exact host.
@@ -953,6 +969,20 @@ pub struct ZeTextOpenModelRequest {
         Option<unsafe extern "C" fn(user_data: *mut std::ffi::c_void, done: u64, total: u64)>,
     /// Opaque caller pointer passed unchanged to progress.
     pub user_data: *mut std::ffi::c_void,
+}
+
+/// Size-versioned text open with an explicit MLX buffer cache limit.
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct ZeTextOpenModelRequestV2 {
+    /// Caller-provided structure size.
+    pub abi_size: u32,
+    /// Must be zero.
+    pub abi_reserved: u32,
+    /// Complete v1 request with its own size header.
+    pub open: ZeTextOpenModelRequest,
+    /// Process-global limit in bytes. Zero disables the cache.
+    pub mlx_cache_limit_bytes: u64,
 }
 
 /// One caller-owned text document.

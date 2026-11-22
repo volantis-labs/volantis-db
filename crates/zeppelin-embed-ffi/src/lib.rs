@@ -1363,6 +1363,7 @@ fn open_store(
 #[cfg(feature = "text")]
 fn text_open_options(
     request: ZeOpenRequest,
+    cache_limit: Option<u64>,
 ) -> Result<(String, zeppelin_embed_text::TextOpenOptions), FfiError> {
     let request = marshal::read_struct(&request)?;
     let path = marshal::utf8_without_nul(request.path, request.path_len)?.to_owned();
@@ -1380,10 +1381,15 @@ fn text_open_options(
     .with_reader_drain_timeout(Duration::from_millis(request.reader_drain_timeout_ms))
     .with_max_resident_bytes(request.max_resident_bytes)
     .with_max_temp_bytes(request.max_temp_bytes);
-    Ok((
-        path,
-        zeppelin_embed_text::TextOpenOptions::new(options, TokenizerConfig::text_default()),
-    ))
+    let mut options =
+        zeppelin_embed_text::TextOpenOptions::new(options, TokenizerConfig::text_default());
+    if let Some(limit) = cache_limit {
+        options = options.with_mlx_cache_limit_bytes(
+            usize::try_from(limit)
+                .map_err(|_| FfiError::invalid("MLX cache limit exceeds usize"))?,
+        );
+    }
+    Ok((path, options))
 }
 
 fn parse_tier(request: &ZeQueryRequest) -> Result<Option<SearchTier>, FfiError> {
@@ -2328,29 +2334,55 @@ pub extern "C" fn ze_text_open(
     out_handle: *mut ZeHandle,
 ) -> ZeErrorCode {
     ffi_entry!(None, ZeErrorCode::ZeErrPanic, {
+        finish(None, text_open_with_limit(request, None, out_handle))
+    })
+}
+
+/// Opens a text store with an explicit process-global MLX cache limit.
+#[cfg(feature = "text")]
+#[unsafe(no_mangle)]
+pub extern "C" fn ze_text_open_v2(
+    request: *const ZeTextOpenRequestV2,
+    out_handle: *mut ZeHandle,
+) -> ZeErrorCode {
+    ffi_entry!(None, ZeErrorCode::ZeErrPanic, {
         finish(
             None,
-            (|| {
-                let request = marshal::read_struct(request)?;
-                scalar_output(out_handle)?;
-                let (store_path, options) = text_open_options(request.store)?;
-                let bundle_path =
-                    marshal::utf8_without_nul(request.bundle_path, request.bundle_path_len)?;
-                if bundle_path.is_empty() {
-                    return Err(FfiError::invalid("bundle path must not be empty"));
-                }
-                let store = zeppelin_embed_text::TextStore::open(
-                    Path::new(&store_path),
-                    Path::new(bundle_path),
-                    options,
-                )
-                .map_err(FfiError::text)?;
-                let handle = text_registry::insert(store)?;
-                marshal::write_scalar(out_handle, handle);
-                Ok(())
-            })(),
+            marshal::read_struct(request)
+                .map_err(FfiError::from)
+                .and_then(|request| {
+                    text_open_with_limit(
+                        &request.open,
+                        Some(request.mlx_cache_limit_bytes),
+                        out_handle,
+                    )
+                }),
         )
     })
+}
+
+#[cfg(feature = "text")]
+fn text_open_with_limit(
+    request: *const ZeTextOpenRequest,
+    cache_limit: Option<u64>,
+    out_handle: *mut ZeHandle,
+) -> Result<(), FfiError> {
+    let request = marshal::read_struct(request)?;
+    scalar_output(out_handle)?;
+    let (store_path, options) = text_open_options(request.store, cache_limit)?;
+    let bundle_path = marshal::utf8_without_nul(request.bundle_path, request.bundle_path_len)?;
+    if bundle_path.is_empty() {
+        return Err(FfiError::invalid("bundle path must not be empty"));
+    }
+    let store = zeppelin_embed_text::TextStore::open(
+        Path::new(&store_path),
+        Path::new(bundle_path),
+        options,
+    )
+    .map_err(FfiError::text)?;
+    let handle = text_registry::insert(store)?;
+    marshal::write_scalar(out_handle, handle);
+    Ok(())
 }
 
 // ZE-501: model resolution is kept separate from the explicit-path text API.
@@ -2364,58 +2396,81 @@ pub extern "C" fn ze_text_open_model(
     out_handle: *mut ZeHandle,
 ) -> ZeErrorCode {
     ffi_entry!(None, ZeErrorCode::ZeErrPanic, {
+        finish(None, text_open_model_with_limit(request, None, out_handle))
+    })
+}
+
+/// Opens a text store with an explicit process-global MLX cache limit.
+#[cfg(feature = "text")]
+#[unsafe(no_mangle)]
+pub extern "C" fn ze_text_open_model_v2(
+    request: *const ZeTextOpenModelRequestV2,
+    out_handle: *mut ZeHandle,
+) -> ZeErrorCode {
+    ffi_entry!(None, ZeErrorCode::ZeErrPanic, {
         finish(
             None,
-            (|| {
-                let request = marshal::read_struct(request)?;
-                scalar_output(out_handle)?;
-                if request.flags & !(ZE_MODEL_ALLOW_HTTP | ZE_MODEL_SEND_TOKEN_TO_ENDPOINT) != 0 {
-                    return Err(FfiError::invalid("unknown model-open flags"));
-                }
-                let offline = parse_flag(request.offline, "offline")?;
-                let (store_path, text) = text_open_options(request.store)?;
-                let model = zeppelin_embed_text::ModelRef {
-                    repo: marshal::utf8_without_nul(request.repo, request.repo_len)?.to_owned(),
-                    revision: marshal::utf8_without_nul(request.revision, request.revision_len)?
-                        .to_owned(),
-                    manifest_sha256: marshal::utf8_without_nul(
-                        request.manifest_sha256,
-                        request.manifest_sha256_len,
-                    )?
-                    .to_owned(),
-                };
-                let cache_dir =
-                    marshal::utf8_without_nul(request.cache_dir, request.cache_dir_len)?;
-                let endpoint = marshal::utf8_without_nul(request.endpoint, request.endpoint_len)?;
-                let progress = |done, total| {
-                    if let Some(callback) = request.progress {
-                        // SAFETY: callback and user_data are caller-owned for the
-                        // synchronous duration of ze_text_open_model.
-                        unsafe { callback(request.user_data, done, total) };
-                    }
-                };
-                let store = zeppelin_embed_text::TextStore::open_model(
-                    Path::new(&store_path),
-                    &model,
-                    zeppelin_embed_text::ModelOpenOptions {
-                        text,
-                        cache_dir: (!cache_dir.is_empty())
-                            .then(|| Path::new(cache_dir).to_path_buf()),
-                        offline,
-                        endpoint: (!endpoint.is_empty()).then(|| endpoint.to_owned()),
-                        allow_http: request.flags & ZE_MODEL_ALLOW_HTTP != 0,
-                        send_token_to_endpoint: request.flags & ZE_MODEL_SEND_TOKEN_TO_ENDPOINT
-                            != 0,
-                        progress: request.progress.map(|_| &progress as &dyn Fn(u64, u64)),
-                    },
-                )
-                .map_err(FfiError::text)?;
-                let handle = text_registry::insert(store)?;
-                marshal::write_scalar(out_handle, handle);
-                Ok(())
-            })(),
+            marshal::read_struct(request)
+                .map_err(FfiError::from)
+                .and_then(|request| {
+                    text_open_model_with_limit(
+                        &request.open,
+                        Some(request.mlx_cache_limit_bytes),
+                        out_handle,
+                    )
+                }),
         )
     })
+}
+
+#[cfg(feature = "text")]
+fn text_open_model_with_limit(
+    request: *const ZeTextOpenModelRequest,
+    cache_limit: Option<u64>,
+    out_handle: *mut ZeHandle,
+) -> Result<(), FfiError> {
+    let request = marshal::read_struct(request)?;
+    scalar_output(out_handle)?;
+    if request.flags & !(ZE_MODEL_ALLOW_HTTP | ZE_MODEL_SEND_TOKEN_TO_ENDPOINT) != 0 {
+        return Err(FfiError::invalid("unknown model-open flags"));
+    }
+    let offline = parse_flag(request.offline, "offline")?;
+    let (store_path, text) = text_open_options(request.store, cache_limit)?;
+    let model = zeppelin_embed_text::ModelRef {
+        repo: marshal::utf8_without_nul(request.repo, request.repo_len)?.to_owned(),
+        revision: marshal::utf8_without_nul(request.revision, request.revision_len)?.to_owned(),
+        manifest_sha256: marshal::utf8_without_nul(
+            request.manifest_sha256,
+            request.manifest_sha256_len,
+        )?
+        .to_owned(),
+    };
+    let cache_dir = marshal::utf8_without_nul(request.cache_dir, request.cache_dir_len)?;
+    let endpoint = marshal::utf8_without_nul(request.endpoint, request.endpoint_len)?;
+    let progress = |done, total| {
+        if let Some(callback) = request.progress {
+            // SAFETY: callback and user_data are caller-owned for the
+            // synchronous duration of ze_text_open_model.
+            unsafe { callback(request.user_data, done, total) };
+        }
+    };
+    let store = zeppelin_embed_text::TextStore::open_model(
+        Path::new(&store_path),
+        &model,
+        zeppelin_embed_text::ModelOpenOptions {
+            text,
+            cache_dir: (!cache_dir.is_empty()).then(|| Path::new(cache_dir).to_path_buf()),
+            offline,
+            endpoint: (!endpoint.is_empty()).then(|| endpoint.to_owned()),
+            allow_http: request.flags & ZE_MODEL_ALLOW_HTTP != 0,
+            send_token_to_endpoint: request.flags & ZE_MODEL_SEND_TOKEN_TO_ENDPOINT != 0,
+            progress: request.progress.map(|_| &progress as &dyn Fn(u64, u64)),
+        },
+    )
+    .map_err(FfiError::text)?;
+    let handle = text_registry::insert(store)?;
+    marshal::write_scalar(out_handle, handle);
+    Ok(())
 }
 
 /// Ingests text through the bounded tokenizer, MLX, writer, and maintenance pipeline.
@@ -6246,6 +6301,7 @@ pub extern "C" fn ze_error_code_name(code: i32) -> *const c_char {
             60 => b"ZE_ERR_GRAPH_EPOCH_TRANSITION\0",
             61 => b"ZE_ERR_GRAPH_DISABLED\0",
             62 => b"ZE_ERR_MISSING_EMBEDDER\0",
+            63 => b"ZE_ERR_MLX_CACHE_LIMIT_CONFLICT\0",
             _ => b"ZE_ERR_UNKNOWN\0",
         };
         bytes.as_ptr().cast::<c_char>()

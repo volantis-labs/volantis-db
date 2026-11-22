@@ -255,7 +255,7 @@ impl TextOpenOptions {
     }
 
     /// Sets the process-global MLX buffer cache limit in bytes (zero disables caching).
-    /// The first runtime's setting wins; later opens do not change it. At first
+    /// Later explicit limits must agree with the first setting. At first
     /// startup this option overrides ZE_MLX_CACHE_LIMIT_BYTES, then
     /// DEFAULT_MLX_CACHE_LIMIT_BYTES. An invalid environment value is an error.
     #[must_use]
@@ -300,6 +300,7 @@ impl TextStore {
         model: &crate::ModelRef,
         options: crate::ModelOpenOptions<'_>,
     ) -> Result<Self, TextError> {
+        crate::runtime::mlx_cache::check_explicit(options.text.mlx_cache_limit_bytes)?;
         let bundle = crate::resolve_model(model, &options).map_err(TextError::ModelResolution)?;
         Self::open(store_path, bundle, options.text)
     }
@@ -310,6 +311,7 @@ impl TextStore {
         bundle_path: impl AsRef<Path>,
         options: TextOpenOptions,
     ) -> Result<Self, TextError> {
+        crate::runtime::mlx_cache::check_explicit(options.mlx_cache_limit_bytes)?;
         let bundle_path = bundle_path.as_ref().to_path_buf();
         let bundle = Arc::new(Bundle::open(&bundle_path)?);
         let analyzer =

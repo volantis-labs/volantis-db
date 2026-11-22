@@ -93,6 +93,7 @@ TEXT_AVAILABLE = hasattr(LIBRARY, "ze_text_open")
 if TEXT_AVAILABLE:
     _bind("ze_text_default_model", [ct.POINTER(s.ZeTextModelRef)])
     _bind("ze_text_open", [ct.POINTER(s.ZeTextOpenRequest), ct.POINTER(Handle)])
+    _bind("ze_text_open_v2", [ct.POINTER(s.ZeTextOpenRequestV2), ct.POINTER(Handle)])
     _bind(
         "ze_text_ingest",
         [Handle, ct.POINTER(s.ZeTextIngestRequest), ct.POINTER(s.ZeMutationReport)],
@@ -103,6 +104,7 @@ if TEXT_AVAILABLE:
     )
     _bind("ze_text_query_result_free", [ct.POINTER(s.ZeTextQueryResult)])
     _bind("ze_text_open_model", [ct.POINTER(s.ZeTextOpenModelRequest), ct.POINTER(Handle)])
+    _bind("ze_text_open_model_v2", [ct.POINTER(s.ZeTextOpenModelRequestV2), ct.POINTER(Handle)])
     _bind("ze_text_delete", [Handle, ct.POINTER(s.ZeDeleteRequest), ct.POINTER(s.ZeMutationReport)])
     _bind("ze_text_health", [Handle, ct.POINTER(s.ZeTextHealthReport)])
     _bind("ze_text_observed_compute_units", [Handle, ct.POINTER(s.ZeTextObservedComputeUnits)])

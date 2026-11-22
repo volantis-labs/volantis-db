@@ -1302,8 +1302,12 @@ export interface TextModelRef {
   readonly revision: string;
   readonly manifestSha256: string;
 }
+export interface TextOpenOptions {
+  /** Process-wide MLX buffer cache limit in bytes. Zero disables caching. */
+  readonly mlxCacheLimitBytes?: bigint;
+}
 /** Supply all three pins, or omit all three to use TextStore.defaultModel. */
-export type TextModelOptions = {
+export type TextModelOptions = TextOpenOptions & {
   readonly path: string;
   readonly cacheDir?: string;
   readonly offline?: boolean;
@@ -1393,8 +1397,8 @@ export interface ObservedComputeUnits {
 export declare class TextStore {
   static readonly defaultModel: TextModelRef;
   private constructor();
-  static open(path: string, bundlePath: string): TextStore;
-  static openAsync(path: string, bundlePath: string): Promise<TextStore>;
+  static open(path: string, bundlePath: string, options?: TextOpenOptions): TextStore;
+  static openAsync(path: string, bundlePath: string, options?: TextOpenOptions): Promise<TextStore>;
   static openModel(options: TextModelOptions): Promise<TextStore>;
   ingest(documents: readonly TextDocument[], options?: TextIngestOptions): TextIngestReport;
   ingestAsync(documents: readonly TextDocument[], options?: Omit<TextIngestOptions, 'signal'> & {readonly signal?: AbortSignal}): Promise<TextIngestReport>;

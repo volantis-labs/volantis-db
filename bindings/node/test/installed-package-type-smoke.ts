@@ -89,7 +89,11 @@ void TextStore.openModel({path: '/tmp/text-model', repo: 'owner/model', revision
   manifestSha256: '0'.repeat(64), cacheDir: '/tmp/cache', offline: true,
   onProgress: ({done, total}) => { const progress: bigint = done + total; void progress; }});
 
-void TextStore.openModel({path: '/tmp/default-text-model'});
+void TextStore.openModel({path: '/tmp/default-text-model', mlxCacheLimitBytes: 0n});
+void TextStore.open('/tmp/text', '/tmp/model.zem', {mlxCacheLimitBytes: 256n << 20n});
+void TextStore.openAsync('/tmp/text', '/tmp/model.zem', {mlxCacheLimitBytes: 0n});
+// @ts-expect-error Byte limits are unsigned bigints.
+void TextStore.openModel({path: '/tmp/text', mlxCacheLimitBytes: 256});
 const defaultModelRepo: string = TextStore.defaultModel.repo;
 void defaultModelRepo;
 // @ts-expect-error Pins must be supplied together.

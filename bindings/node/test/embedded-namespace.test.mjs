@@ -14,7 +14,7 @@ test('Store and Cypher report a missing namespace embedder', () => {
   const store = openNamespace(root,'notes',{vectorSpace:{dimensions:2}},options);
   try {
     store.enableGraph();
-    const missing = {code:'ZE_ERR_MISSING_EMBEDDER'};
+    const missing = {code:'ZE_ERR_MISSING_EMBEDDER',errorCode:62};
     assert.throws(() => store.queryEmbedded({text:'bronze',leg:'dense'}),missing);
     for (const call of ["vector_search('bronze',2,'exact')","hybrid_search('bronze',2,'exact')"]) {
       assert.throws(() => store.cypher('CALL ze.'+call+' YIELD node RETURN node'),missing);

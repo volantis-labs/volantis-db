@@ -401,6 +401,10 @@ enum ze_error_code
      A text query requires a registered namespace model.
      */
     ZE_ERR_MISSING_EMBEDDER = 62,
+    /*
+     A text open requested a different process-global MLX cache limit.
+     */
+    ZE_ERR_MLX_CACHE_LIMIT_CONFLICT = 63,
 };
 #ifndef __cplusplus
 #if __STDC_VERSION__ >= 202311L
@@ -1279,6 +1283,28 @@ typedef struct ZeTextOpenRequest {
 } ZeTextOpenRequest;
 
 /*
+ Size-versioned text open with an explicit MLX buffer cache limit.
+ */
+typedef struct ZeTextOpenRequestV2 {
+    /*
+     Caller-provided structure size.
+     */
+    uint32_t abi_size;
+    /*
+     Must be zero.
+     */
+    uint32_t abi_reserved;
+    /*
+     Complete v1 request with its own size header.
+     */
+    struct ZeTextOpenRequest open;
+    /*
+     Process-global limit in bytes. Zero disables the cache.
+     */
+    uint64_t mlx_cache_limit_bytes;
+} ZeTextOpenRequestV2;
+
+/*
  Resolves a pinned Hugging Face model and opens a text store.
  All string buffers are caller-owned UTF-8, without NUL terminators.
  */
@@ -1360,6 +1386,28 @@ typedef struct ZeTextOpenModelRequest {
      */
     void *user_data;
 } ZeTextOpenModelRequest;
+
+/*
+ Size-versioned text open with an explicit MLX buffer cache limit.
+ */
+typedef struct ZeTextOpenModelRequestV2 {
+    /*
+     Caller-provided structure size.
+     */
+    uint32_t abi_size;
+    /*
+     Must be zero.
+     */
+    uint32_t abi_reserved;
+    /*
+     Complete v1 request with its own size header.
+     */
+    struct ZeTextOpenModelRequest open;
+    /*
+     Process-global limit in bytes. Zero disables the cache.
+     */
+    uint64_t mlx_cache_limit_bytes;
+} ZeTextOpenModelRequestV2;
 
 /*
  One caller-owned text document.
@@ -4111,12 +4159,24 @@ ze_error_code ze_text_open(const struct ZeTextOpenRequest *request,
                            ze_handle *out_handle);
 
 /*
+ Opens a text store with an explicit process-global MLX cache limit.
+ */
+ze_error_code ze_text_open_v2(const struct ZeTextOpenRequestV2 *request,
+                              ze_handle *out_handle);
+
+/*
  Resolves a pinned model, verifies/cache-installs every file, then opens.
  Offline misses return ZE_ERR_NOT_FOUND; verification failures ZE_ERR_CORRUPT;
  malformed references/manifests ZE_ERR_INVALID_ARGUMENT; transport/cache I/O ZE_ERR_IO.
  */
 ze_error_code ze_text_open_model(const struct ZeTextOpenModelRequest *request,
                                  ze_handle *out_handle);
+
+/*
+ Opens a text store with an explicit process-global MLX cache limit.
+ */
+ze_error_code ze_text_open_model_v2(const struct ZeTextOpenModelRequestV2 *request,
+                                    ze_handle *out_handle);
 
 /*
  Ingests text through the bounded tokenizer, MLX, writer, and maintenance pipeline.

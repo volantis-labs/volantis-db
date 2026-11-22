@@ -127,7 +127,7 @@ final class TextStoreTests: XCTestCase {
             manifestSHA256: String(repeating: "0", count: 64))
         do {
             _ = try await TextStore.open(at: root.appendingPathComponent("store"), model: model,
-                cacheDirectory: root.appendingPathComponent("cache"), offline: true)
+                cacheDirectory: root.appendingPathComponent("cache"), offline: true, mlxCacheLimitBytes: 0)
             XCTFail("offline cache miss must fail")
         } catch { XCTAssertEqual(error as? ZeppelinError, .notFound) }
     }

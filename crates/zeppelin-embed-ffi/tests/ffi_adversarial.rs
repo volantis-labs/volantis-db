@@ -418,6 +418,11 @@ const ABI_REGISTRY: &[AbiEntry] = &[
     },
     #[cfg(feature = "text")]
     AbiEntry {
+        name: "ze_text_open_v2",
+        coverage: AbiCoverage::InvalidProbe(probe_text_open_v2),
+    },
+    #[cfg(feature = "text")]
+    AbiEntry {
         name: "ze_text_open",
         coverage: AbiCoverage::InvalidProbe(probe_text_open),
     },
@@ -425,6 +430,11 @@ const ABI_REGISTRY: &[AbiEntry] = &[
     AbiEntry {
         name: "ze_text_default_model",
         coverage: AbiCoverage::InvalidProbe(probe_text_default_model),
+    },
+    #[cfg(feature = "text")]
+    AbiEntry {
+        name: "ze_text_open_model_v2",
+        coverage: AbiCoverage::InvalidProbe(probe_text_open_model_v2),
     },
     #[cfg(feature = "text")]
     AbiEntry {
@@ -1365,8 +1375,21 @@ fn probe_search_result_free(_: &MatrixContext) -> ProbeResult {
 }
 
 #[cfg(feature = "text")]
+fn probe_text_open_v2(_: &MatrixContext) -> ProbeResult {
+    ProbeResult::Status(ze_text_open_v2(std::ptr::null(), std::ptr::null_mut()))
+}
+
+#[cfg(feature = "text")]
 fn probe_text_open(_: &MatrixContext) -> ProbeResult {
     ProbeResult::Status(ze_text_open(std::ptr::null(), std::ptr::null_mut()))
+}
+
+#[cfg(feature = "text")]
+fn probe_text_open_model_v2(_: &MatrixContext) -> ProbeResult {
+    ProbeResult::Status(ze_text_open_model_v2(
+        std::ptr::null(),
+        std::ptr::null_mut(),
+    ))
 }
 
 #[cfg(feature = "text")]

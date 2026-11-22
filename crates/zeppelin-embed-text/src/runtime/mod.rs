@@ -68,6 +68,13 @@ pub enum RuntimeError {
     Mlx(String),
     /// ZE_MLX_CACHE_LIMIT_BYTES is not a byte count representable as usize.
     InvalidCacheLimit,
+    /// A later open requested a different process-wide cache limit.
+    CacheLimitConflict {
+        /// Limit selected by the first opener, in bytes.
+        configured: usize,
+        /// Explicit limit requested by this opener, in bytes.
+        requested: usize,
+    },
     /// An MLX cache C API call returned a nonzero status.
     MlxCache {
         /// Native function that failed.
@@ -92,6 +99,13 @@ impl std::fmt::Display for RuntimeError {
             Self::Mlx(detail) => write!(formatter, "MLX failed: {detail}"),
             Self::InvalidCacheLimit => formatter.write_str(
                 "ZE_MLX_CACHE_LIMIT_BYTES must be a nonnegative integer byte count fitting usize",
+            ),
+            Self::CacheLimitConflict {
+                configured,
+                requested,
+            } => write!(
+                formatter,
+                "MLX cache limit is already {configured} bytes; requested {requested} bytes"
             ),
             Self::MlxCache { operation, status } => {
                 write!(formatter, "{operation} failed with status {status}")

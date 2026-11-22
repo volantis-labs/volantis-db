@@ -49,7 +49,8 @@ with the release FP16 default model peaked at about 7.3 GB process footprint
 (about 112 GB before the cap), with max RSS about 4.8 GB (ZE-528). Override the
 cap with `TextOpenOptions::with_mlx_cache_limit_bytes` or
 `ZE_MLX_CACHE_LIMIT_BYTES` (bytes), set before the first text open. Invalid
-values are errors; the first setter in a process wins.
+values are errors. Later opens can omit the limit or repeat it. A conflicting
+explicit limit returns `RuntimeError::CacheLimitConflict`.
 
 `ModelOpenOptions.progress` receives synchronous byte counts on the calling
 thread. Intermediate reports require both at least 64 KiB and at least 100 ms

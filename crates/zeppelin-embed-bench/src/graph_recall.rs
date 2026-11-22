@@ -887,7 +887,8 @@ fn marker_field<'a>(line: &'a str, key: &str) -> Result<&'a str, Box<dyn std::er
 }
 
 #[cfg(target_os = "macos")]
-fn peak_rss_bytes() -> Result<u64, Box<dyn std::error::Error>> {
+/// Process lifetime maximum resident set in bytes.
+pub fn peak_rss_bytes() -> Result<u64, Box<dyn std::error::Error>> {
     let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
     // SAFETY: `usage` points to writable storage for one `rusage` value.
     let status = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
@@ -900,7 +901,8 @@ fn peak_rss_bytes() -> Result<u64, Box<dyn std::error::Error>> {
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
-fn peak_rss_bytes() -> Result<u64, Box<dyn std::error::Error>> {
+/// Process lifetime maximum resident set in bytes.
+pub fn peak_rss_bytes() -> Result<u64, Box<dyn std::error::Error>> {
     let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
     // SAFETY: `usage` points to writable storage for one `rusage` value.
     let status = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
@@ -916,7 +918,8 @@ fn peak_rss_bytes() -> Result<u64, Box<dyn std::error::Error>> {
 }
 
 #[cfg(not(unix))]
-fn peak_rss_bytes() -> Result<u64, Box<dyn std::error::Error>> {
+/// Process lifetime maximum resident set in bytes.
+pub fn peak_rss_bytes() -> Result<u64, Box<dyn std::error::Error>> {
     Err(io::Error::other("peak RSS is unavailable on this platform").into())
 }
 

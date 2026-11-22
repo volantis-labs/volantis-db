@@ -255,19 +255,13 @@ fn ingest(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         ));
     }
     std::fs::write(id_map_path(store_path, corpus_name)?, id_table)?;
-    let store = TextStore::open(store_path, bundle_path, Default::default())?;
+    let rest_ms = cli.u64("--rest-ms", 0)?;
+    let mut options = TextOpenOptions::default();
+    if let Some(limit) = cache_limit {
+        options = options.with_mlx_cache_limit_bytes(limit);
+    }
+    let store = TextStore::open(store_path, bundle_path, options)?;
     let after_open = memory_counters()?;
-    let old_cache_limit = if let Some(limit) = cache_limit {
-        let mut old = 0;
-        // SAFETY: the out pointer is valid; MLX locks its allocator internally.
-        mlx_check(
-            unsafe { mlx_set_cache_limit(&mut old, limit) },
-            "mlx_set_cache_limit",
-        )?;
-        Some(old)
-    } else {
-        None
-    };
     // Reset only the MLX peak immediately before ingest; macOS lifetime peak
     // intentionally still includes startup and model loading.
     // SAFETY: this no-argument MLX call takes the allocator mutex internally.
@@ -313,6 +307,7 @@ fn ingest(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         .join()
         .map_err(|_| io::Error::other("memory sampler panicked"))?;
     let after_ingest = memory_counters()?;
+    let ingest_peak_rss = zeppelin_embed_bench::graph_recall::peak_rss_bytes()?;
     let final_sample = MemorySample {
         t_seconds: started.elapsed().as_secs_f64(),
         counters: after_ingest,
@@ -331,6 +326,24 @@ fn ingest(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
             .collect::<Vec<_>>(),
     );
     let report = result?;
+    drop(documents);
+    drop(corpus);
+    let at_rest = if rest_ms > 0 {
+        store.wait_for_warm()?;
+        std::thread::sleep(Duration::from_millis(rest_ms));
+        Some(memory_counters()?.json())
+    } else {
+        None
+    };
+    let after_query = if let Some(query) = cli.optional("--memory-query") {
+        let hits = store.query_text(query, QueryOptions::new(10))?;
+        if hits.is_empty() {
+            return Err(io::Error::other("memory probe query returned no hits").into());
+        }
+        Some(memory_counters()?.json())
+    } else {
+        None
+    };
     let health = store.health()?;
     let output = json!({
         "kind": "ingest",
@@ -338,6 +351,7 @@ fn ingest(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
             "units": "bytes",
             "after_open": after_open.json(),
             "after_ingest": after_ingest.json(),
+            "ingest_lifetime_max_resident": ingest_peak_rss,
             "sample_maxima": maxima.json(),
             "sample_count": samples.len(),
             "memory_sample_ms": sample_ms,
@@ -345,7 +359,9 @@ fn ingest(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
             "memory_out_format": "jsonl; each sample flushed to file and stderr",
             "embed_batch": embed_batch_size,
             "mlx_cache_limit_bytes": cache_limit,
-            "old_mlx_cache_limit_bytes": old_cache_limit,
+            "rest_ms": rest_ms,
+            "at_rest": at_rest,
+            "after_query": after_query,
             "mlx_clear_cache_ms": clear_ms,
             "mlx_peak_scope": "reset immediately before ingest; after_open precedes reset",
             "sampling_policy": "non-atomic native diagnostics; pinned MLX getters read unlocked size_t fields",
@@ -1553,7 +1569,6 @@ unsafe extern "C" {
     fn mlx_get_active_memory(result: *mut usize) -> libc::c_int;
     fn mlx_get_peak_memory(result: *mut usize) -> libc::c_int;
     fn mlx_get_cache_memory(result: *mut usize) -> libc::c_int;
-    fn mlx_set_cache_limit(old: *mut usize, limit: usize) -> libc::c_int;
     fn mlx_clear_cache() -> libc::c_int;
     fn mlx_reset_peak_memory() -> libc::c_int;
 }

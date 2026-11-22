@@ -219,6 +219,13 @@ class ZeTextOpenRequest(ct.Structure):
     ]
 
 
+class ZeTextOpenRequestV2(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32), ("abi_reserved", ct.c_uint32),
+        ("open", ZeTextOpenRequest), ("mlx_cache_limit_bytes", ct.c_uint64),
+    ]
+
+
 class ZeTextDocument(ct.Structure):
     _fields_ = [
         ("abi_size", ct.c_uint32),
@@ -773,6 +780,13 @@ class ZeTextOpenModelRequest(ct.Structure):
         ("flags", ct.c_uint32),
         ("progress", ModelProgressCallback),
         ("user_data", ct.c_void_p),
+    ]
+
+
+class ZeTextOpenModelRequestV2(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32), ("abi_reserved", ct.c_uint32),
+        ("open", ZeTextOpenModelRequest), ("mlx_cache_limit_bytes", ct.c_uint64),
     ]
 
 

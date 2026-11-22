@@ -186,6 +186,11 @@ const ERROR_CODE_GOLDEN: &[(ZeErrorCode, i32, &str)] = &[
         62,
         "ZE_ERR_MISSING_EMBEDDER",
     ),
+    (
+        ZeErrorCode::ZeErrMlxCacheLimitConflict,
+        63,
+        "ZE_ERR_MLX_CACHE_LIMIT_CONFLICT",
+    ),
 ];
 
 fn header_error_codes() -> Vec<(String, i32)> {
@@ -1779,6 +1784,8 @@ fn text_v2_entry_points_validate_requests_before_use() {
 
 #[test]
 fn every_text_struct_has_the_frozen_size_and_field_offsets() {
+    assert_layout!(ZeTextOpenModelRequestV2, 192, 8, { abi_size: 0, abi_reserved: 4, open: 8, mlx_cache_limit_bytes: 184 });
+    assert_layout!(ZeTextOpenRequestV2, 104, 8, { abi_size: 0, abi_reserved: 4, open: 8, mlx_cache_limit_bytes: 96 });
     assert_layout!(ZeTextModelRef, 56, 8, { abi_size: 0, abi_reserved: 4, repo: 8, repo_len: 16, revision: 24, revision_len: 32, manifest_sha256: 40, manifest_sha256_len: 48 });
     assert_layout!(ZeTextOpenRequest, 88, 8, { abi_size: 0, abi_reserved: 4, store: 8, bundle_path: 72, bundle_path_len: 80 });
     assert_layout!(ZeTextDocument, 48, 8, { abi_size: 0, abi_reserved: 4, doc_id: 8, revision: 24, text: 32, text_len: 40 });

@@ -57,6 +57,8 @@ ze_text_ingest
 ze_text_maintain
 ze_text_open
 ze_text_open_model
+ze_text_open_model_v2
+ze_text_open_v2
 ze_text_query
 ze_text_query_result_free
 ze_upsert

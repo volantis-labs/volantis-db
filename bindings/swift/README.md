@@ -74,10 +74,11 @@ ZE_ENABLE_GRAPH=1 swift build
 MLX keeps a process-global buffer cache, capped at 4 GiB by default during text
 ingest. On an Apple M3 Max with 128 GiB, a full FiQA ingest (57,638 documents)
 with the release FP16 default model peaked at about 7.3 GB process footprint
-(about 112 GB before the cap), with max RSS about 4.8 GB (ZE-528). The binding
-has no cache-limit option; set `ZE_MLX_CACHE_LIMIT_BYTES` (bytes) before the
-first text open to override the cap. Invalid values are errors; the first
-setter in a process wins.
+(about 112 GB before the cap), with max RSS about 4.8 GB (ZE-528). Pass `mlxCacheLimitBytes` as a `UInt64` to either
+`TextStore.open` overload.
+The first explicit limit overrides `ZE_MLX_CACHE_LIMIT_BYTES` at initialization.
+Zero disables caching. After initialization, omitting the limit reuses the
+process setting. A different explicit limit returns `ZE_ERR_MLX_CACHE_LIMIT_CONFLICT`.
 
 ```swift
 import Foundation

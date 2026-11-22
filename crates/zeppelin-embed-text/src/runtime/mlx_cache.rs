@@ -17,12 +17,24 @@ static CONFIGURED: OnceLock<usize> = OnceLock::new();
 static APPLIED: OnceLock<Result<(), RuntimeError>> = OnceLock::new();
 
 pub(crate) fn configure(option: Option<usize>) -> Result<(), RuntimeError> {
-    if CONFIGURED.get().is_some() {
-        return Ok(());
+    if CONFIGURED.get().is_none() {
+        let env = std::env::var_os("ZE_MLX_CACHE_LIMIT_BYTES");
+        let limit = resolve_limit(option, env.as_deref())?;
+        CONFIGURED.get_or_init(|| limit);
     }
-    let env = std::env::var_os("ZE_MLX_CACHE_LIMIT_BYTES");
-    let limit = resolve_limit(option, env.as_deref())?;
-    CONFIGURED.get_or_init(|| limit);
+    // A concurrent first opener may have installed a different limit.
+    check_explicit(option)
+}
+
+pub(crate) fn check_explicit(option: Option<usize>) -> Result<(), RuntimeError> {
+    if let (Some(requested), Some(&configured)) = (option, CONFIGURED.get())
+        && requested != configured
+    {
+        return Err(RuntimeError::CacheLimitConflict {
+            configured,
+            requested,
+        });
+    }
     Ok(())
 }
 
@@ -129,6 +141,22 @@ mod tests {
             use std::os::unix::ffi::OsStrExt;
             assert!(resolve_limit(None, Some(OsStr::from_bytes(&[0xff]))).is_err());
         }
+    }
+
+    #[test]
+    fn same_explicit_cache_limit_succeeds_and_conflicting_limit_fails() {
+        configure(None).expect("initialize process policy");
+        let configured = *CONFIGURED.get().expect("configured limit");
+        configure(Some(configured)).expect("repeat configured limit");
+        let requested = configured ^ 1;
+        let error = configure(Some(requested)).expect_err("conflicting explicit limit");
+        assert_eq!(
+            error,
+            RuntimeError::CacheLimitConflict {
+                configured,
+                requested
+            }
+        );
     }
 
     #[test]

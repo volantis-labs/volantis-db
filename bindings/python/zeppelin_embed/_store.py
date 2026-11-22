@@ -2074,6 +2074,12 @@ def open_with_epoch(
     )
 
 
+def _mlx_cache_limit(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < 1 << 64:
+        invalid_argument("mlx_cache_limit_bytes must be an unsigned 64-bit integer")
+    return value
+
+
 def open_text(
     path: str | Path,
     bundle_path: str | Path,
@@ -2083,6 +2089,7 @@ def open_text(
     commit_tier: CommitTier | str = CommitTier.ORDERED,
     reader_drain_timeout_ms: int = 250,
     max_resident_bytes: int = (1 << 64) - 1,
+    mlx_cache_limit_bytes: int | None = None,
     max_temp_bytes: int = (1 << 64) - 1,
 ) -> Store:
     """Open a text store and immutable model bundle through the text ABI."""
@@ -2105,7 +2112,14 @@ def open_text(
         bundle_path_len=bundle_len,
     )
     handle = ct.c_uint64()
-    status = LIBRARY.ze_text_open(ct.byref(text_request), ct.byref(handle))
+    if mlx_cache_limit_bytes is None:
+        status = LIBRARY.ze_text_open(ct.byref(text_request), ct.byref(handle))
+    else:
+        extended = s.ZeTextOpenRequestV2(
+            abi_size=ct.sizeof(s.ZeTextOpenRequestV2), open=text_request,
+            mlx_cache_limit_bytes=_mlx_cache_limit(mlx_cache_limit_bytes),
+        )
+        status = LIBRARY.ze_text_open_v2(ct.byref(extended), ct.byref(handle))
     del path_owner, bundle_owner
     raise_for_status(status, int(handle.value))
     return Store(int(handle.value), text=True)
@@ -2132,6 +2146,7 @@ def open_model(
     commit_tier: CommitTier | str = CommitTier.ORDERED,
     reader_drain_timeout_ms: int = 250,
     max_resident_bytes: int = (1 << 64) - 1,
+    mlx_cache_limit_bytes: int | None = None,
     max_temp_bytes: int = (1 << 64) - 1,
 ) -> Store:
     """Download/verify a pinned HF model, then open its text store.
@@ -2193,7 +2208,14 @@ def open_model(
     )
     model.progress = callback
     handle = ct.c_uint64()
-    status = LIBRARY.ze_text_open_model(ct.byref(model), ct.byref(handle))
+    if mlx_cache_limit_bytes is None:
+        status = LIBRARY.ze_text_open_model(ct.byref(model), ct.byref(handle))
+    else:
+        extended = s.ZeTextOpenModelRequestV2(
+            abi_size=ct.sizeof(s.ZeTextOpenModelRequestV2), open=model,
+            mlx_cache_limit_bytes=_mlx_cache_limit(mlx_cache_limit_bytes),
+        )
+        status = LIBRARY.ze_text_open_model_v2(ct.byref(extended), ct.byref(handle))
     if callback_errors:
         if handle.value:
             close_status = LIBRARY.ze_close(handle.value)

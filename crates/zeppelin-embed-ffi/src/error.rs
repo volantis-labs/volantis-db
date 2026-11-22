@@ -22,6 +22,9 @@ impl FfiError {
                 | zeppelin_embed_text::ModelError::Io(_) => ZeErrorCode::ZeErrIo,
             },
             TextError::Bundle(_) => ZeErrorCode::ZeErrBundle,
+            TextError::Runtime(
+                zeppelin_embed_text::runtime::RuntimeError::CacheLimitConflict { .. },
+            ) => ZeErrorCode::ZeErrMlxCacheLimitConflict,
             TextError::Runtime(_) => ZeErrorCode::ZeErrModel,
             TextError::Pipeline { .. } => ZeErrorCode::ZeErrPipeline,
             TextError::DimsMismatch { .. } => ZeErrorCode::ZeErrDimensionMismatch,

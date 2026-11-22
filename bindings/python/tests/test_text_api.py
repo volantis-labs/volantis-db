@@ -162,6 +162,7 @@ def test_open_model_offline_miss(tmp_path: Path) -> None:
             revision=REVISION,
             manifest_sha256="0" * 64,
             cache_dir=tmp_path / "cache",
+            mlx_cache_limit_bytes=0,
             offline=True,
         )
 

@@ -104,8 +104,9 @@ struct TextOpenData {
   napi_threadsafe_function progress = nullptr;
   bool progress_closing = false;
   std::string path, bundle, repo, revision, sha, cache;
-  ZeTextOpenRequest request{};
-  ZeTextOpenModelRequest model{};
+  ZeTextOpenRequestV2 request{};
+  ZeTextOpenModelRequestV2 model{};
+  bool has_cache_limit = false;
   ze_handle handle = 0;
   ze_error_code progress_status = ZE_OK;
   explicit TextOpenData(napi_env e) : env(e) {}
@@ -163,12 +164,28 @@ napi_value TextOpen(napi_env env, napi_callback_info info) {
                 "retain constructor") ||
         !TextRequiredString(env, options, "path", &data->path))
       return nullptr;
-    auto &request = data->request;
+    napi_value limit;
+    napi_valuetype type;
+    bool present;
+    if (!GetNamed(env, options, "mlxCacheLimitBytes", &limit, &present))
+      return nullptr;
+    if (present) {
+      if (!NapiOk(env, napi_typeof(env, limit, &type), "inspect MLX cache limit"))
+        return nullptr;
+      data->has_cache_limit = type != napi_undefined;
+      if (data->has_cache_limit &&
+          !GetUint64(env, limit, "mlxCacheLimitBytes", &data->request.mlx_cache_limit_bytes))
+        return nullptr;
+    }
+    data->request.abi_size = sizeof(data->request);
+    auto &request = data->request.open;
     request.abi_size = sizeof(request);
     if (!ParseOpenRequest(env, options, data->path, &request.store))
       return nullptr;
     if constexpr (Model) {
-      auto &m = data->model;
+      data->model.abi_size = sizeof(data->model);
+      data->model.mlx_cache_limit_bytes = data->request.mlx_cache_limit_bytes;
+      auto &m = data->model.open;
       m.abi_size = sizeof(m);
       m.store = request.store;
       bool present, offline;
@@ -217,9 +234,13 @@ napi_value TextOpen(napi_env env, napi_callback_info info) {
         [data]() {
           ze_error_code status;
           if constexpr (Model)
-            status = ze_text_open_model(&data->model, &data->handle);
+            status = data->has_cache_limit
+                         ? ze_text_open_model_v2(&data->model, &data->handle)
+                         : ze_text_open_model(&data->model.open, &data->handle);
           else
-            status = ze_text_open(&data->request, &data->handle);
+            status = data->has_cache_limit
+                         ? ze_text_open_v2(&data->request, &data->handle)
+                         : ze_text_open(&data->request.open, &data->handle);
           if (data->progress && !data->progress_closing) {
             napi_release_threadsafe_function(data->progress, napi_tsfn_release);
             data->progress = nullptr;
