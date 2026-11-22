@@ -14,13 +14,19 @@ const { Store } = require('@zepdb/zeppelin-embed');
 
 const store = new Store('my-index');
 store.ingest(
-  [{ id: 1n, vector: new Float32Array([0.9, 0.1]) }],
+  [{
+    id: 1n,
+    vector: new Float32Array([0.9, 0.1]),
+    text: 'harbour meeting notes',
+    metadata: Uint8Array.of(0, 255),
+  }],
   2,
 );
 
 console.log(store.search(new Float32Array([0.8, 0.2]), 1));
 console.log(store.state()); // 'open'
 console.log(store.stats().activeRowCount);
+console.log(store.get([1n], { text: true, metadata: true }).documents);
 store.close();
 ```
 
@@ -40,6 +46,15 @@ mappings, segment capacity, the in-memory WAL, caches and temporary space.
 Count fields cover active rows, tombstones, open files, active queries and
 snapshot leases. `physicalFootprint` is the process footprint in bytes on
 macOS and is `null` when unavailable.
+`Store.ingest(documents, dimension)` writes one atomic batch. Every document
+requires a `Float32Array` vector of that dimension. Supply an optional `text`
+string for lexical search and optional `metadata` bytes as a `Uint8Array` or
+Node `Buffer`. An empty string carries no text. Read both fields with
+`store.get(ids, { text: true, metadata: true })`.
+
+Use `Store.upsert` to write schema attributes. An `attributes` property on
+an ingest document or a wrong type for `text` or `metadata` throws a
+`TypeError` with code `ERR_INVALID_ARG_TYPE`.
 
 The engine stores all 128 bits of an ID and every API returns it unchanged,
 so the whole UUID range fits. `uuidToId` reads a UUID's 32 hex digits as one

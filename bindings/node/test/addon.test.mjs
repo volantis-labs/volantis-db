@@ -32,6 +32,75 @@ test('ingests and searches caller-supplied vectors through the C ABI', () => {
   }
 });
 
+function openIngestStore(t) {
+  const directory = mkdtempSync(join(tmpdir(), 'zeppelin-node-ingest-'));
+  const store = new Store(join(directory, 'index'));
+  t.after(() => {
+    store.close();
+    rmSync(directory, { force: true, recursive: true });
+  });
+  return store;
+}
+
+test('indexes and returns text supplied to Store.ingest', (t) => {
+  const store = openIngestStore(t);
+  const text = 'Harbour café 🚀';
+  store.ingest([{ id: 1n, vector: new Float32Array([1, 0]), text }], 2);
+  store.seal();
+
+  assert.equal(store.get([1n], { text: true }).documents[0].text, text);
+  assert.deepEqual(store.query({ text: 'harbour', k: 2 }).hits.map(({ id }) => id), [1n]);
+});
+
+test('round-trips metadata supplied to Store.ingest', (t) => {
+  const store = openIngestStore(t);
+  const bytes = Uint8Array.of(10, 0, 255, 13);
+  store.ingest(
+    [
+      { id: 1n, vector: new Float32Array([1, 0]), metadata: bytes.subarray(1, 3) },
+      { id: 2n, vector: new Float32Array([0, 1]), metadata: Buffer.from([42, 128, 0]) },
+    ],
+    2,
+  );
+
+  const { documents } = store.get([1n, 2n], { metadata: true });
+  assert.deepEqual(documents.map(({ metadata }) => metadata), [
+    Uint8Array.of(0, 255),
+    Uint8Array.of(42, 128, 0),
+  ]);
+});
+
+test('rejects non-string text in Store.ingest', (t) => {
+  const store = openIngestStore(t);
+  assert.throws(
+    () => store.ingest([{ id: 1n, vector: new Float32Array([1, 0]), text: 42 }], 2),
+    { name: 'TypeError', code: 'ERR_INVALID_ARG_TYPE', message: /text/ },
+  );
+});
+
+test('rejects non-byte-array metadata in Store.ingest', (t) => {
+  const store = openIngestStore(t);
+  assert.throws(
+    () => store.ingest(
+      [{ id: 1n, vector: new Float32Array([1, 0]), metadata: new Uint16Array([42]) }],
+      2,
+    ),
+    { name: 'TypeError', code: 'ERR_INVALID_ARG_TYPE', message: /metadata/ },
+  );
+});
+
+test('rejects attributes before writing a Store.ingest batch', (t) => {
+  const store = openIngestStore(t);
+  const vector = new Float32Array([1, 0]);
+  for (const attributes of [[{ id: 1, type: 'u64', value: 5n }], [], undefined]) {
+    assert.throws(
+      () => store.ingest([{ id: 1n, vector }, { id: 2n, vector, attributes }], 2),
+      { name: 'TypeError', code: 'ERR_INVALID_ARG_TYPE', message: /attributes.*upsert/ },
+    );
+  }
+  assert.deepEqual(store.get([1n, 2n]).documents, [null, null]);
+});
+
 test('surfaces C ABI failures as ZeppelinError instances', () => {
   const directory = mkdtempSync(join(tmpdir(), 'zeppelin-node-error-'));
   const store = new Store(join(directory, 'index'));

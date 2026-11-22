@@ -77,6 +77,12 @@ export interface Document {
   readonly vector: Float32Array;
   readonly revision?: bigint;
   readonly timestamp?: bigint;
+  /** UTF-8 text for lexical search. An empty string carries no text. */
+  readonly text?: string;
+  /** Opaque bytes, including a Node Buffer. */
+  readonly metadata?: Uint8Array;
+  /** Pass attributes to `Store.upsert`. */
+  readonly attributes?: never;
 }
 
 export interface MutationReport {
@@ -743,7 +749,10 @@ export declare class Store {
    * retrying. Sealing and reindex publication are separate durable commits.
    */
   reindexText(): SealReport;
-  /** Writes `documents` as one atomic batch; see the class notes. */
+  /**
+   * Writes vectors with optional text and metadata as one atomic batch.
+   * An attributes property throws a TypeError with code ERR_INVALID_ARG_TYPE.
+   */
   ingest(documents: readonly Document[], dimension: number): MutationReport;
   /**
    * Upserts the documents as one atomic batch (see the class notes). If any

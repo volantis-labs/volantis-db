@@ -4160,6 +4160,12 @@ napi_value Ingest(napi_env env, napi_callback_info info) {
       return nullptr;
     }
 
+    struct DocumentStorage {
+      napi_value vector = nullptr;
+      std::vector<uint8_t> metadata;
+      std::string text;
+    };
+    std::vector<DocumentStorage> storage(document_count);
     std::vector<ZeIngestDocument> documents(document_count);
     for (uint32_t index = 0; index < document_count; ++index) {
       napi_value document;
@@ -4168,14 +4174,15 @@ napi_value Ingest(napi_env env, napi_callback_info info) {
         return nullptr;
       }
       napi_value id;
-      napi_value vector;
       bool present = false;
+      DocumentStorage &fields = storage[index];
       if (!GetNamed(env, document, "id", &id, &present) || !present) {
         napi_throw_type_error(env, "ERR_MISSING_ARGS",
                               "each document requires id");
         return nullptr;
       }
-      if (!GetNamed(env, document, "vector", &vector, &present) || !present) {
+      if (!GetNamed(env, document, "vector", &fields.vector, &present) ||
+          !present) {
         napi_throw_type_error(env, "ERR_MISSING_ARGS",
                               "each document requires vector");
         return nullptr;
@@ -4187,11 +4194,47 @@ napi_value Ingest(napi_env env, napi_callback_info info) {
           !GetOptionalBigUint64(env, document, "revision", 1,
                                 &native.revision) ||
           !GetOptionalBigInt64(env, document, "timestamp", 0,
-                               &native.timestamp) ||
-          !GetFloat32Array(env, vector, "document vector", &native.vector,
-                           &native.vector_len)) {
+                               &native.timestamp)) {
         return nullptr;
       }
+
+      if (!NapiOk(
+              env,
+              napi_has_named_property(env, document, "attributes", &present),
+              "inspect document attributes"))
+        return nullptr;
+      if (present) {
+        napi_throw_type_error(env, "ERR_INVALID_ARG_TYPE",
+                              "ingest does not accept document attributes; "
+                              "use upsert");
+        return nullptr;
+      }
+
+      napi_value metadata;
+      if (!GetNamed(env, document, "metadata", &metadata, &present))
+        return nullptr;
+      if (present) {
+        if (!GetUint8ArrayCopy(env, metadata, "document metadata",
+                               &fields.metadata))
+          return nullptr;
+        native.metadata = fields.metadata.data();
+        native.metadata_len = fields.metadata.size();
+      }
+      if (!GetOptionalString(env, document, "text", &fields.text, &present))
+        return nullptr;
+      if (present) {
+        native.text = reinterpret_cast<const uint8_t *>(fields.text.data());
+        native.text_len = fields.text.size();
+      }
+    }
+
+    // Property access can run JavaScript that detaches a vector's buffer.
+    // Borrow vectors only after reading all document properties.
+    for (uint32_t index = 0; index < document_count; ++index) {
+      ZeIngestDocument &native = documents[index];
+      if (!GetFloat32Array(env, storage[index].vector, "document vector",
+                           &native.vector, &native.vector_len))
+        return nullptr;
     }
 
     ZeIngestRequest request{};

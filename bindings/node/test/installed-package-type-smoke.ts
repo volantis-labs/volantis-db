@@ -21,7 +21,7 @@ import {
 } from '@zepdb/zeppelin-embed';
 
 const documents: readonly Document[] = [
-  { id: 1n, revision: 1n, vector: new Float32Array([1, 0]) },
+  { id: 1n, revision: 1n, vector: new Float32Array([1, 0]), text: 'harbour', metadata: Uint8Array.of(42) },
 ];
 const store = new Store('typecheck-index');
 const state: StoreState = store.state();
@@ -29,6 +29,9 @@ const stats: StoreStats = store.stats();
 const activeRows: bigint = stats.activeRowCount;
 const physicalFootprint: bigint | null = stats.physicalFootprint;
 const generation: bigint = store.ingest(documents, 2).generation;
+const attributedDocument = { id: 2n, vector: new Float32Array([1, 0]), attributes: [] };
+// @ts-expect-error Attributes belong on upsert.
+store.ingest([attributedDocument], 2);
 const hits: SearchHit[] = store.search(new Float32Array([1, 0]), 1);
 
 const records = openNamespace(
