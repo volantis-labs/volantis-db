@@ -88,6 +88,40 @@ def test_upsert_every_attribute_type_round_trips_through_get(tmp_path: Path) -> 
     assert document.attributes == _document(1).attributes
 
 
+def test_conditional_upsert_checks_the_batch_atomically(tmp_path: Path) -> None:
+    with ze.open_namespace(tmp_path, "cas", ze.NamespaceSpec()) as store:
+        store.upsert([ze.StoredDocument(1, revision=4)])
+        store.seal()
+        report = store.upsert([
+            ze.UpsertDocument(1, revision=5, expected_revision=4),
+            ze.UpsertDocument((1, 2), expected_revision=None),
+            ze.StoredDocument(3),
+        ])
+        before = store.get([1, (1, 2), 3])
+        assert before.generation == report.generation
+        assert [doc.revision for doc in before.documents if doc is not None] == [5, 1, 1]
+
+        with pytest.raises(ze.RevisionConflict) as caught:
+            store.upsert([
+                ze.StoredDocument(1, revision=6),
+                ze.UpsertDocument((1, 2), revision=2, expected_revision=0),
+                ze.UpsertDocument(3, revision=2, expected_revision=None),
+            ])
+        assert caught.value.code == ze.ErrorCode.ERR_REVISION_CONFLICT
+        assert caught.value.conflict == ze.RevisionConflictDetails(
+            index=1, doc_id=(1 << 64) | 2, expected_revision=0, current_revision=1
+        )
+        assert store.get([1, (1, 2), 3]) == before
+
+
+def test_conditional_upsert_rejects_revision_overflow(tmp_path: Path) -> None:
+    with ze.open_namespace(tmp_path, "cas-overflow", ze.NamespaceSpec()) as store:
+        before = store.get([1])
+        with pytest.raises(ze.InvalidArgument, match="unsigned 64-bit"):
+            store.upsert([ze.UpsertDocument(1, revision=(1 << 64) + 1, expected_revision=None)])
+        assert store.get([1]) == before
+
+
 def test_get_reports_missing_tombstoned_and_latest_revision_with_exact_fields(
     tmp_path: Path,
 ) -> None:
@@ -112,6 +146,29 @@ def test_get_reports_missing_tombstoned_and_latest_revision_with_exact_fields(
             assert selected_document is not None
             for field in flags:
                 assert (getattr(selected_document, field) is not None) == (field == selected)
+
+
+def test_conditional_delete_checks_the_batch_atomically(tmp_path: Path) -> None:
+    with ze.open_namespace(tmp_path, "cas-delete", ze.NamespaceSpec()) as store:
+        store.upsert([ze.StoredDocument(1, revision=4), ze.StoredDocument(2)])
+        before = store.get([1, 2, 3])
+        with pytest.raises(ze.RevisionConflict) as caught:
+            store.delete([1, ze.DeleteTarget(3, expected_revision=0)])
+        assert caught.value.code == ze.ErrorCode.ERR_REVISION_CONFLICT
+        assert caught.value.conflict == ze.RevisionConflictDetails(
+            index=1, doc_id=3, expected_revision=0, current_revision=None
+        )
+        assert store.get([1, 2, 3]) == before
+
+        report = store.delete([
+            ze.DeleteTarget(1, expected_revision=4),
+            2,
+            ze.DeleteTarget(3, expected_revision=None),
+        ])
+        after = store.get([1, 2, 3])
+        assert after.generation == report.generation
+        assert after.generation > before.generation
+        assert after.documents == (None, None, None)
 
 
 def _scan_document(doc_id: int, timestamp: int) -> ze.StoredDocument:
@@ -174,6 +231,34 @@ def _ranked_document(doc_id: int, rank: int) -> ze.StoredDocument:
         vector=np.asarray([float(doc_id)], dtype=np.float32),
         attributes=(ze.AttributeValue(1, ze.AttributeType.U64, rank),),
     )
+
+
+def test_delete_where_removes_only_matches_and_reports_generation(tmp_path: Path) -> None:
+    spec = ze.NamespaceSpec(
+        attributes=(ze.AttributeDefinition(1, "rank", ze.AttributeType.U64),),
+        vector_space=ze.VectorSpace(1),
+    )
+    with ze.open_namespace(tmp_path, "filtered-delete", spec) as store:
+        store.upsert([_ranked_document(1, 7), _ranked_document(2, 8)])
+        store.seal()
+        before = store.upsert([_ranked_document(3, 7)])
+        selected = ze.Filter.and_(ze.Filter.eq("rank", 7), ze.Filter.range_("ts", gte=10))
+
+        malformed = ze.Filter.eq("rank", 7)
+        malformed["filters"] = [ze.Filter.eq("rank", 8)]
+        with pytest.raises(ze.InvalidArgument, match="unsupported fields"):
+            store.delete_where(malformed)
+        assert store.count() == ze.CountResult(count=3, generation=before.generation)
+
+        report = store.delete_where(selected)
+        assert report.deleted == 2
+        assert report.generation > before.generation
+        remaining = store.scan(limit=10)
+        assert remaining.generation == report.generation
+        assert [doc.doc_id for doc in remaining.documents] == [2]
+        assert store.delete_where(selected) == ze.DeleteWhereReport(
+            deleted=0, generation=report.generation
+        )
 
 
 def test_count_filter_matches_scan_and_filtered_search_matches_exact_postfilter(

@@ -7,6 +7,7 @@ from enum import IntEnum
 from typing import NoReturn, cast
 
 from ._library import LIBRARY
+from ._types import RevisionConflictDetails
 
 LIBRARY.ze_error_code_name.argtypes = [ct.c_int32]
 LIBRARY.ze_error_code_name.restype = ct.c_char_p
@@ -72,9 +73,30 @@ def _class_name(c_name: str) -> str:
     return "".join(word.capitalize() for word in words)
 
 
+class RevisionConflict(ZeppelinError):
+    """A conditional write failed its live-revision check."""
+
+    code = ErrorCode(55)
+    code_name = "ZE_ERR_REVISION_CONFLICT"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: int | None = None,
+        code_name: str | None = None,
+        conflict: RevisionConflictDetails | None = None,
+    ) -> None:
+        super().__init__(message, code=code, code_name=code_name)
+        self.conflict = conflict
+
+
 ERROR_TYPES: dict[int, type[ZeppelinError]] = {}
 for _code, _name in enumerate(ERROR_NAMES):
     if _code == 0:
+        continue
+    if _code == RevisionConflict.code and _name == RevisionConflict.code_name:
+        ERROR_TYPES[_code] = RevisionConflict
         continue
     _type = type(
         _class_name(_name),

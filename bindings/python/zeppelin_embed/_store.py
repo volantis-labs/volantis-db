@@ -15,6 +15,7 @@ from . import _ffi
 from . import _structures as s
 from ._errors import (
     ERROR_TYPES,
+    RevisionConflict,
     TextUnavailable,
     UnsupportedBuild,
     invalid_argument,
@@ -30,6 +31,8 @@ from ._types import (
     CommitTier,
     ComputeUnits,
     CountResult,
+    DeleteTarget,
+    DeleteWhereReport,
     DurabilityMode,
     EmbeddingEpoch,
     EmbeddingRuntime,
@@ -53,6 +56,7 @@ from ._types import (
     QueryHit,
     QueryMode,
     QueryResult,
+    RevisionConflictDetails,
     ScanCursor,
     ScanPage,
     SearchHit,
@@ -68,6 +72,7 @@ from ._types import (
     TextLegs,
     TextQueryResult,
     Tier,
+    UpsertDocument,
     VectorSpace,
 )
 
@@ -128,6 +133,41 @@ def _doc_id(value: int | tuple[int, int]) -> s.ZeDocId:
 
 def _python_doc_id(value: s.ZeDocId) -> int:
     return (int(value.high) << 64) | int(value.low)
+
+
+def _u64_revision(value: int, field: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value < 1 << 64:
+        invalid_argument(f"{field} must be an unsigned 64-bit integer")
+    return value
+
+
+def _revision_condition(expected_revision: int | None) -> s.ZeRevisionCondition:
+    if expected_revision is None:
+        return s.ZeRevisionCondition(kind=s.REVISION_CONDITION_ABSENT)
+    return s.ZeRevisionCondition(
+        kind=s.REVISION_CONDITION_EXACTLY,
+        revision=_u64_revision(expected_revision, "expected_revision"),
+    )
+
+
+def _raise_for_conditional_status(
+    status: int, handle: int, conflict: s.ZeRevisionConflict
+) -> None:
+    if status == RevisionConflict.code:
+        raise RevisionConflict(
+            last_error_message(handle),
+            conflict=RevisionConflictDetails(
+                index=int(conflict.index),
+                doc_id=_python_doc_id(conflict.doc_id),
+                expected_revision=(
+                    int(conflict.expected_revision)
+                    if conflict.expected_kind == s.REVISION_CONDITION_EXACTLY
+                    else None
+                ),
+                current_revision=int(conflict.current_revision) if conflict.has_current else None,
+            ),
+        )
+    raise_for_status(status, handle)
 
 
 def _vector(value: np.ndarray[Any, Any], *, dimensions: int) -> np.ndarray[Any, Any]:
@@ -325,10 +365,26 @@ def _filter_field(
     return attribute_id, attribute_type
 
 
+_FILTER_FIELDS = {
+    "eq": {"field", "value"},
+    "not_eq": {"field", "value"},
+    "in": {"field", "values"},
+    "not_in": {"field", "values"},
+    "range": {"field", "gt", "gte", "lt", "lte"},
+    "exists": {"field"},
+    "is_null": {"field"},
+    "and": {"filters"},
+    "or": {"filters"},
+    "not": {"filter"},
+}
+
+
 def _flatten_filter(
     value: dict[str, Any],
     attribute_ids: dict[str, int],
     attribute_types: dict[int, AttributeType],
+    *,
+    strict: bool = False,
 ) -> tuple[s.ZeFilter, list[object]]:
     if not isinstance(value, dict):
         invalid_argument("filter must be built with Filter")
@@ -361,6 +417,10 @@ def _flatten_filter(
             operation = node.get("op")
             if not isinstance(operation, str) or operation not in operations:
                 invalid_argument(f"filter operator {operation!r} is not supported")
+            if strict:
+                extra_fields = node.keys() - _FILTER_FIELDS[operation] - {"op"}
+                if extra_fields:
+                    invalid_argument(f"filter {operation} contains unsupported fields: {extra_fields}")
             op = operations[operation]
             if op >= 8:
                 if op == 10:
@@ -397,6 +457,10 @@ def _flatten_filter(
             else:
                 node_values = ()
             if op == 5:
+                if strict and any(
+                    bound in node and node[bound] is None for bound in ("gt", "gte", "lt", "lte")
+                ):
+                    invalid_argument("filter range bounds must have values")
                 if "gte" in node and "gt" in node:
                     invalid_argument("filter range cannot contain both gte and gt")
                 if "lte" in node and "lt" in node:
@@ -840,16 +904,23 @@ class Store:
         return last
 
     def upsert(self, documents: Sequence[StoredDocument]) -> MutationReport:
-        """Atomically upsert documents carrying typed schema attributes."""
+        """Atomically upsert documents, checking conditions on UpsertDocument entries."""
 
         handle = self._live_handle()
+        # Marshal records and their conditions from the same batch entries.
+        documents = tuple(documents)
         if self._record_only:
             dimension = 0
         elif self._vector_dimensions is not None:
             dimension = self._vector_dimensions
         else:
             first_vector = next(
-                (document.vector for document in documents if document.vector is not None), None
+                (
+                    document.vector
+                    for document in documents
+                    if isinstance(document, StoredDocument) and document.vector is not None
+                ),
+                None,
             )
             if first_vector is None:
                 invalid_argument("vector namespace upsert requires document vectors")
@@ -859,6 +930,12 @@ class Store:
         for index, document in enumerate(documents):
             if not isinstance(document, StoredDocument):
                 invalid_argument("documents must contain StoredDocument values")
+            if (
+                not isinstance(document.timestamp, int)
+                or isinstance(document.timestamp, bool)
+                or not -(1 << 63) <= document.timestamp < 1 << 63
+            ):
+                invalid_argument("timestamp must be a signed 64-bit integer")
             if self._record_only:
                 if document.vector is not None:
                     invalid_argument("record-only namespace does not accept document vectors")
@@ -909,7 +986,7 @@ class Store:
                     abi_size=ct.sizeof(s.ZeIngestDocument),
                     abi_reserved=0,
                     doc_id=_doc_id(document.doc_id),
-                    revision=document.revision,
+                    revision=_u64_revision(document.revision, "revision"),
                     timestamp=document.timestamp,
                     vector=vector_pointer,
                     vector_len=vector_len,
@@ -929,9 +1006,32 @@ class Store:
             dimension=dimension,
         )
         report = s.sized(s.ZeMutationReport)
-        status = self._call(LIBRARY.ze_upsert, handle, ct.byref(request), ct.byref(report))
+        if any(isinstance(document, UpsertDocument) for document in documents):
+            conditions = (s.ZeRevisionCondition * len(records))(
+                *[
+                    _revision_condition(document.expected_revision)
+                    if isinstance(document, UpsertDocument)
+                    else s.ZeRevisionCondition(kind=s.REVISION_CONDITION_NONE)
+                    for document in documents
+                ]
+            )
+            conditional = s.sized(s.ZeConditionalUpsertRequest)
+            conditional.batch = request
+            conditional.conditions = ct.cast(conditions, ct.POINTER(s.ZeRevisionCondition))
+            conditional.condition_count = len(conditions)
+            conflict = s.sized(s.ZeRevisionConflict)
+            status = self._call(
+                LIBRARY.ze_upsert_conditional,
+                handle,
+                ct.byref(conditional),
+                ct.byref(report),
+                ct.byref(conflict),
+            )
+            _raise_for_conditional_status(status, handle, conflict)
+        else:
+            status = self._call(LIBRARY.ze_upsert, handle, ct.byref(request), ct.byref(report))
+            raise_for_status(status, handle)
         del owners
-        raise_for_status(status, handle)
         return MutationReport(int(report.sequence), int(report.generation))
 
     def get(
@@ -1419,11 +1519,17 @@ class Store:
             else None,
         )
 
-    def delete(self, doc_ids: Sequence[int | tuple[int, int]]) -> MutationReport:
+    def delete(self, doc_ids: Sequence[int | tuple[int, int] | DeleteTarget]) -> MutationReport:
+        """Atomically delete ids, checking conditions on DeleteTarget entries."""
+
         if self._text:
             self._require_text_store()
         handle = self._live_handle()
-        ids = (s.ZeDocId * len(doc_ids))(*[_doc_id(value) for value in doc_ids])
+        # Marshal ids and their conditions from the same batch entries.
+        doc_ids = tuple(doc_ids)
+        ids = (s.ZeDocId * len(doc_ids))(
+            *[_doc_id(value.doc_id if isinstance(value, DeleteTarget) else value) for value in doc_ids]
+        )
         request = s.ZeDeleteRequest(
             abi_size=ct.sizeof(s.ZeDeleteRequest),
             abi_reserved=0,
@@ -1431,6 +1537,29 @@ class Store:
             doc_id_count=len(ids),
         )
         report = s.sized(s.ZeMutationReport)
+        if any(isinstance(value, DeleteTarget) for value in doc_ids):
+            conditions = (s.ZeRevisionCondition * len(ids))(
+                *[
+                    _revision_condition(value.expected_revision)
+                    if isinstance(value, DeleteTarget)
+                    else s.ZeRevisionCondition(kind=s.REVISION_CONDITION_NONE)
+                    for value in doc_ids
+                ]
+            )
+            conditional = s.sized(s.ZeConditionalDeleteRequest)
+            conditional.batch = request
+            conditional.conditions = ct.cast(conditions, ct.POINTER(s.ZeRevisionCondition))
+            conditional.condition_count = len(conditions)
+            conflict = s.sized(s.ZeRevisionConflict)
+            status = self._call(
+                LIBRARY.ze_delete_conditional,
+                handle,
+                ct.byref(conditional),
+                ct.byref(report),
+                ct.byref(conflict),
+            )
+            _raise_for_conditional_status(status, handle, conflict)
+            return MutationReport(int(report.sequence), int(report.generation))
         raise_for_status(
             self._call(
                 LIBRARY.ze_text_delete if self._text else LIBRARY.ze_delete,
@@ -1441,6 +1570,21 @@ class Store:
             handle,
         )
         return MutationReport(int(report.sequence), int(report.generation))
+
+    def delete_where(self, filter: dict[str, Any]) -> DeleteWhereReport:
+        """Atomically delete and physically purge live documents matching a filter."""
+
+        handle = self._live_handle()
+        flat_filter, owners = _flatten_filter(
+            filter, self._attribute_ids, self._attribute_types, strict=True
+        )
+        request = s.sized(s.ZeDeleteWhereRequest)
+        request.filter = ct.pointer(flat_filter)
+        report = s.sized(s.ZeDeleteWhereReport)
+        status = self._call(LIBRARY.ze_delete_where, handle, ct.byref(request), ct.byref(report))
+        del owners
+        raise_for_status(status, handle)
+        return DeleteWhereReport(deleted=int(report.deleted_count), generation=int(report.generation))
 
     def search(
         self,

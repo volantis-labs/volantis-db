@@ -20,6 +20,46 @@ with ze.open(Path("example-store")) as store:
     print(result.hits[0].doc_id)
 ```
 
+## Conditional writes and filtered deletion
+
+Pass an `UpsertDocument` to `store.upsert()` or a `DeleteTarget` to
+`store.delete()` to check the target's live revision before writing.
+`expected_revision` is an unsigned 64-bit integer for an exact match, or
+`None` to require that the id has no live document. Plain `StoredDocument`
+entries and bare ids carry no revision condition and can share a batch
+with conditional entries.
+
+```python
+with ze.open_namespace("example-store", "drafts", ze.NamespaceSpec()) as store:
+    store.upsert([ze.StoredDocument(7, revision=1, text="draft")])
+    store.upsert([
+        ze.UpsertDocument(7, revision=2, expected_revision=1, text="edited draft"),
+        ze.UpsertDocument(8, expected_revision=None, timestamp=10, text="new draft"),
+    ])
+    store.delete([ze.DeleteTarget(7, expected_revision=2)])
+    result = store.delete_where(ze.Filter.eq("ts", 10))
+    print(result.deleted, result.generation)
+```
+
+Both conditional writes return a `MutationReport`. The writer checks every
+condition against the latest committed state before applying any entry. On
+`ze.RevisionConflict` (`ZE_ERR_REVISION_CONFLICT`), the entire batch leaves
+the store unchanged. The exception's `conflict` gives the first failed
+entry's zero-based `index`, integer `doc_id`, `expected_revision`, and
+`current_revision` (`None` when no live document exists). The normal upsert
+revision rules still apply. Reusing a revision is idempotent, and recreating a
+deleted id via upsert requires a revision above the deleted revision.
+
+`store.delete_where(filter)` takes a required structured `Filter`, using the
+same builders as `scan` and `count`. It atomically deletes every matching
+live document and physically removes the matching documents' bytes from
+store files before returning. If interrupted, the next writable open
+finishes any pending removal. `DeleteWhereReport` gives the number
+`deleted` and the resulting `generation`. With zero matches, the generation
+is unchanged. A malformed filter raises `ze.InvalidArgument`. These
+operations use core store handles. Text stores use `delete_text()` for
+document deletion.
+
 ## Native library loading
 
 The loader uses `ZEPPELIN_EMBED_LIBRARY` when it is set. Otherwise, an installed

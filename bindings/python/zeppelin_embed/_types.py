@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import TYPE_CHECKING, Any
 
@@ -134,6 +134,29 @@ class StoredDocument:
 
 
 @dataclass(frozen=True)
+class UpsertDocument(StoredDocument):
+    """A document to write only when its live revision matches the condition."""
+
+    expected_revision: int | None = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class DeleteTarget:
+    """A document id with a live-revision condition."""
+
+    doc_id: int | tuple[int, int]
+    expected_revision: int | None
+
+
+@dataclass(frozen=True)
+class RevisionConflictDetails:
+    index: int
+    doc_id: int
+    expected_revision: int | None
+    current_revision: int | None
+
+
+@dataclass(frozen=True)
 class GetResult:
     documents: tuple[StoredDocument | None, ...]
     missing_count: int
@@ -158,6 +181,12 @@ class ScanPage:
 @dataclass(frozen=True)
 class CountResult:
     count: int
+    generation: int
+
+
+@dataclass(frozen=True)
+class DeleteWhereReport:
+    deleted: int
     generation: int
 
 

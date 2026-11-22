@@ -38,9 +38,31 @@ _bind("ze_state", [Handle, ct.POINTER(s.ZeStateReport)])
 _bind("ze_stats", [Handle, ct.POINTER(s.ZeStatsReport)])
 _bind("ze_ingest", [Handle, ct.POINTER(s.ZeIngestRequest), ct.POINTER(s.ZeMutationReport)])
 _bind("ze_upsert", [Handle, ct.POINTER(s.ZeUpsertRequest), ct.POINTER(s.ZeMutationReport)])
+_bind(
+    "ze_upsert_conditional",
+    [
+        Handle,
+        ct.POINTER(s.ZeConditionalUpsertRequest),
+        ct.POINTER(s.ZeMutationReport),
+        ct.POINTER(s.ZeRevisionConflict),
+    ],
+)
 _bind("ze_get", [Handle, ct.POINTER(s.ZeGetRequest), ct.POINTER(s.ZeGetResult)])
 _bind("ze_get_result_free", [ct.POINTER(s.ZeGetResult)])
 _bind("ze_delete", [Handle, ct.POINTER(s.ZeDeleteRequest), ct.POINTER(s.ZeMutationReport)])
+_bind(
+    "ze_delete_conditional",
+    [
+        Handle,
+        ct.POINTER(s.ZeConditionalDeleteRequest),
+        ct.POINTER(s.ZeMutationReport),
+        ct.POINTER(s.ZeRevisionConflict),
+    ],
+)
+_bind(
+    "ze_delete_where",
+    [Handle, ct.POINTER(s.ZeDeleteWhereRequest), ct.POINTER(s.ZeDeleteWhereReport)],
+)
 _bind("ze_scan", [Handle, ct.POINTER(s.ZeScanRequest), ct.POINTER(s.ZeScanResult)])
 _bind("ze_scan_result_free", [ct.POINTER(s.ZeScanResult)])
 _bind("ze_count", [Handle, ct.POINTER(s.ZeCountRequest), ct.POINTER(s.ZeCountResult)])

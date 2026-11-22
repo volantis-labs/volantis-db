@@ -1,4 +1,5 @@
 from ._errors import *  # noqa: F403
+from ._errors import RevisionConflict as RevisionConflict
 from ._errors import UnsupportedBuild as UnsupportedBuild
 from ._ffi import ABI_VERSION as ABI_VERSION
 from ._ffi import TEXT_AVAILABLE as TEXT_AVAILABLE
@@ -20,6 +21,8 @@ from ._types import AttributeValue as AttributeValue
 from ._types import CommitTier as CommitTier
 from ._types import ComputeUnits as ComputeUnits
 from ._types import CountResult as CountResult
+from ._types import DeleteTarget as DeleteTarget
+from ._types import DeleteWhereReport as DeleteWhereReport
 from ._types import DurabilityMode as DurabilityMode
 from ._types import EmbeddingEpoch as EmbeddingEpoch
 from ._types import EmbeddingRuntime as EmbeddingRuntime
@@ -45,6 +48,7 @@ from ._types import PurgeTokenReport as PurgeTokenReport
 from ._types import QueryHit as QueryHit
 from ._types import QueryMode as QueryMode
 from ._types import QueryResult as QueryResult
+from ._types import RevisionConflictDetails as RevisionConflictDetails
 from ._types import ScanCursor as ScanCursor
 from ._types import ScanPage as ScanPage
 from ._types import SearchHit as SearchHit
@@ -60,4 +64,5 @@ from ._types import TextIngestReport as TextIngestReport
 from ._types import TextLegs as TextLegs
 from ._types import TextQueryResult as TextQueryResult
 from ._types import Tier as Tier
+from ._types import UpsertDocument as UpsertDocument
 from ._types import VectorSpace as VectorSpace

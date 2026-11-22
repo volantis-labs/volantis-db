@@ -334,6 +334,42 @@ class ZeUpsertRequest(ct.Structure):
     ]
 
 
+REVISION_CONDITION_NONE = 0
+REVISION_CONDITION_EXACTLY = 1
+REVISION_CONDITION_ABSENT = 2
+
+
+class ZeRevisionCondition(ct.Structure):
+    _fields_ = [
+        ("kind", ct.c_uint32),
+        ("reserved", ct.c_uint32),
+        ("revision", ct.c_uint64),
+    ]
+
+
+class ZeConditionalUpsertRequest(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("batch", ZeUpsertRequest),
+        ("conditions", ct.POINTER(ZeRevisionCondition)),
+        ("condition_count", ct.c_size_t),
+    ]
+
+
+class ZeRevisionConflict(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("index", ct.c_uint64),
+        ("doc_id", ZeDocId),
+        ("expected_kind", ct.c_uint32),
+        ("has_current", ct.c_uint32),
+        ("expected_revision", ct.c_uint64),
+        ("current_revision", ct.c_uint64),
+    ]
+
+
 class ZeGetRequest(ct.Structure):
     _fields_ = [
         ("abi_size", ct.c_uint32),
@@ -474,6 +510,33 @@ class ZeDeleteRequest(ct.Structure):
         ("abi_reserved", ct.c_uint32),
         ("doc_ids", ct.POINTER(ZeDocId)),
         ("doc_id_count", ct.c_size_t),
+    ]
+
+
+class ZeConditionalDeleteRequest(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("batch", ZeDeleteRequest),
+        ("conditions", ct.POINTER(ZeRevisionCondition)),
+        ("condition_count", ct.c_size_t),
+    ]
+
+
+class ZeDeleteWhereRequest(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("filter", ct.POINTER(ZeFilter)),
+    ]
+
+
+class ZeDeleteWhereReport(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("deleted_count", ct.c_uint64),
+        ("generation", ct.c_uint64),
     ]
 
 
