@@ -85,6 +85,9 @@ impl FfiError {
             zeppelin_embed::lifecycle::StoreError::Manifest(
                 zeppelin_embed::manifest::ManifestError::GraphUnsupportedBuild,
             ) => ZeErrorCode::ZeErrGraphUnsupportedBuild,
+            zeppelin_embed::lifecycle::StoreError::NeighbourSourceNotFound { .. } => {
+                ZeErrorCode::ZeErrNotFound
+            }
             zeppelin_embed::lifecycle::StoreError::MissingEmbedder => {
                 ZeErrorCode::ZeErrMissingEmbedder
             }

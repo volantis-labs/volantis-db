@@ -3726,6 +3726,134 @@ typedef struct ZeChunkRank {
 } ZeChunkRank;
 
 /*
+ One stored document, optionally restricted to a single source chunk.
+ */
+typedef struct ZeNeighbourSource {
+    /*
+     Full-width document identity.
+     */
+    struct ZeDocId doc_id;
+    /*
+     One selects chunk, zero selects the whole document.
+     */
+    uint32_t has_chunk;
+    /*
+     Zero-based ordinal. Must be zero when inactive.
+     */
+    uint32_t chunk;
+} ZeNeighbourSource;
+
+/*
+ Stored-vector nearest-chunk query for one or more sources.
+ */
+typedef struct ZeNeighbourRequest {
+    /*
+     sizeof(ZeNeighbourRequest).
+     */
+    uint32_t abi_size;
+    /*
+     Must be zero.
+     */
+    uint32_t abi_reserved;
+    /*
+     Borrowed sources in result group order.
+     */
+    const struct ZeNeighbourSource *sources;
+    /*
+     Length of sources.
+     */
+    size_t source_count;
+    /*
+     Optional Store predicate and timestamp range.
+     */
+    const struct ZeQueryFilter *constraints;
+    /*
+     Optional candidate document whitelist.
+     */
+    const struct ZeDocId *eligible_ids;
+    /*
+     Length of eligible_ids.
+     */
+    size_t eligible_count;
+    /*
+     1..4096 maximum per source. Zero means all above threshold, or 10 without threshold.
+     */
+    size_t k;
+    /*
+     Exclusive lower score bound. Must be zero when inactive.
+     */
+    double threshold;
+    /*
+     One includes chunks of the source document.
+     */
+    uint32_t include_source;
+    /*
+     One activates threshold.
+     */
+    uint32_t has_threshold;
+    /*
+     One activates eligible_ids, including an empty set.
+     */
+    uint32_t has_eligible;
+    /*
+     Must be zero.
+     */
+    uint32_t reserved;
+    /*
+     Optional cancellation handle, mutually exclusive with deadline_ns.
+     */
+    ze_cancel_token cancel_token;
+    /*
+     Optional relative deadline for the entire batch in nanoseconds.
+     */
+    uint64_t deadline_ns;
+} ZeNeighbourRequest;
+
+/*
+ One ranked candidate of a source, grouped in request order.
+ */
+typedef struct ZeNeighbourHit {
+    /*
+     Zero-based index in the input source array.
+     */
+    size_t source_index;
+    /*
+     Candidate parent identity.
+     */
+    struct ZeDocId doc_id;
+    /*
+     Zero-based candidate chunk number.
+     */
+    size_t chunk;
+    /*
+     Negative squared L2 distance to the closest selected source chunk.
+     */
+    double score;
+} ZeNeighbourHit;
+
+/*
+ Flat ranked hits. A source without hits has no entries.
+ */
+typedef struct ZeNeighbourResult {
+    /*
+     sizeof(ZeNeighbourResult).
+     */
+    uint32_t abi_size;
+    /*
+     Zero on input, owned allocation tag on return.
+     */
+    uint32_t abi_reserved;
+    /*
+     Release with ze_neighbour_result_free.
+     */
+    struct ZeNeighbourHit *hits;
+    /*
+     Length of hits.
+     */
+    size_t hit_count;
+} ZeNeighbourResult;
+
+/*
  Store verification request.
  */
 typedef struct ZeVerifyRequest {
@@ -4516,6 +4644,20 @@ ze_error_code ze_query_embedded(ze_handle handle,
                                 struct ZeChunkRank *ranks,
                                 size_t rank_capacity,
                                 struct ZeGetResult *out_result);
+
+/*
+ Finds neighbours by stored vectors without invoking a model. Pass one source for
+ a single-id query. No partial results are published. Release successful results
+ with ze_neighbour_result_free.
+ */
+ze_error_code ze_nearest_chunks(ze_handle handle,
+                                const struct ZeNeighbourRequest *request,
+                                struct ZeNeighbourResult *out);
+
+/*
+ Releases the result's registered hit allocation and clears its fields.
+ */
+ze_error_code ze_neighbour_result_free(struct ZeNeighbourResult *result);
 
 /*
  Walks the store directory at `request.path` and reports every damaged

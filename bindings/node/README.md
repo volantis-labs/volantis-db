@@ -768,3 +768,37 @@ C callers pass a size-versioned `ZeEmbeddedNamespaceSpec` through its
 `ZeEmbeddedQueryRequest` to `ze_query_embedded` with space for `k` chunk ranks.
 The returned `ZeGetResult` owns the parallel hit rows, text and attributes.
 Release that result with `ze_get_result_free`.
+
+#### Neighbours of stored chunks
+
+On an embedded Store namespace, use a document ID for the whole source or
+`{id, chunk}` for one zero-based source chunk. These calls use persisted
+document-tower vectors, including on a snapshot or inspection handle. The
+standalone `TextStore` has a separate API.
+
+```js
+const hits = notes.nearestChunks({id: noteId, chunk: 0}, {k: 5});
+const groups = await notes.nearestChunksBatchAsync([noteId, otherId], {
+  threshold: -0.25,
+  filter: {op: 'not', children: [{op: 'eq', attributeId: 1, values: [meeting]}]},
+  signal
+});
+```
+
+Each hit contains `{id, chunk, score}`. The score is negative squared L2
+distance. Zero is an exact match. For a whole source document, a candidate
+gets its highest score across all source chunks and appears once. Equal scores
+sort by ascending candidate ID and chunk number. Source-document chunks are
+excluded by default. Set `includeSource: true` to include them.
+
+`filter`, `timestampRange` and `eligibleIds` constrain candidates before
+ranking. Supply `k` (1–4096) for a maximum per source. With only a threshold,
+all scores strictly above it are returned. Omitting both returns up to 10 hits.
+`nearestChunksBatch` and its async form preserve input order, duplicate
+sources and empty groups. Supply one of `deadlineNs`, `cancelToken` or
+(async only) `signal`. A stopped batch returns a typed error with no partial
+results. An unknown source ID or chunk produces `ZE_ERR_NOT_FOUND`.
+
+C callers pass one or more `ZeNeighbourSource` entries to `ze_nearest_chunks`.
+The result contains a flat array grouped by zero-based input `source_index`.
+Release it with `ze_neighbour_result_free`. Set `k = 0` for an omitted limit.

@@ -59,6 +59,7 @@ test('embedded namespace resolves a pinned model and searches chunks and graph n
     const view = store.openSnapshot();
     try {
       assert.equal(view.queryEmbedded({text:'bronze',leg:'dense',k:1})[0].id,id);
+      assert.deepEqual(view.nearestChunks(id), []);
     } finally { view.close(); }
     const backup = join(root,'backup');
     await store.backupAsync(backup);
@@ -66,9 +67,34 @@ test('embedded namespace resolves a pinned model and searches chunks and graph n
     for (const call of ["vector_search('bronze',1,'exact')","hybrid_search('bronze',1,'exact')"]) {
       assert.deepEqual(store.cypher('CALL ze.'+call+' YIELD node RETURN ze.node_id(node)').rows,[[id.toString(16).padStart(32,'0')]]);
     }
+
+    const other = id + 1n;
+    await store.upsertAsync([{id: other, revision: 1n, text: 'bronze zeppelin', attributes}]);
+    const opts = {k: 2, eligibleIds: [id], filter: {op:'eq', attributeId:1, values:attributes}};
+    const hits = store.nearestChunks({id: other, chunk: 0}, opts);
+    assert.equal(hits.length, 2);
+    assert.ok(hits.every(hit => hit.id === id && Number.isFinite(hit.score)));
+    assert.ok(hits[0].score >= hits[1].score);
+    assert.deepEqual(await store.nearestChunksBatchAsync([id, other, other], opts), [[], hits, hits]);
+    assert.deepEqual(store.nearestChunksBatch([id, other], {threshold: 0}), [[], []]);
+    assert.throws(() => store.nearestChunks(other + 1n), {code:'ZE_ERR_NOT_FOUND'});
   } finally {
     store?.close();
     if(original===undefined)delete process.env.ZE_MODEL_CACHE;else process.env.ZE_MODEL_CACHE=original;
     rmSync(root,{recursive:true,force:true});
+  }
+});
+
+test('stored chunk neighbours expose single and cancellable batch calls', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'ze555-'));
+  const store = openNamespace(root, 'notes', {vectorSpace: {dimensions: 2}}, options);
+  try {
+    assert.throws(() => store.nearestChunks(1n), {code: 'ZE_ERR_MISSING_EMBEDDER'});
+    await assert.rejects(store.nearestChunksBatchAsync([1n, 2n], {signal: AbortSignal.abort()}),
+      {code: 'ZE_ERR_CANCELLED'});
+    assert.throws(() => store.nearestChunksBatch([1n], {k: 0}), RangeError);
+  } finally {
+    store.close();
+    rmSync(root, {recursive: true, force: true});
   }
 });

@@ -16,6 +16,7 @@ pub const REQUIRED: &[&str] = &[
     "storage-durability.mixed-batch.comparator",
     "storage-durability.embedded-batch.encoder-fault",
     "storage-durability.embedded-batch.clean",
+    "storage-durability.embedded-batch.neighbour-visibility",
 ];
 
 pub const PART_A_REQUIRED: &[&str] = &[
@@ -309,6 +310,8 @@ fn embedded_batch(
     coverage: &mut CoverageRegistry,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use zeppelin_embed::ingest::{DocId, DocumentVersion, IngestDocument, Revision};
+    use zeppelin_embed::lifecycle::embedded::NeighbourOptions;
+    use zeppelin_embed::lifecycle::{CancelToken, QueryControl, QueryError};
     use zeppelin_embed::lifecycle::{
         DocumentFields, NamespaceMutation, OpenOptions, Store, StoreError, namespace_batch,
     };
@@ -349,6 +352,30 @@ fn embedded_batch(
             {
                 return Err("encoder fault crossed the atomic publication boundary".into());
             }
+            let result = store.nearest_chunks(
+                id,
+                None,
+                &NeighbourOptions {
+                    include_source: true,
+                    ..Default::default()
+                },
+                QueryControl::Cancel(CancelToken::new()),
+            );
+            match result {
+                Ok(hits)
+                    if expected
+                        && matches!(hits.as_slice(), [hit] if hit.id == id && hit.chunk == 0 && hit.score == 0.) =>
+                    {}
+                Err(QueryError::Store(StoreError::NeighbourSourceNotFound {
+                    id: missing,
+                    chunk: None,
+                })) if !expected && missing == id => {}
+                other => {
+                    return Err(
+                        format!("neighbour visibility after namespace batch: {other:?}").into(),
+                    );
+                }
+            }
         }
         coverage.hit(if expected {
             "storage-durability.embedded-batch.clean"
@@ -356,6 +383,7 @@ fn embedded_batch(
             "storage-durability.embedded-batch.encoder-fault"
         });
     }
+    coverage.hit("storage-durability.embedded-batch.neighbour-visibility");
     Ok(())
 }
 

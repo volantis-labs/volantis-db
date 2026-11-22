@@ -344,3 +344,207 @@ fn mixed_graph_batch_applies_the_embedded_document_contract() {
             .is_clean()
     );
 }
+
+fn neighbour_store() -> (tempfile::TempDir, Store) {
+    let dir = tempdir().expect("namespace directory");
+    let column = ColumnId::new(1);
+    let schema = Schema::new(vec![ColumnDefinition::new(
+        column,
+        "meeting",
+        ColumnType::U64,
+        false,
+    )])
+    .expect("schema");
+    let store = Store::open_embedded(
+        dir.path(),
+        OpenOptions::new().with_schema(schema),
+        Arc::new(Model),
+    )
+    .expect("open");
+    let docs = [
+        (u128::MAX, "target|other", 1),
+        (2, "target", 1),
+        (3, "other|other", 2),
+    ]
+    .into_iter()
+    .map(|(id, text, meeting)| {
+        IngestDocument::new(
+            DocumentVersion::new(DocId::new(id), Revision::new(1)),
+            vec![],
+        )
+        .with_text(text)
+        .with_columns(vec![(column, PredicateValue::U64(meeting))])
+    })
+    .collect();
+    store.ingest(IngestBatch::new(docs)).expect("ingest");
+    store.seal().expect("seal");
+    // Read persisted vectors without registering either model tower.
+    drop(store);
+    let reader = Store::open_for_inspection(dir.path()).expect("read without model");
+    (dir, reader)
+}
+
+fn running() -> QueryControl {
+    QueryControl::Cancel(CancelToken::new())
+}
+
+#[test]
+fn nearest_by_id_excludes_source_by_default_and_includes_it_when_requested() {
+    let (_dir, store) = neighbour_store();
+    let id = DocId::new(u128::MAX);
+    let options = NeighbourOptions {
+        k: Some(8),
+        ..Default::default()
+    };
+    let hits = store
+        .nearest_chunks(id, None, &options, running())
+        .expect("whole document");
+    assert_eq!(
+        hits.iter()
+            .map(|h| (h.id, h.chunk, h.score))
+            .collect::<Vec<_>>(),
+        [
+            (DocId::new(2), 0, 0.),
+            (DocId::new(3), 0, 0.),
+            (DocId::new(3), 1, 0.)
+        ]
+    );
+    let options = NeighbourOptions {
+        include_source: true,
+        ..options
+    };
+    let hits = store
+        .nearest_chunks(id, Some(1), &options, running())
+        .expect("second source chunk");
+    assert_eq!(
+        hits.iter()
+            .map(|h| (h.id, h.chunk, h.score))
+            .collect::<Vec<_>>(),
+        [
+            (DocId::new(3), 0, 0.),
+            (DocId::new(3), 1, 0.),
+            (id, 1, 0.),
+            (DocId::new(2), 0, -2.),
+            (id, 0, -2.)
+        ]
+    );
+}
+
+#[test]
+fn nearest_batch_matches_repeated_single_calls_in_input_order() {
+    let (_dir, store) = neighbour_store();
+    let sources = [
+        (DocId::new(3), None),
+        (DocId::new(u128::MAX), Some(0)),
+        (DocId::new(3), None),
+    ];
+    let opts = NeighbourOptions {
+        k: Some(2),
+        ..Default::default()
+    };
+    let batch = store
+        .nearest_chunks_batch(&sources, &opts, running())
+        .expect("batch");
+    assert_eq!(batch.len(), sources.len());
+    for ((id, chunk), group) in sources.into_iter().zip(batch) {
+        assert_eq!(
+            group,
+            store
+                .nearest_chunks(id, chunk, &opts, running())
+                .expect("single")
+        );
+    }
+}
+
+#[test]
+fn nearest_filter_excludes_source_meeting_before_top_k() {
+    let (_dir, store) = neighbour_store();
+    let filter = QueryFilter::new(
+        store.schema(),
+        Some(&Predicate::Not(Box::new(Predicate::Eq {
+            column: ColumnId::new(1),
+            value: PredicateValue::U64(1),
+        }))),
+        None,
+    )
+    .expect("valid filter");
+    let opts = NeighbourOptions {
+        k: Some(2),
+        filter: filter.as_ref(),
+        ..Default::default()
+    };
+    let hits = store
+        .nearest_chunks(DocId::new(u128::MAX), Some(0), &opts, running())
+        .expect("filtered");
+    assert_eq!(
+        hits.iter()
+            .map(|h| (h.id, h.chunk, h.score))
+            .collect::<Vec<_>>(),
+        [(DocId::new(3), 0, -2.), (DocId::new(3), 1, -2.)]
+    );
+}
+
+#[test]
+fn nearest_threshold_returns_only_scores_strictly_above_it() {
+    let dir = tempdir().expect("namespace directory");
+    let store =
+        Store::open_embedded(dir.path(), OpenOptions::new(), Arc::new(Model)).expect("open");
+    let id = DocId::new(1);
+    let text = format!("{}other", "target|".repeat(12));
+    store
+        .ingest(IngestBatch::new(vec![
+            IngestDocument::new(DocumentVersion::new(id, Revision::new(1)), vec![]).with_text(text),
+        ]))
+        .expect("ingest");
+    for (threshold, k, count) in [
+        (-3., None, 13),
+        (-2., None, 12),
+        (-2., Some(2), 2),
+        (0., None, 0),
+    ] {
+        let options = NeighbourOptions {
+            k,
+            threshold: Some(threshold),
+            include_source: true,
+            filter: None,
+        };
+        let hits = store
+            .nearest_chunks(id, Some(0), &options, running())
+            .expect("threshold");
+        assert_eq!(hits.len(), count);
+        assert!(hits.iter().all(|h| h.score > threshold));
+    }
+}
+
+#[test]
+fn nearest_batch_deadline_and_cancellation_return_no_partial_results() {
+    let (_dir, store) = neighbour_store();
+    let sources = [(DocId::new(2), None), (DocId::new(3), None)];
+    let token = CancelToken::new();
+    token.cancel();
+    let run = |control| store.nearest_chunks_batch(&sources, &NeighbourOptions::default(), control);
+    assert!(matches!(
+        run(QueryControl::Cancel(token)),
+        Err(QueryError::Cancelled { partial: false })
+    ));
+    let deadline = Deadline::after(std::time::Duration::ZERO).expect("deadline");
+    assert!(matches!(
+        run(QueryControl::Deadline(deadline)),
+        Err(QueryError::Timeout { partial: false })
+    ));
+}
+
+#[test]
+fn nearest_unknown_document_or_chunk_is_a_typed_error() {
+    let (_dir, store) = neighbour_store();
+    for (id, chunk) in [(DocId::new(42), None), (DocId::new(2), Some(1))] {
+        let result = store.nearest_chunks_batch(
+            &[(DocId::new(3), None), (id, chunk)],
+            &NeighbourOptions::default(),
+            running(),
+        );
+        assert!(
+            matches!(result, Err(QueryError::Store(StoreError::NeighbourSourceNotFound { id: missing, chunk: ordinal })) if missing == id && ordinal == chunk)
+        );
+    }
+}

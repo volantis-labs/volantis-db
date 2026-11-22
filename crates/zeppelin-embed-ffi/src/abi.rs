@@ -2149,3 +2149,79 @@ pub struct ZeChunkRank {
     /// Larger is better.
     pub score: f64,
 }
+
+/// One stored document, optionally restricted to a single source chunk.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ZeNeighbourSource {
+    /// Full-width document identity.
+    pub doc_id: ZeDocId,
+    /// One selects chunk, zero selects the whole document.
+    pub has_chunk: u32,
+    /// Zero-based ordinal. Must be zero when inactive.
+    pub chunk: u32,
+}
+
+/// Stored-vector nearest-chunk query for one or more sources.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ZeNeighbourRequest {
+    /// sizeof(ZeNeighbourRequest).
+    pub abi_size: u32,
+    /// Must be zero.
+    pub abi_reserved: u32,
+    /// Borrowed sources in result group order.
+    pub sources: *const ZeNeighbourSource,
+    /// Length of sources.
+    pub source_count: usize,
+    /// Optional Store predicate and timestamp range.
+    pub constraints: *const ZeQueryFilter,
+    /// Optional candidate document whitelist.
+    pub eligible_ids: *const ZeDocId,
+    /// Length of eligible_ids.
+    pub eligible_count: usize,
+    /// 1..4096 maximum per source. Zero means all above threshold, or 10 without threshold.
+    pub k: usize,
+    /// Exclusive lower score bound. Must be zero when inactive.
+    pub threshold: f64,
+    /// One includes chunks of the source document.
+    pub include_source: u32,
+    /// One activates threshold.
+    pub has_threshold: u32,
+    /// One activates eligible_ids, including an empty set.
+    pub has_eligible: u32,
+    /// Must be zero.
+    pub reserved: u32,
+    /// Optional cancellation handle, mutually exclusive with deadline_ns.
+    pub cancel_token: ZeCancelToken,
+    /// Optional relative deadline for the entire batch in nanoseconds.
+    pub deadline_ns: u64,
+}
+
+/// One ranked candidate of a source, grouped in request order.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ZeNeighbourHit {
+    /// Zero-based index in the input source array.
+    pub source_index: usize,
+    /// Candidate parent identity.
+    pub doc_id: ZeDocId,
+    /// Zero-based candidate chunk number.
+    pub chunk: usize,
+    /// Negative squared L2 distance to the closest selected source chunk.
+    pub score: f64,
+}
+
+/// Flat ranked hits. A source without hits has no entries.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ZeNeighbourResult {
+    /// sizeof(ZeNeighbourResult).
+    pub abi_size: u32,
+    /// Zero on input, owned allocation tag on return.
+    pub abi_reserved: u32,
+    /// Release with ze_neighbour_result_free.
+    pub hits: *mut ZeNeighbourHit,
+    /// Length of hits.
+    pub hit_count: usize,
+}

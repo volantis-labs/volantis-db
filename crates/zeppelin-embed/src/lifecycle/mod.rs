@@ -1992,6 +1992,13 @@ pub const MAX_DOCUMENT_SCAN_LIMIT: usize = 1 << 20;
 pub enum StoreError {
     /// Query text requires a registered namespace model.
     MissingEmbedder,
+    /// The requested live document or its zero-based chunk does not exist.
+    NeighbourSourceNotFound {
+        /// Source document id.
+        id: crate::ingest::DocId,
+        /// Missing chunk, or None when the document itself is missing.
+        chunk: Option<usize>,
+    },
     /// Namespace encoder rejected the input or produced invalid output.
     Embedding(crate::epoch::EmbedderError),
     /// A graph rule or coordinated document mutation refused retention.
@@ -2273,6 +2280,10 @@ impl std::fmt::Display for StoreError {
             Self::Manifest(error) => error.fmt(formatter),
             Self::Tokenizer(error) => write!(formatter, "store tokenizer: {error}"),
             Self::EpochMismatch(error) => error.fmt(formatter),
+            Self::NeighbourSourceNotFound { id, chunk } => match chunk {
+                Some(chunk) => write!(formatter, "document {} has no chunk {chunk}", id.get()),
+                None => write!(formatter, "source document {} not found", id.get()),
+            },
             Self::MissingEmbedder => {
                 formatter.write_str("namespace has no registered text embedder")
             }
@@ -2536,7 +2547,7 @@ impl StoreError {
             | Self::QueryPoolStart { .. }
             | Self::WalWrite(_)
             | Self::WalRetire(_) => StoreErrorKind::Io,
-            Self::MissingEmbedder | Self::Embedding(_) | Self::CascadeCycle { .. }
+            Self::NeighbourSourceNotFound { .. } | Self::MissingEmbedder | Self::Embedding(_) | Self::CascadeCycle { .. }
             | Self::NotDirectory { .. }
             | Self::Tokenizer(_)
             | Self::SchemaMismatch { .. }
@@ -2595,7 +2606,7 @@ impl std::error::Error for StoreError {
             #[cfg(feature = "graph-cypher")]
             Self::DocumentMutation(error) => Some(error.as_ref()),
             Self::Embedding(e) => Some(e),
-            Self::MissingEmbedder => None,
+            Self::NeighbourSourceNotFound { .. } | Self::MissingEmbedder => None,
             Self::Io { source, .. } => Some(source),
             Self::Lock(error) => Some(error),
             Self::Durability(error) => Some(error),

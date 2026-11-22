@@ -271,6 +271,22 @@ async function openNamespaceAsync(root, name, spec, options = {}) {
   return attachAsync(root, options, name, spec);
 }
 
+const neighbourFields = ['k', 'threshold', 'includeSource', 'eligibleIds', 'filter', 'timestampRange', 'deadlineNs', 'cancelToken'];
+
+function neighbourRequest(sources, options, allowSignal) {
+  graphObject(options, allowSignal ? [...neighbourFields, 'signal'] : neighbourFields, 'neighbour options');
+  if (!Array.isArray(sources)) throw new TypeError('sources must be an array');
+  if (options.k !== undefined && (!Number.isInteger(options.k) || options.k < 1 || options.k > 4096))
+    throw new RangeError('k must be an integer in 1..4096');
+  return {...options, sources: sources.map(source => {
+    if (typeof source === 'bigint') return {id: source};
+    graphObject(source, ['id', 'chunk'], 'neighbour source');
+    if (source.chunk !== undefined && (!Number.isInteger(source.chunk) || source.chunk < 0 || source.chunk > 0xffffffff))
+      throw new RangeError('chunk must be an unsigned 32-bit integer');
+    return source;
+  }), ...graphControl(options)};
+}
+
 class Store {
   graphSetMaintenancePolicy(options) {
     requireGraph(); graphObject(options, ['autoReclaim', 'reclaimAfterBytes'], 'maintenance policy');
@@ -547,6 +563,23 @@ class Store {
 
   search(vector, k) {
     return callNative(() => this._native.search(vector, k));
+  }
+
+  nearestChunks(source, options = {}) {
+    return this.nearestChunksBatch([source], options)[0];
+  }
+
+  nearestChunksBatch(sources, options = {}) {
+    const request = neighbourRequest(sources, options, false);
+    return callNative(() => this._native.nearestChunksBatch(request));
+  }
+
+  async nearestChunksBatchAsync(sources, options = {}) {
+    const request = neighbourRequest(sources, options, true);
+    try {
+      return await withSignal(options.signal, token =>
+        this._native.nearestChunksBatchAsync({...request, cancelToken: token ?? request.cancelToken}));
+    } catch (error) { throw translateError(error); }
   }
 
   queryEmbedded(request) {

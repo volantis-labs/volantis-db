@@ -305,6 +305,22 @@ const ABI_REGISTRY: &[AbiEntry] = &[
         coverage: AbiCoverage::InvalidProbe(probe_query_with_snippets),
     },
     AbiEntry {
+        name: "ze_nearest_chunks",
+        coverage: AbiCoverage::InvalidProbe(|context| {
+            ProbeResult::Status(ze_nearest_chunks(
+                context.store.handle,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+            ))
+        }),
+    },
+    AbiEntry {
+        name: "ze_neighbour_result_free",
+        coverage: AbiCoverage::InvalidProbe(|_| {
+            ProbeResult::Status(ze_neighbour_result_free(std::ptr::null_mut()))
+        }),
+    },
+    AbiEntry {
         name: "ze_query_embedded",
         coverage: AbiCoverage::InvalidProbe(|context| {
             ProbeResult::Status(ze_query_embedded(

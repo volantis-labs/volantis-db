@@ -6545,24 +6545,13 @@ pub extern "C" fn ze_query_embedded(
                 let text =
                     std::str::from_utf8(marshal::read_slice(request.text, request.text_len)?)
                         .map_err(|_| FfiError::invalid("invalid query UTF-8"))?;
-                let mut filter = parse_query_filter(request.constraints, access.store.schema())?;
-                if parse_flag(request.has_eligible, "has_eligible")? {
-                    let ids: Vec<_> =
-                        marshal::read_slice(request.eligible_ids, request.eligible_count)?
-                            .iter()
-                            .copied()
-                            .map(doc_id)
-                            .collect();
-                    filter = Some(match filter {
-                        Some(f) => f.with_eligible(&ids),
-                        None => zeppelin_embed::lifecycle::QueryFilter::eligible(
-                            access.store.schema(),
-                            &ids,
-                        ),
-                    });
-                } else if !request.eligible_ids.is_null() || request.eligible_count != 0 {
-                    return Err(FfiError::invalid("inactive eligible ids must be empty"));
-                }
+                let filter = embedded_query_filter(
+                    access.store.schema(),
+                    request.constraints,
+                    request.has_eligible,
+                    request.eligible_ids,
+                    request.eligible_count,
+                )?;
                 let (generation, hits) = access
                     .store
                     .query_embedded_at(text, leg, request.k, filter.as_ref(), control)
@@ -6672,4 +6661,142 @@ fn embedded_query_returns_parallel_owned_document_rows_and_chunk_ranks() {
     }
     assert_eq!(ze_get_result_free(&mut result), ZeErrorCode::ZeOk);
     assert_eq!(ze_close(handle), ZeErrorCode::ZeOk);
+}
+
+fn embedded_query_filter(
+    schema: &Schema,
+    constraints: *const ZeQueryFilter,
+    has_eligible: u32,
+    eligible_ids: *const ZeDocId,
+    eligible_count: usize,
+) -> Result<Option<zeppelin_embed::lifecycle::QueryFilter>, FfiError> {
+    let mut filter = parse_query_filter(constraints, schema)?;
+    if parse_flag(has_eligible, "has_eligible")? {
+        let ids: Vec<_> = marshal::read_slice(eligible_ids, eligible_count)?
+            .iter()
+            .copied()
+            .map(doc_id)
+            .collect();
+        filter = Some(match filter {
+            Some(f) => f.with_eligible(&ids),
+            None => zeppelin_embed::lifecycle::QueryFilter::eligible(schema, &ids),
+        });
+    } else if !eligible_ids.is_null() || eligible_count != 0 {
+        return Err(FfiError::invalid("inactive eligible ids must be empty"));
+    }
+    Ok(filter)
+}
+
+/// Finds neighbours by stored vectors without invoking a model. Pass one source for
+/// a single-id query. No partial results are published. Release successful results
+/// with ze_neighbour_result_free.
+#[unsafe(no_mangle)]
+pub extern "C" fn ze_nearest_chunks(
+    handle: ZeHandle,
+    request: *const ZeNeighbourRequest,
+    out: *mut ZeNeighbourResult,
+) -> ZeErrorCode {
+    ffi_entry!(Some(handle), ZeErrorCode::ZeErrPanic, {
+        run_named_panic_probe("ze_nearest_chunks");
+        finish(
+            Some(handle),
+            (|| {
+                let access = registry::lookup(handle)?;
+                let request = marshal::read_struct(request)?;
+                let abi_size = marshal::validate_output(out)?;
+                let mut result = ZeNeighbourResult {
+                    abi_size,
+                    abi_reserved: 0,
+                    hits: std::ptr::null_mut(),
+                    hit_count: 0,
+                };
+                marshal::write_output(out, result);
+                let control = query_control_for(request.cancel_token, request.deadline_ns)?;
+                control.checkpoint().map_err(FfiError::query)?;
+                let has_threshold = parse_flag(request.has_threshold, "has_threshold")?;
+                if request.reserved != 0 || (!has_threshold && request.threshold != 0.) {
+                    return Err(FfiError::invalid(
+                        "reserved and inactive threshold must be zero",
+                    ));
+                }
+                let filter = embedded_query_filter(
+                    access.store.schema(),
+                    request.constraints,
+                    request.has_eligible,
+                    request.eligible_ids,
+                    request.eligible_count,
+                )?;
+                let options = zeppelin_embed::lifecycle::embedded::NeighbourOptions {
+                    k: NonZeroUsize::new(request.k).map(NonZeroUsize::get),
+                    threshold: has_threshold.then_some(request.threshold),
+                    include_source: parse_flag(request.include_source, "include_source")?,
+                    filter: filter.as_ref(),
+                };
+                let sources = marshal::read_slice(request.sources, request.source_count)?
+                    .iter()
+                    .map(|s| {
+                        let has_chunk = parse_flag(s.has_chunk, "has_chunk")?;
+                        if !has_chunk && s.chunk != 0 {
+                            return Err(FfiError::invalid("inactive chunk must be zero"));
+                        }
+                        Ok((doc_id(s.doc_id), has_chunk.then_some(s.chunk as usize)))
+                    })
+                    .collect::<Result<Vec<_>, FfiError>>()?;
+                let groups = access
+                    .store
+                    .nearest_chunks_batch(&sources, &options, control.clone())
+                    .map_err(FfiError::query)?;
+                let hits = groups
+                    .into_iter()
+                    .enumerate()
+                    .flat_map(|(source_index, hits)| {
+                        hits.into_iter().map(move |h| ZeNeighbourHit {
+                            source_index,
+                            doc_id: ffi_doc_id(h.id),
+                            chunk: h.chunk,
+                            score: h.score,
+                        })
+                    })
+                    .collect();
+                control.checkpoint().map_err(FfiError::query)?;
+                (result.hits, result.hit_count, result.abi_reserved) = publish_hits(hits)?;
+                marshal::write_output(out, result);
+                Ok(())
+            })(),
+        )
+    })
+}
+
+/// Releases the result's registered hit allocation and clears its fields.
+#[unsafe(no_mangle)]
+pub extern "C" fn ze_neighbour_result_free(result: *mut ZeNeighbourResult) -> ZeErrorCode {
+    ffi_entry!(None, ZeErrorCode::ZeErrPanic, {
+        finish(
+            None,
+            (|| {
+                scalar_output(result)?;
+                let abi_size = marshal::read_abi_size(result);
+                if abi_size != 0 {
+                    marshal::validate_abi_size::<ZeNeighbourResult>(abi_size)?;
+                }
+                let current = marshal::read_value(result);
+                if abi_size == 0 && !current.hits.is_null() {
+                    return Err(FfiError::invalid(
+                        "zero-sized neighbour result contains an allocation",
+                    ));
+                }
+                registry::take_result(current.hits, current.hit_count, current.abi_reserved)?;
+                marshal::write_output(
+                    result,
+                    ZeNeighbourResult {
+                        abi_size: current.abi_size,
+                        abi_reserved: 0,
+                        hits: std::ptr::null_mut(),
+                        hit_count: 0,
+                    },
+                );
+                Ok(())
+            })(),
+        )
+    })
 }

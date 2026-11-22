@@ -1,4 +1,7 @@
 //! Text embedding in a normal Store namespace.
+mod neighbours;
+pub use neighbours::{ChunkNeighbour, NeighbourOptions};
+
 use super::*;
 use crate::epoch::{EmbedderError, EmbeddingEpoch, StoreEpoch};
 use crate::ingest::{DocumentVersion, IngestDocument};
@@ -254,6 +257,28 @@ impl Store {
         Ok(())
     }
 
+    fn embedded_page(
+        &self,
+        fields: DocumentFields,
+        cursor: Option<DocumentScanCursor>,
+        filter: Option<&QueryFilter>,
+        control: &QueryControl,
+    ) -> Result<DocumentScanPage, QueryError> {
+        let mut request = DocumentScanRequest::new(256, fields, control.clone());
+        if let Some(predicate) = filter.and_then(|f| f.predicate.as_ref()) {
+            request = request.with_predicate(predicate);
+        }
+        if let Some(cursor) = cursor {
+            request = request.with_cursor(cursor);
+        }
+        let mut page = self.scan_documents(request)?;
+        if let Some(ids) = filter.and_then(|f| f.eligible_ids.as_ref()) {
+            page.documents
+                .retain(|doc| ids.numeric.binary_search(&doc.doc_id).is_ok());
+        }
+        Ok(page)
+    }
+
     /// Ranks the chunks of eligible documents. A concurrent mutation between
     /// scan pages fails the request with ScanStale, never mixing revisions.
     pub fn query_embedded(
@@ -300,21 +325,8 @@ impl Store {
                 | DocumentFields::ATTRIBUTES
                 | DocumentFields::METADATA
                 | DocumentFields::CHUNKS;
-            let mut request = DocumentScanRequest::new(256, fields, control.clone());
-            if let Some(p) = filter.and_then(|f| f.predicate.as_ref()) {
-                request = request.with_predicate(p);
-            }
-            if let Some(c) = cursor {
-                request = request.with_cursor(c);
-            }
-            let page = self.scan_documents(request)?;
+            let page = self.embedded_page(fields, cursor, filter, &control)?;
             for doc in page.documents {
-                if filter
-                    .and_then(|f| f.eligible_ids.as_ref())
-                    .is_some_and(|ids| ids.numeric.binary_search(&doc.doc_id).is_err())
-                {
-                    continue;
-                }
                 let source = doc
                     .text
                     .as_deref()

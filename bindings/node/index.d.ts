@@ -418,6 +418,20 @@ export interface EmbeddedQuery extends Pick<QueryRequest, 'k' | 'eligibleIds' | 
   readonly leg: 'dense' | 'lexical' | 'hybrid';
 }
 
+/** A complete source document, or a particular zero-based source chunk. */
+export type NeighbourSource = DocumentId | { readonly id: DocumentId; readonly chunk?: number };
+export interface NeighbourOptions extends Pick<QueryRequest, 'k' | 'eligibleIds' | 'filter' | 'timestampRange' | 'deadlineNs' | 'cancelToken'> {
+  /** Strict lower bound. Omit k to return all scores above this threshold. */
+  readonly threshold?: number;
+  readonly includeSource?: boolean;
+}
+export interface ChunkNeighbour {
+  readonly id: DocumentId;
+  readonly chunk: number;
+  /** Negative squared L2 distance to the nearest selected source chunk. */
+  readonly score: number;
+}
+
 export interface EmbeddedHit {
   readonly id: DocumentId;
   readonly revision: bigint;
@@ -657,6 +671,9 @@ export declare class Store {
    * All failures (including validation) reject with the sync API's error types.
    */
   upsertAsync(documents: readonly UpsertDocument[]): Promise<MutationReport>;
+  nearestChunks(source: NeighbourSource, options?: NeighbourOptions): ChunkNeighbour[];
+  nearestChunksBatch(sources: readonly NeighbourSource[], options?: NeighbourOptions): ChunkNeighbour[][];
+  nearestChunksBatchAsync(sources: readonly NeighbourSource[], options?: NeighbourOptions & { readonly signal?: AbortSignal }): Promise<ChunkNeighbour[][]>;
   /** Rank source chunks of eligible documents using the namespace model and tokenizer. */
   queryEmbedded(request: EmbeddedQuery): EmbeddedHit[];
   queryEmbeddedAsync(request: EmbeddedQuery & { readonly signal?: AbortSignal }): Promise<EmbeddedHit[]>;
