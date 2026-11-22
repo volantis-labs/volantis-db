@@ -45,6 +45,28 @@ export interface SealReport {
   readonly generation: bigint;
 }
 
+export type StoreState = 'open' | 'closing' | 'closed';
+
+export interface StoreStats {
+  readonly residentOwnedBytes: bigint;
+  readonly mappedBytes: bigint;
+  readonly mappedResidentBytes: bigint;
+  readonly segmentBytes: bigint;
+  readonly activeSegmentBytes: bigint;
+  readonly activeRowCount: bigint;
+  readonly tombstoneCount: bigint;
+  readonly tombstoneBytes: bigint;
+  readonly walBytes: bigint;
+  readonly cacheBytes: bigint;
+  readonly temporaryBytes: bigint;
+  readonly queryPoolBytes: bigint;
+  readonly openFiles: bigint;
+  readonly activeQueries: bigint;
+  readonly activeSnapshotLeases: bigint;
+  /** Process physical footprint in bytes on macOS, or null when unavailable. */
+  readonly physicalFootprint: bigint | null;
+}
+
 export interface SnapshotReport {
   /** The generation the snapshot captured. Later writes are not in it. */
   readonly generation: bigint;
@@ -886,6 +908,10 @@ export declare class Store {
    */
   openSnapshot(): Store;
 
+  /** Reads the lifecycle state of a live handle. A released handle throws ZE_ERR_CLOSED. */
+  state(): StoreState;
+  /** Reads exact resource counters for an open store. */
+  stats(): StoreStats;
   close(): void;
 }
 

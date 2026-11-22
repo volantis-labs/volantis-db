@@ -14,6 +14,8 @@ import {
   type Document,
   type QueryResult,
   type SearchHit,
+  type StoreState,
+  type StoreStats,
   type VerifyFindingKind,
   type VerifyReport,
 } from '@zepdb/zeppelin-embed';
@@ -22,6 +24,10 @@ const documents: readonly Document[] = [
   { id: 1n, revision: 1n, vector: new Float32Array([1, 0]) },
 ];
 const store = new Store('typecheck-index');
+const state: StoreState = store.state();
+const stats: StoreStats = store.stats();
+const activeRows: bigint = stats.activeRowCount;
+const physicalFootprint: bigint | null = stats.physicalFootprint;
 const generation: bigint = store.ingest(documents, 2).generation;
 const hits: SearchHit[] = store.search(new Float32Array([1, 0]), 1);
 

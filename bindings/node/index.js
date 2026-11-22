@@ -657,6 +657,14 @@ class Store {
     }
   }
 
+  state() {
+    return callNative(() => this._native.state());
+  }
+
+  stats() {
+    return callNative(() => this._native.stats());
+  }
+
   close() {
     return callNative(() => this._native.close());
   }

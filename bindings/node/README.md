@@ -19,6 +19,8 @@ store.ingest(
 );
 
 console.log(store.search(new Float32Array([0.8, 0.2]), 1));
+console.log(store.state()); // 'open'
+console.log(store.stats().activeRowCount);
 store.close();
 ```
 
@@ -26,6 +28,18 @@ Applications supply document and query vectors. Document IDs are unsigned
 128-bit `bigint` values. Close each store when it is no longer needed; the
 native finalizer also closes an open handle if the JavaScript object is
 collected.
+
+`store.state()` returns the engine lifecycle state as `'open'`, `'closing'`,
+or `'closed'` while the handle is live. `store.stats()` reads the open store's
+exact resource counters. Both calls are synchronous. After `store.close()`
+releases the handle, either call throws `ZeppelinError` with
+`code === 'ZE_ERR_CLOSED'`.
+
+The `StoreStats` counters are `bigint` values. Byte fields report memory,
+mappings, segment capacity, the in-memory WAL, caches and temporary space.
+Count fields cover active rows, tombstones, open files, active queries and
+snapshot leases. `physicalFootprint` is the process footprint in bytes on
+macOS and is `null` when unavailable.
 
 The engine stores all 128 bits of an ID and every API returns it unchanged,
 so the whole UUID range fits. `uuidToId` reads a UUID's 32 hex digits as one

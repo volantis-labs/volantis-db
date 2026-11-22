@@ -3675,6 +3675,107 @@ napi_value OpenSnapshotStore(napi_env env, napi_callback_info info) {
   });
 }
 
+napi_value StoreState(napi_env env, napi_callback_info info) {
+  return Guard(env, [&]() -> napi_value {
+    size_t argc = 0;
+    napi_value receiver;
+    if (!NapiOk(env,
+                napi_get_cb_info(env, info, &argc, nullptr, &receiver, nullptr),
+                "read state receiver"))
+      return nullptr;
+    NativeStore *store = UnwrapStore(env, receiver);
+    if (store == nullptr)
+      return nullptr;
+
+    ZeStateReport report{};
+    report.abi_size = sizeof(report);
+    const ze_error_code status = ze_state(store->handle, &report);
+    if (status != ZE_OK)
+      return ThrowZeppelin(env, store->handle, status);
+
+    const char *state;
+    switch (report.state) {
+    case 0:
+      state = "open";
+      break;
+    case 1:
+      state = "closing";
+      break;
+    case 2:
+      state = "closed";
+      break;
+    default:
+      return ThrowWorkerError(env, ZE_ERR_INTERNAL, "unknown store state");
+    }
+    napi_value result;
+    if (!NapiOk(env,
+                napi_create_string_utf8(env, state, NAPI_AUTO_LENGTH, &result),
+                "create store state"))
+      return nullptr;
+    return result;
+  });
+}
+
+napi_value StoreStats(napi_env env, napi_callback_info info) {
+  return Guard(env, [&]() -> napi_value {
+    size_t argc = 0;
+    napi_value receiver;
+    if (!NapiOk(env,
+                napi_get_cb_info(env, info, &argc, nullptr, &receiver, nullptr),
+                "read stats receiver"))
+      return nullptr;
+    NativeStore *store = UnwrapStore(env, receiver);
+    if (store == nullptr)
+      return nullptr;
+
+    ZeStatsReport report{};
+    report.abi_size = sizeof(report);
+    const ze_error_code status = ze_stats(store->handle, &report);
+    if (status != ZE_OK)
+      return ThrowZeppelin(env, store->handle, status);
+
+    napi_value result;
+    if (!NapiOk(env, napi_create_object(env, &result), "create store stats"))
+      return nullptr;
+    const struct {
+      const char *name;
+      uint64_t value;
+    } counters[] = {
+        {"residentOwnedBytes", report.resident_owned_bytes},
+        {"mappedBytes", report.mapped_bytes},
+        {"mappedResidentBytes", report.mapped_resident_bytes},
+        {"segmentBytes", report.segment_bytes},
+        {"activeSegmentBytes", report.active_segment_bytes},
+        {"activeRowCount", report.active_row_count},
+        {"tombstoneCount", report.tombstone_count},
+        {"tombstoneBytes", report.tombstone_bytes},
+        {"walBytes", report.wal_bytes},
+        {"cacheBytes", report.cache_bytes},
+        {"temporaryBytes", report.temporary_bytes},
+        {"queryPoolBytes", report.query_pool_bytes},
+        {"openFiles", report.open_files},
+        {"activeQueries", report.active_queries},
+        {"activeSnapshotLeases", report.active_snapshot_leases},
+    };
+    for (const auto &counter : counters) {
+      napi_value value;
+      if (!NapiOk(env, napi_create_bigint_uint64(env, counter.value, &value),
+                  "create store stats counter") ||
+          !SetNamed(env, result, counter.name, value))
+        return nullptr;
+    }
+    napi_value footprint;
+    const napi_status footprint_status =
+        report.has_phys_footprint
+            ? napi_create_bigint_uint64(env, report.phys_footprint, &footprint)
+            : napi_get_null(env, &footprint);
+    if (!NapiOk(env, footprint_status, "create physical footprint") ||
+        !SetNamed(env, result, "physicalFootprint", footprint))
+      return nullptr;
+    return result;
+  });
+}
+
 napi_value CloseStore(napi_env env, napi_callback_info info) {
   return Guard(env, [&]() -> napi_value {
     size_t argc = 0;
@@ -5202,6 +5303,10 @@ napi_value Initialize(napi_env env, napi_value exports) {
        napi_default, nullptr},
       {"snapshot", nullptr, SnapshotStore, nullptr, nullptr, nullptr,
        napi_default, nullptr},
+      {"state", nullptr, StoreState, nullptr, nullptr, nullptr, napi_default,
+       nullptr},
+      {"stats", nullptr, StoreStats, nullptr, nullptr, nullptr, napi_default,
+       nullptr},
       {"close", nullptr, CloseStore, nullptr, nullptr, nullptr, napi_default,
        nullptr},
   };
