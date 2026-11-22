@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -162,7 +163,7 @@ def test_open_model_offline_miss(tmp_path: Path) -> None:
             revision=REVISION,
             manifest_sha256="0" * 64,
             cache_dir=tmp_path / "cache",
-            mlx_cache_limit_bytes=0,
+            mlx_cache_limit_bytes=int(os.environ.get("ZE_MLX_CACHE_LIMIT_BYTES", 4 << 30)),
             offline=True,
         )
 
