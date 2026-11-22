@@ -56,7 +56,8 @@ def test_open_ingest_query_close_round_trip(tmp_path: Path) -> None:
         assert store.stats().active_row_count == 3
 
         searched = store.search(vectors[0], k=3, tier=None)
-        assert [hit.doc_id for hit in searched.hits] == [3, 2, 1]
+        # ZE-536 ranks by exact distance on this graph-free store when tier is unset. Doc 1 is the query vector.
+        assert [hit.doc_id for hit in searched.hits] == [1, 2, 3]
         assert searched.generation == mutation.generation
 
         lexical = store.query(text="harbour", k=3)

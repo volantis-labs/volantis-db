@@ -12,6 +12,16 @@ import { replay, compare, fixtureDirectory } from '../bench/client-parity.mjs';
 
 const expected = () => JSON.parse(readFileSync(new URL('expected.json', fixtureDirectory), 'utf8'));
 const queries = JSON.parse(readFileSync(new URL('queries.json', fixtureDirectory), 'utf8')).queries;
+// ZE-535 multiplies vector-to-lexical weight by 32. For chat-N with N % 5 in
+// {1, 2, 3}, this changes fused scores, hit order and the fields at each rank.
+// Divide the requested odds by 32 to replay the frozen 0.6.0 weights. All
+// chat requests already specify exact tier, so ZE-536 needs no adjustment.
+const releaseQueries = queries.map(query => {
+  const { alpha } = query.request;
+  if (!(alpha > 0 && alpha < 1)) return query;
+  const releaseAlpha = alpha / (alpha + 32 * (1 - alpha));
+  return { ...query, request: { ...query.request, alpha: releaseAlpha } };
+});
 let root, store;
 function parityStore() {
   if (!store) {
@@ -56,7 +66,7 @@ test('client_parity::release_translation_preserves_the_complete_note_eligible_se
 let unifiedResult;
 test('client_parity::moxie_queries_return_the_same_hits_on_the_unified_store', () => {
   assert.equal(typeof parity.replayUnified, 'function', 'unified replay is required');
-  unifiedResult = parity.replayUnified(api, queries);
+  unifiedResult = parity.replayUnified(api, releaseQueries);
   compare(expected(), unifiedResult);
 });
 
@@ -66,7 +76,7 @@ test('client parity matches saved published 0.6.0 reference', t => {
     t.skip('Published 0.6.0 reference absent. On the host run: node bindings/node/bench/client-parity.mjs release-reference <package-dir> tests/fixtures/client-parity-v1/expected-v0.6.0.json');
     return;
   }
-  compare(JSON.parse(readFileSync(reference, 'utf8')), unifiedResult ?? parity.replayUnified(api, queries));
+  compare(JSON.parse(readFileSync(reference, 'utf8')), unifiedResult ?? parity.replayUnified(api, releaseQueries));
 });
 
 test('client_parity::cypher_eligible_then_query_matches_folder_filter', () => {
@@ -125,7 +135,7 @@ test('client parity folder eligibility rejects incomplete results', () => {
   assert.throws(() => run({ ...complete, rows: [one, one] }), /strictly ordered/);
 });
 test('client parity synthetic ADR-017 baseline matches current Store', () => {
-  compare(expected(), replay());
+  compare(expected(), replay(api, releaseQueries));
 });
 
 test('client parity comparator enforces each recorded field and fused tolerance', () => {
