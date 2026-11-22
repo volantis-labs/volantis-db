@@ -74,6 +74,9 @@ from ._types import (
     Tier,
     UpsertDocument,
     VectorSpace,
+    VerifyFinding,
+    VerifyFindingKind,
+    VerifyReport,
 )
 
 
@@ -2153,6 +2156,56 @@ def list_namespaces(root: str | Path) -> list[str]:
             primary.add_note(
                 f"ze_namespace_list_result_free: {last_error_message()}"
             )
+
+
+def verify(path: str | os.PathLike[str]) -> VerifyReport:
+    """Check a store directory for damage without opening or modifying it."""
+
+    try:
+        path_text = os.fspath(path)
+    except TypeError as error:
+        invalid_argument(f"invalid store path: {error}")
+    if not isinstance(path_text, str):
+        invalid_argument("store path must be a string or a string-valued path-like object")
+    try:
+        encoded = path_text.encode("utf-8")
+    except UnicodeEncodeError as error:
+        invalid_argument(f"store path is not valid UTF-8: {error}")
+
+    pointer, _owner = _bytes_pointer(encoded)
+    request = s.ZeVerifyRequest(
+        abi_size=ct.sizeof(s.ZeVerifyRequest),
+        abi_reserved=0,
+        path=pointer,
+        path_len=len(encoded),
+    )
+    result = s.sized(s.ZeVerifyResult)
+    raise_for_status(LIBRARY.ze_verify(ct.byref(request), ct.byref(result)))
+    try:
+        findings: list[VerifyFinding] = []
+        for index in range(result.finding_count):
+            finding = result.findings[index]
+            try:
+                kind = VerifyFindingKind(finding.kind)
+            except ValueError as error:
+                raise ERROR_TYPES[22](f"verify returned unknown finding kind {finding.kind}") from error
+            findings.append(
+                VerifyFinding(
+                    kind=kind,
+                    file=ct.string_at(finding.file, finding.file_len).decode("utf-8"),
+                    offset=finding.offset if finding.has_offset else None,
+                    detail=ct.string_at(finding.detail, finding.detail_len).decode("utf-8"),
+                )
+            )
+        return VerifyReport(
+            ok=not findings,
+            generation=result.generation,
+            segments_checked=result.segments_checked,
+            wal_records_checked=result.wal_records_checked,
+            findings=tuple(findings),
+        )
+    finally:
+        raise_for_status(LIBRARY.ze_verify_result_free(ct.byref(result)))
 
 
 def open(

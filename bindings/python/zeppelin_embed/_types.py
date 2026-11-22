@@ -315,6 +315,45 @@ class StatsReport:
     phys_footprint: int | None
 
 
+class VerifyFindingKind(IntEnum):
+    """Stable finding codes from the C ABI."""
+
+    MANIFEST_MISSING = 1
+    MANIFEST_CORRUPT = 2
+    MANIFEST_AHEAD_OF_WAL = 3
+    SEGMENT_MISSING = 4
+    SEGMENT_CORRUPT = 5
+    SEGMENT_MISMATCH = 6
+    SEGMENT_REGION_CORRUPT = 7
+    SEGMENT_INDEX_INVALID = 8
+    WAL_MISSING = 9
+    WAL_HEADER_CORRUPT = 10
+    WAL_RECORD_CORRUPT = 11
+    WAL_RECORD_INVALID = 12
+    UNREADABLE = 13
+    PURGE_INTENT_CORRUPT = 14
+    GRAPH_OBJECT_MISSING = 15
+    GRAPH_OBJECT_CORRUPT = 16
+    GRAPH_INVENTORY_INVALID = 17
+
+
+@dataclass(frozen=True)
+class VerifyFinding:
+    kind: VerifyFindingKind
+    file: str
+    offset: int | None
+    detail: str
+
+
+@dataclass(frozen=True)
+class VerifyReport:
+    ok: bool
+    generation: int
+    segments_checked: int
+    wal_records_checked: int
+    findings: tuple[VerifyFinding, ...]
+
+
 @dataclass(frozen=True)
 class MutationReport:
     sequence: int

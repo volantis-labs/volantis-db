@@ -14,6 +14,7 @@ from ._store import open_model as open_model
 from ._store import open_namespace as open_namespace
 from ._store import open_text as open_text
 from ._store import open_with_epoch as open_with_epoch
+from ._store import verify as verify
 from ._types import AccessMode as AccessMode
 from ._types import AttributeDefinition as AttributeDefinition
 from ._types import AttributeType as AttributeType
@@ -66,3 +67,6 @@ from ._types import TextQueryResult as TextQueryResult
 from ._types import Tier as Tier
 from ._types import UpsertDocument as UpsertDocument
 from ._types import VectorSpace as VectorSpace
+from ._types import VerifyFinding as VerifyFinding
+from ._types import VerifyFindingKind as VerifyFindingKind
+from ._types import VerifyReport as VerifyReport

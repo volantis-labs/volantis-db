@@ -15,6 +15,7 @@ from ._store import (
     open_namespace,
     open_text,
     open_with_epoch,
+    verify,
 )
 from ._types import (
     AccessMode,
@@ -69,6 +70,9 @@ from ._types import (
     Tier,
     UpsertDocument,
     VectorSpace,
+    VerifyFinding,
+    VerifyFindingKind,
+    VerifyReport,
 )
 
 __all__ = [  # noqa: PLE0604
@@ -132,10 +136,14 @@ __all__ = [  # noqa: PLE0604
     "TextQueryResult",
     "UpsertDocument",
     "VectorSpace",
+    "VerifyFinding",
+    "VerifyFindingKind",
+    "VerifyReport",
     "epoch_identity",
     "list_namespaces",
     "open",
     "open_namespace",
     "open_text",
     "open_with_epoch",
+    "verify",
 ]

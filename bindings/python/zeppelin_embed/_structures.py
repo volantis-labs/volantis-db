@@ -189,6 +189,39 @@ class ZeStatsReport(ct.Structure):
     ]
 
 
+class ZeVerifyRequest(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("path", UInt8Pointer),
+        ("path_len", ct.c_size_t),
+    ]
+
+
+class ZeVerifyFinding(ct.Structure):
+    _fields_ = [
+        ("kind", ct.c_uint32),
+        ("has_offset", ct.c_uint32),
+        ("offset", ct.c_uint64),
+        ("file", UInt8Pointer),
+        ("file_len", ct.c_size_t),
+        ("detail", UInt8Pointer),
+        ("detail_len", ct.c_size_t),
+    ]
+
+
+class ZeVerifyResult(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("findings", ct.POINTER(ZeVerifyFinding)),
+        ("finding_count", ct.c_size_t),
+        ("generation", ct.c_uint64),
+        ("segments_checked", ct.c_uint64),
+        ("wal_records_checked", ct.c_uint64),
+    ]
+
+
 class ZeDocId(ct.Structure):
     _fields_ = [("high", ct.c_uint64), ("low", ct.c_uint64)]
 

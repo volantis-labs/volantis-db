@@ -60,6 +60,37 @@ is unchanged. A malformed filter raises `ze.InvalidArgument`. These
 operations use core store handles. Text stores use `delete_text()` for
 document deletion.
 
+## Store verification
+
+Call `ze.verify(path)` with a string or a string-valued path-like object. Pass
+the store directory itself, such as `Path(root) / name` for a namespace.
+Verification reads the manifest, its referenced segments, the write-ahead log
+(WAL), and any pending purge intent. It opens no store handle, takes no store
+lock, and modifies no files. Run it before reopening after an unclean shutdown.
+A concurrent writer can cause the report to reflect a write in progress.
+
+```python
+report = ze.verify(Path("example-store"))
+if report.ok:
+    print(f"Checked {report.segments_checked} segments and "
+          f"{report.wal_records_checked} WAL records")
+for finding in report.findings:
+    print(finding.kind.name, finding.file, finding.offset, finding.detail)
+```
+
+`VerifyReport.generation` is the decoded manifest generation, or zero when
+there is no decoded manifest. `segments_checked` counts the segments referenced
+by the manifest. `wal_records_checked` counts WAL records that passed checksum
+and sequence validation. `ok` is true exactly when the `findings` tuple is empty.
+Each `VerifyFinding` has a `VerifyFindingKind`, a relative file name, an optional
+byte offset (`None` when unavailable), and decoder detail.
+
+Damage is returned in the report. An invalid path argument raises
+`ze.InvalidArgument` (`ZE_ERR_INVALID_ARGUMENT`), a missing path raises
+`ze.NotFound` (`ZE_ERR_NOT_FOUND`), and a non-directory or unlistable path
+raises `ze.Io` (`ZE_ERR_IO`). Graph-object checks require a graph-enabled
+native library.
+
 ## Native library loading
 
 The loader uses `ZEPPELIN_EMBED_LIBRARY` when it is set. Otherwise, an installed

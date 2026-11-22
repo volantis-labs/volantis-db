@@ -36,6 +36,8 @@ _bind(
 _bind("ze_close", [Handle])
 _bind("ze_state", [Handle, ct.POINTER(s.ZeStateReport)])
 _bind("ze_stats", [Handle, ct.POINTER(s.ZeStatsReport)])
+_bind("ze_verify", [ct.POINTER(s.ZeVerifyRequest), ct.POINTER(s.ZeVerifyResult)])
+_bind("ze_verify_result_free", [ct.POINTER(s.ZeVerifyResult)])
 _bind("ze_ingest", [Handle, ct.POINTER(s.ZeIngestRequest), ct.POINTER(s.ZeMutationReport)])
 _bind("ze_upsert", [Handle, ct.POINTER(s.ZeUpsertRequest), ct.POINTER(s.ZeMutationReport)])
 _bind(
