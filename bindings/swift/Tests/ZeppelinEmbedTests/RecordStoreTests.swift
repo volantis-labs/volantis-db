@@ -70,6 +70,51 @@ final class RecordStoreTests: XCTestCase {
         try await store.close()
     }
 
+    func testSchemaReadsPersistedUserAttributes() async throws {
+        let root = try namespaceRoot(#function)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let definitions = [
+            AttributeDefinition(id: 9, name: "count", type: .u64, nullable: false),
+            AttributeDefinition(id: 2, name: "offset", type: .i64, nullable: true),
+            AttributeDefinition(id: 3, name: "score", type: .f64, nullable: false),
+            AttributeDefinition(id: 4, name: "flag", type: .bool, nullable: true),
+            AttributeDefinition(id: 5, name: "catégorie", type: .dictionaryString, nullable: true),
+            AttributeDefinition(id: 6, name: "", type: .rawString, nullable: false),
+            AttributeDefinition(id: 7, name: "externalId", type: .id128, nullable: true),
+        ]
+        let spec = NamespaceSpec(attributes: definitions, vectorSpace: nil)
+        let created = try await ZeppelinStore.openNamespace(root: root, name: "records", spec: spec)
+        try await created.close()
+
+        let store = try await ZeppelinStore.openNamespace(
+            root: root,
+            name: "records",
+            spec: NamespaceSpec(attributes: Array(definitions.reversed()), vectorSpace: nil)
+        )
+        let schema = try await store.schema()
+        XCTAssertEqual(schema.map(\.id), definitions.map(\.id))
+        XCTAssertEqual(schema.map(\.name), definitions.map(\.name))
+        XCTAssertEqual(schema.map(\.type), definitions.map(\.type))
+        XCTAssertEqual(schema.map(\.nullable), definitions.map(\.nullable))
+        try await store.close()
+
+        do {
+            _ = try await store.schema()
+            XCTFail("read schema after close")
+        } catch let error as ZeppelinError {
+            XCTAssertEqual(error, .closed)
+        }
+
+        let empty = try await ZeppelinStore.openNamespace(
+            root: root,
+            name: "empty",
+            spec: NamespaceSpec(attributes: [], vectorSpace: nil)
+        )
+        let emptySchema = try await empty.schema()
+        XCTAssertTrue(emptySchema.isEmpty)
+        try await empty.close()
+    }
+
     func testUpsertEveryAttributeTypeRoundTripsThroughGet() async throws {
         let root = try namespaceRoot(#function)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -442,6 +487,55 @@ final class RecordStoreTests: XCTestCase {
         _ = try await idlePolicy.run(on: store, idleFor: .seconds(6))
         let idleStats = try await store.stats()
         XCTAssertEqual(idleStats.activeRowCount, 0)
+        try await store.close()
+    }
+
+    func testMergePublishesSealedSegmentsAndPreservesActiveWrites() async throws {
+        let root = try namespaceRoot(#function)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try await ZeppelinStore.openNamespace(
+            root: root,
+            name: "merge",
+            spec: NamespaceSpec(attributes: [], vectorSpace: nil),
+            options: OpenOptions(durabilityMode: .durable, commitTier: .ordered)
+        )
+        let first = DocumentID(high: 0, low: 1)
+        let second = DocumentID(high: 0, low: 2)
+        let active = DocumentID(high: 0, low: 3)
+        _ = try await store.upsert([
+            IngestDocument(id: first, revision: 1, timestamp: 1, vector: [], text: "first")
+        ])
+        _ = try await store.seal()
+        _ = try await store.upsert([
+            IngestDocument(id: second, revision: 1, timestamp: 2, vector: [], text: "second")
+        ])
+        _ = try await store.seal()
+        let write = try await store.upsert([
+            IngestDocument(id: active, revision: 1, timestamp: 3, vector: [], text: "active")
+        ])
+        let before = try await store.stats()
+        XCTAssertGreaterThan(before.walBytes, 0)
+
+        let token = try await ZeppelinCancellationToken.create()
+        try await token.cancel()
+        do {
+            _ = try await store.merge(cancellationToken: token)
+            XCTFail("merged with a cancelled token")
+        } catch let error as ZeppelinError {
+            XCTAssertEqual(error, .cancelled)
+        }
+        try await token.free()
+
+        let merged = try await store.merge()
+        XCTAssertEqual(merged.generation, write.generation + 1)
+        let after = try await store.stats()
+        XCTAssertEqual(after.activeRowCount, 1)
+        XCTAssertEqual(after.walBytes, before.walBytes)
+        let documents = try await store.get([first, second, active], fields: [.text])
+        XCTAssertEqual(documents.generation, merged.generation)
+        XCTAssertEqual(documents.documents.map { $0?.text }, ["first", "second", "active"])
+        let repeated = try await store.merge()
+        XCTAssertEqual(repeated.generation, merged.generation)
         try await store.close()
     }
 

@@ -8,6 +8,7 @@ public enum AttributeType: Int32, Sendable {
     case bool = 4
     case dictionaryString = 5
     case rawString = 6
+    case id128 = 7
 }
 
 public struct AttributeDefinition: Sendable {
@@ -89,6 +90,42 @@ struct CAttributeValueRecord: Sendable {
 
 @available(macOS 14.0, iOS 17.0, *)
 extension ZeppelinStore {
+    /// Returns user attributes in persisted schema order.
+    public func schema() async throws -> [AttributeDefinition] {
+        let current = try openHandle()
+        return try await Self.runBlocking {
+            var attributes: [AttributeDefinition] = []
+            var column = ZeSchemaColumnResult()
+            column.abi_size = abiSize(ZeSchemaColumnResult.self)
+            while true {
+                let index = attributes.count
+                try checkZeppelin(ze_schema_column(current, index, nil, 0, &column))
+                if index == column.column_count {
+                    return attributes
+                }
+
+                var nameBytes = [UInt8](repeating: 0, count: column.name_len)
+                try nameBytes.withUnsafeMutableBufferPointer { buffer in
+                    try checkZeppelin(ze_schema_column(current, index, buffer.baseAddress, buffer.count, &column))
+                }
+                guard column.name_len == nameBytes.count,
+                    let name = String(bytes: nameBytes, encoding: .utf8),
+                    let type = AttributeType(rawValue: column.attribute_type),
+                    column.nullable <= 1
+                else {
+                    throw ZeppelinError.internalError
+                }
+                attributes.append(
+                    AttributeDefinition(
+                        id: column.attribute_id,
+                        name: name,
+                        type: type,
+                        nullable: column.nullable == 1
+                    ))
+            }
+        }
+    }
+
     public func upsert(_ documents: [IngestDocument]) async throws -> MutationReport {
         let current = try openHandle()
         return try Self.withUpsertRequest(documents) { request in

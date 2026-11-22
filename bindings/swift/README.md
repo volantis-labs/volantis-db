@@ -126,6 +126,36 @@ Omit `snippetBytes` to skip excerpt generation.
 stored document's UTF-8 bytes. All ranges are half-open. A hybrid hit with no
 matching text has a nil `snippet`.
 
+### Read a store schema
+
+```swift
+let attributes = try await store.schema()
+```
+
+`schema()` returns `[AttributeDefinition]` in persisted schema order. Each
+entry contains its ID, name, type (including `.id128`), and nullability.
+The list contains user attributes and omits the built-in timestamp column.
+A store without user attributes returns an empty list. A closed store throws
+`ZeppelinError.closed`.
+
+### Merge sealed segments
+
+```swift
+let report = try await store.merge()
+print(report.generation)
+```
+
+Call `merge()` during application idle time on a writable store. It merges
+compatible small sealed scan segments in atomic batches of up to 16 segments
+and 8 MiB of input files each. Large and graph segments remain separate.
+Active writes and the WAL stay unchanged. Call `seal()` first to include
+active writes. The `GenerationReport` contains the final generation, which
+stays the same if no compatible batch fits.
+
+Pass a `ZeppelinCancellationToken` with `merge(cancellationToken:)` to request
+cooperative cancellation. A cancelled call throws `ZeppelinError.cancelled`.
+Batches published before cancellation remain committed.
+
 ### Prepare lexical queries after open
 
 Use `try await store.warmLexical()` before exact or `lastAsPrefix` queries.

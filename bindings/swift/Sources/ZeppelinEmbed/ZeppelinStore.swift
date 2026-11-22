@@ -546,6 +546,23 @@ public actor ZeppelinStore {
         }
     }
 
+    /// Merges eligible sealed scan segments and returns the final generation.
+    public func merge(cancellationToken: ZeppelinCancellationToken? = nil) async throws
+        -> GenerationReport
+    {
+        let current = try openHandle()
+        let token = try cancellationToken?.rawValue() ?? 0
+        return try await Self.runBlocking {
+            var request = ZeSealRequest()
+            request.abi_size = abiSize(ZeSealRequest.self)
+            request.cancel_token = token
+            var report = ZeGenerationReport()
+            report.abi_size = abiSize(ZeGenerationReport.self)
+            try checkZeppelin(ze_merge_sealed(current, &request, &report))
+            return GenerationReport(generation: report.generation)
+        }
+    }
+
     public func dropPartition(from start: Int64, to end: Int64) async throws
         -> PartitionReport
     {
