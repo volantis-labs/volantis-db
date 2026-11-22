@@ -25,6 +25,17 @@ _bind(
     [ct.POINTER(s.ZeNamespaceOpenRequest), ct.POINTER(Handle)],
 )
 _bind(
+    "ze_namespace_open_with_tokenizer",
+    [ct.POINTER(s.ZeNamespaceOpenRequest), ct.c_int32, ct.POINTER(Handle)],
+)
+_bind("ze_namespace_batch", [ct.POINTER(s.ZeNamespaceBatchRequest)])
+_bind("ze_namespace_batch_live", [ct.POINTER(s.ZeNamespaceBatchLiveRequest)])
+_bind(
+    "ze_namespace_declare_cascade",
+    [ct.POINTER(s.ZeNamespaceBatchRequest), ct.POINTER(s.ZeCascadeDeclaration)],
+)
+_bind("ze_namespace_delete_cascade", [ct.POINTER(s.ZeNamespaceBatchRequest)])
+_bind(
     "ze_namespace_list",
     [ct.POINTER(s.ZeNamespaceListRequest), ct.POINTER(s.ZeNamespaceListResult)],
 )

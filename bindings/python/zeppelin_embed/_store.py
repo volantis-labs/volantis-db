@@ -30,6 +30,9 @@ from ._types import (
     AttributeScanOrder,
     AttributeType,
     AttributeValue,
+    CascadeDeclaration,
+    CascadeDeleteParticipant,
+    CascadeParticipant,
     CommitTier,
     ComputeUnits,
     CountGroup,
@@ -49,9 +52,11 @@ from ._types import (
     GetResult,
     GraphProfile,
     GroupedCountResult,
+    LiveNamespaceMutation,
     MaintainReport,
     MaintenanceStatus,
     MutationReport,
+    NamespaceMutation,
     NamespaceSpec,
     Normalization,
     ObservedComputeUnits,
@@ -79,6 +84,7 @@ from ._types import (
     TextLegs,
     TextQueryResult,
     Tier,
+    TokenizerProfile,
     UpsertDocument,
     VectorSpace,
     VerifyFinding,
@@ -115,6 +121,8 @@ def _bytes_pointer(data: bytes) -> tuple[Any, object | None]:
 
 
 def _text_pointer(text: str) -> tuple[Any, int, object | None]:
+    if not isinstance(text, str):
+        invalid_argument("text must be a string")
     try:
         encoded = text.encode("utf-8", errors="strict")
     except UnicodeEncodeError as error:
@@ -148,6 +156,12 @@ def _python_doc_id(value: s.ZeDocId) -> int:
 def _u64_revision(value: int, field: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value < 1 << 64:
         invalid_argument(f"{field} must be an unsigned 64-bit integer")
+    return value
+
+
+def _u32(value: int, field: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value < 1 << 32:
+        invalid_argument(f"{field} must be an unsigned 32-bit integer")
     return value
 
 
@@ -299,7 +313,7 @@ def _attribute_value(
         attribute.attribute_type, AttributeType, "attribute_type"
     )
     value = attribute.value
-    result = s.ZeAttributeValue(attribute_id=attribute.attribute_id)
+    result = s.ZeAttributeValue(attribute_id=_u32(attribute.attribute_id, "attribute_id"))
     if value is None:
         if not allow_null:
             invalid_argument("filter values cannot be null")
@@ -329,7 +343,12 @@ def _attribute_value(
         result.value_type = 4
         result.bool_value = int(value)
     elif attribute_type is AttributeType.ID128:
-        invalid_argument("Id128 attribute values are not supported by this Python binding")
+        if not isinstance(value, int) or isinstance(value, bool):
+            invalid_argument("ID128 attribute value must be an unsigned 128-bit integer")
+        doc_id = _doc_id(value)
+        result.value_type = 6
+        result.u64_value = doc_id.low
+        result.i64_value = ct.c_int64(doc_id.high).value
     else:
         if not isinstance(value, str):
             invalid_argument("string attribute value must be str")
@@ -581,6 +600,9 @@ def _returned_attribute(
     elif value.value_type == 5:
         attribute_type = attribute_types.get(attribute_id, AttributeType.RAW_STRING)
         payload = ct.string_at(value.string_value, value.string_len).decode("utf-8")
+    elif value.value_type == 6:
+        attribute_type = AttributeType.ID128
+        payload = (ct.c_uint64(value.i64_value).value << 64) | int(value.u64_value)
     else:
         invalid_argument("returned attribute value type is invalid")
     return AttributeValue(attribute_id, attribute_type, payload)
@@ -952,12 +974,41 @@ class Store:
         """Atomically upsert documents, checking conditions on UpsertDocument entries."""
 
         handle = self._live_handle()
-        # Marshal records and their conditions from the same batch entries.
         documents = tuple(documents)
-        if self._record_only:
+        conditional, owners = self._marshal_upserts(
+            documents, record_only=self._record_only, vector_dimensions=self._vector_dimensions
+        )
+        report = s.sized(s.ZeMutationReport)
+        if conditional.condition_count:
+            conflict = s.sized(s.ZeRevisionConflict)
+            status = self._call(
+                LIBRARY.ze_upsert_conditional,
+                handle,
+                ct.byref(conditional),
+                ct.byref(report),
+                ct.byref(conflict),
+            )
+            _raise_for_conditional_status(status, handle, conflict)
+        else:
+            status = self._call(
+                LIBRARY.ze_upsert, handle, ct.byref(conditional.batch), ct.byref(report)
+            )
+            raise_for_status(status, handle)
+        del owners
+        return MutationReport(int(report.sequence), int(report.generation))
+
+    @staticmethod
+    def _marshal_upserts(
+        documents: Sequence[StoredDocument],
+        *,
+        record_only: bool,
+        vector_dimensions: int | None,
+        require_conditions: bool = False,
+    ) -> tuple[s.ZeConditionalUpsertRequest, list[object]]:
+        if record_only:
             dimension = 0
-        elif self._vector_dimensions is not None:
-            dimension = self._vector_dimensions
+        elif vector_dimensions is not None:
+            dimension = vector_dimensions
         else:
             first_vector = next(
                 (
@@ -981,7 +1032,7 @@ class Store:
                 or not -(1 << 63) <= document.timestamp < 1 << 63
             ):
                 invalid_argument("timestamp must be a signed 64-bit integer")
-            if self._record_only:
+            if record_only:
                 if document.vector is not None:
                     invalid_argument("record-only namespace does not accept document vectors")
                 vector_pointer, vector_len = s.FloatPointer(), 0
@@ -1050,8 +1101,9 @@ class Store:
             document_count=len(records),
             dimension=dimension,
         )
-        report = s.sized(s.ZeMutationReport)
-        if any(isinstance(document, UpsertDocument) for document in documents):
+        conditional = s.sized(s.ZeConditionalUpsertRequest)
+        conditional.batch = request
+        if require_conditions or any(isinstance(document, UpsertDocument) for document in documents):
             conditions = (s.ZeRevisionCondition * len(records))(
                 *[
                     _revision_condition(document.expected_revision)
@@ -1060,24 +1112,10 @@ class Store:
                     for document in documents
                 ]
             )
-            conditional = s.sized(s.ZeConditionalUpsertRequest)
-            conditional.batch = request
+            owners.append(conditions)
             conditional.conditions = ct.cast(conditions, ct.POINTER(s.ZeRevisionCondition))
             conditional.condition_count = len(conditions)
-            conflict = s.sized(s.ZeRevisionConflict)
-            status = self._call(
-                LIBRARY.ze_upsert_conditional,
-                handle,
-                ct.byref(conditional),
-                ct.byref(report),
-                ct.byref(conflict),
-            )
-            _raise_for_conditional_status(status, handle, conflict)
-        else:
-            status = self._call(LIBRARY.ze_upsert, handle, ct.byref(request), ct.byref(report))
-            raise_for_status(status, handle)
-        del owners
-        return MutationReport(int(report.sequence), int(report.generation))
+        return conditional, owners
 
     def get(
         self,
@@ -2239,6 +2277,73 @@ class Store:
         )
 
 
+def _namespace_spec(
+    spec: NamespaceSpec, owners: list[object]
+) -> tuple[s.ZeNamespaceSpec, dict[str, int], dict[int, AttributeType]]:
+    if not isinstance(spec, NamespaceSpec):
+        invalid_argument("spec must be a NamespaceSpec")
+    definitions = (s.ZeAttributeDefinition * len(spec.attributes))()
+    attribute_ids: dict[str, int] = {}
+    attribute_types: dict[int, AttributeType] = {0: AttributeType.I64}
+    for index, definition in enumerate(spec.attributes):
+        if not isinstance(definition, AttributeDefinition):
+            invalid_argument("namespace attributes must be AttributeDefinition values")
+        pointer, length, owner = _text_pointer(definition.name)
+        if owner is not None:
+            owners.append(owner)
+        attribute_type = _enum_value(
+            definition.attribute_type, AttributeType, "attribute_type"
+        )
+        if not isinstance(definition.nullable, bool):
+            invalid_argument("nullable must be a bool")
+        definitions[index] = s.ZeAttributeDefinition(
+            attribute_id=_u32(definition.attribute_id, "attribute_id"),
+            name=pointer,
+            name_len=length,
+            attribute_type=int(attribute_type),
+            nullable=int(definition.nullable),
+        )
+        attribute_ids[definition.name] = definition.attribute_id
+        attribute_types[definition.attribute_id] = attribute_type
+    owners.append(definitions)
+    vector_space = spec.vector_space
+    if vector_space is None:
+        has_vector_space = 0
+        dimensions = 0
+        normalization = Normalization.NONE
+        epoch_pointer = ct.POINTER(s.ZeEpochRequest)()
+    elif isinstance(vector_space, VectorSpace):
+        has_vector_space = 1
+        dimensions = _u32(vector_space.dimensions, "dimensions")
+        normalization = _enum_value(
+            vector_space.normalization, Normalization, "normalization"
+        )
+        if vector_space.epoch is None:
+            epoch_pointer = ct.POINTER(s.ZeEpochRequest)()
+        else:
+            if not isinstance(vector_space.epoch, EmbeddingEpoch):
+                invalid_argument("epoch must be an EmbeddingEpoch or None")
+            profile = vector_space.epoch.tokenizer_profile
+            if not isinstance(profile, int) or not -(1 << 31) <= profile < 1 << 31:
+                invalid_argument("epoch tokenizer_profile must be a signed 32-bit integer")
+            epoch_request, epoch_owners = _epoch_request(vector_space.epoch)
+            epoch_pointer = ct.pointer(epoch_request)
+            owners.extend((epoch_request, epoch_pointer, *epoch_owners))
+    else:
+        invalid_argument("vector_space must be a VectorSpace or None")
+    namespace_spec = s.ZeNamespaceSpec(
+        abi_size=ct.sizeof(s.ZeNamespaceSpec),
+        abi_reserved=0,
+        attributes=ct.cast(definitions, ct.POINTER(s.ZeAttributeDefinition)),
+        attribute_count=len(definitions),
+        has_vector_space=has_vector_space,
+        dimensions=dimensions,
+        normalization=int(normalization),
+        epoch=epoch_pointer,
+    )
+    return namespace_spec, attribute_ids, attribute_types
+
+
 def open_namespace(
     root: str | Path,
     name: str,
@@ -2253,8 +2358,6 @@ def open_namespace(
 ) -> Store:
     """Open or idempotently create one namespace under a database root."""
 
-    if not isinstance(spec, NamespaceSpec):
-        invalid_argument("spec must be a NamespaceSpec")
     open_request, open_owner = _open_request(
         root,
         access_mode,
@@ -2272,62 +2375,7 @@ def open_namespace(
         owners.append(root_owner)
     if name_owner is not None:
         owners.append(name_owner)
-    definitions = (s.ZeAttributeDefinition * len(spec.attributes))()
-    attribute_ids: dict[str, int] = {}
-    attribute_types: dict[int, AttributeType] = {0: AttributeType.I64}
-    for index, definition in enumerate(spec.attributes):
-        if not isinstance(definition, AttributeDefinition):
-            invalid_argument("namespace attributes must be AttributeDefinition values")
-        pointer, length, owner = _text_pointer(definition.name)
-        if owner is not None:
-            owners.append(owner)
-        attribute_type = _enum_value(
-            definition.attribute_type, AttributeType, "attribute_type"
-        )
-        definitions[index] = s.ZeAttributeDefinition(
-            attribute_id=definition.attribute_id,
-            name=pointer,
-            name_len=length,
-            attribute_type=int(attribute_type),
-            nullable=int(definition.nullable),
-        )
-        attribute_ids[definition.name] = definition.attribute_id
-        attribute_types[definition.attribute_id] = attribute_type
-    owners.append(definitions)
-    vector_space = spec.vector_space
-    if vector_space is None:
-        has_vector_space = 0
-        dimensions = 0
-        normalization = Normalization.NONE
-        epoch_pointer = ct.POINTER(s.ZeEpochRequest)()
-        vector_dimensions = None
-        record_only = True
-    elif isinstance(vector_space, VectorSpace):
-        has_vector_space = 1
-        dimensions = vector_space.dimensions
-        normalization = _enum_value(
-            vector_space.normalization, Normalization, "normalization"
-        )
-        vector_dimensions = vector_space.dimensions
-        record_only = False
-        if vector_space.epoch is None:
-            epoch_pointer = ct.POINTER(s.ZeEpochRequest)()
-        else:
-            epoch_request, epoch_owners = _epoch_request(vector_space.epoch)
-            epoch_pointer = ct.pointer(epoch_request)
-            owners.extend((epoch_request, epoch_pointer, *epoch_owners))
-    else:
-        invalid_argument("vector_space must be a VectorSpace or None")
-    namespace_spec = s.ZeNamespaceSpec(
-        abi_size=ct.sizeof(s.ZeNamespaceSpec),
-        abi_reserved=0,
-        attributes=ct.cast(definitions, ct.POINTER(s.ZeAttributeDefinition)),
-        attribute_count=len(definitions),
-        has_vector_space=has_vector_space,
-        dimensions=dimensions,
-        normalization=int(normalization),
-        epoch=epoch_pointer,
-    )
+    namespace_spec, attribute_ids, attribute_types = _namespace_spec(spec, owners)
     namespace_spec_pointer = ct.pointer(namespace_spec)
     owners.extend((namespace_spec, namespace_spec_pointer))
     request = s.ZeNamespaceOpenRequest(
@@ -2341,16 +2389,158 @@ def open_namespace(
         spec=namespace_spec_pointer,
     )
     handle = ct.c_uint64()
-    status = LIBRARY.ze_namespace_open(ct.byref(request), ct.byref(handle))
+    if spec.tokenizer_profile is None:
+        status = LIBRARY.ze_namespace_open(ct.byref(request), ct.byref(handle))
+    else:
+        profile = _enum_value(spec.tokenizer_profile, TokenizerProfile, "tokenizer_profile")
+        status = LIBRARY.ze_namespace_open_with_tokenizer(
+            ct.byref(request), int(profile), ct.byref(handle)
+        )
     del owners
     raise_for_status(status, int(handle.value))
     return Store(
         int(handle.value),
         attribute_ids=attribute_ids,
         attribute_types=attribute_types,
-        vector_dimensions=vector_dimensions,
-        record_only=record_only,
+        vector_dimensions=spec.vector_space.dimensions if spec.vector_space else None,
+        record_only=spec.vector_space is None,
     )
+
+
+def _namespace_batch_request(
+    root: str | Path, participants: Sequence[NamespaceMutation], *, minimum: int
+) -> tuple[s.ZeNamespaceBatchRequest, ct.Array[ct.c_uint64], list[object]]:
+    count = len(participants)
+    if not minimum <= count <= 128:
+        invalid_argument(f"namespace operation requires {minimum}..128 participants")
+    if not isinstance(root, (str, os.PathLike)):
+        invalid_argument("root must be a path")
+    root_pointer, root_len, root_owner = _text_pointer(os.fspath(root))
+    mutations = (s.ZeNamespaceMutation * count)()
+    generations = (ct.c_uint64 * count)()
+    owners: list[object] = [root_owner, mutations]
+    for index, participant in enumerate(participants):
+        if not isinstance(participant, NamespaceMutation):
+            invalid_argument("participants must contain NamespaceMutation values")
+        spec, attribute_ids, attribute_types = _namespace_spec(participant.spec, owners)
+        name, name_len, name_owner = _text_pointer(participant.name)
+        owners.extend((spec, name_owner))
+        profile = participant.spec.tokenizer_profile
+        if profile is None:
+            tokenizer = int(spec.epoch.contents.tokenizer_profile) if spec.epoch else 0
+        else:
+            tokenizer = int(_enum_value(profile, TokenizerProfile, "tokenizer_profile"))
+        upserts, upsert_owners = Store._marshal_upserts(
+            tuple(participant.upserts),
+            record_only=not spec.has_vector_space,
+            vector_dimensions=int(spec.dimensions),
+            require_conditions=True,
+        )
+        owners.extend(upsert_owners)
+        deletes = (s.ZeDocId * len(participant.deletes))(
+            *[_doc_id(doc_id) for doc_id in participant.deletes]
+        )
+        owners.append(deletes)
+        filter_pointer = ct.POINTER(s.ZeFilter)()
+        if participant.delete_where is not None:
+            filter_request, filter_owners = _flatten_filter(
+                participant.delete_where, attribute_ids, attribute_types, strict=True
+            )
+            filter_pointer = ct.pointer(filter_request)
+            owners.extend((filter_request, *filter_owners))
+        mutation = s.sized(s.ZeNamespaceMutation)
+        mutation.name = name
+        mutation.name_len = name_len
+        mutation.spec = ct.pointer(spec)
+        mutation.tokenizer_profile = tokenizer
+        mutation.upserts = upserts
+        mutation.deletes = deletes
+        mutation.delete_count = len(deletes)
+        mutation.filter = filter_pointer
+        mutations[index] = mutation
+    request = s.sized(s.ZeNamespaceBatchRequest)
+    request.root = root_pointer
+    request.root_len = root_len
+    request.participants = mutations
+    request.participant_count = count
+    request.generations = generations
+    return request, generations, owners
+
+
+def namespace_batch(root: str | Path, participants: Sequence[NamespaceMutation]) -> list[int]:
+    """Commit changes across 2..128 closed namespaces and return their generations."""
+
+    request, generations, owners = _namespace_batch_request(root, tuple(participants), minimum=2)
+    status = LIBRARY.ze_namespace_batch(ct.byref(request))
+    del owners
+    raise_for_status(status)
+    return list(generations)
+
+
+def namespace_batch_live(
+    root: str | Path, participants: Sequence[LiveNamespaceMutation]
+) -> list[int]:
+    """Commit changes through 2..128 existing writable namespace handles."""
+
+    participants = tuple(participants)
+    batch, generations, owners = _namespace_batch_request(root, participants, minimum=2)
+    handles = (ct.c_uint64 * len(participants))()
+    for index, participant in enumerate(participants):
+        if not isinstance(participant, LiveNamespaceMutation) or not isinstance(
+            participant.store, Store
+        ):
+            invalid_argument("participants must contain LiveNamespaceMutation values with a Store")
+        handles[index] = participant.store._live_handle()
+    request = s.sized(s.ZeNamespaceBatchLiveRequest)
+    request.batch = batch
+    request.handles = handles
+    status = LIBRARY.ze_namespace_batch_live(ct.byref(request))
+    del owners
+    raise_for_status(status)
+    return list(generations)
+
+
+def declare_cascade(
+    root: str | Path,
+    participants: Sequence[CascadeParticipant],
+    declaration: CascadeDeclaration,
+) -> None:
+    """Persist a child-to-parent cascade rule between closed namespaces."""
+
+    if not isinstance(declaration, CascadeDeclaration):
+        invalid_argument("declaration must be a CascadeDeclaration")
+    request = s.sized(s.ZeCascadeDeclaration)
+    request.parent_index = _u32(declaration.parent_index, "parent_index")
+    request.child_index = _u32(declaration.child_index, "child_index")
+    request.attribute_id = _u32(declaration.attribute_id, "attribute_id")
+    mutations: list[NamespaceMutation] = []
+    for participant in participants:
+        if not isinstance(participant, CascadeParticipant):
+            invalid_argument("participants must contain CascadeParticipant values")
+        mutations.append(NamespaceMutation(participant.name, participant.spec))
+    batch, _, owners = _namespace_batch_request(root, mutations, minimum=1)
+    status = LIBRARY.ze_namespace_declare_cascade(ct.byref(batch), ct.byref(request))
+    del owners
+    raise_for_status(status)
+
+
+def delete_cascade(
+    root: str | Path, participants: Sequence[CascadeDeleteParticipant]
+) -> list[int]:
+    """Atomically delete explicit IDs and all their declared dependants."""
+
+    mutations: list[NamespaceMutation] = []
+    for participant in participants:
+        if not isinstance(participant, CascadeDeleteParticipant):
+            invalid_argument("participants must contain CascadeDeleteParticipant values")
+        mutations.append(
+            NamespaceMutation(participant.name, participant.spec, deletes=participant.deletes)
+        )
+    batch, generations, owners = _namespace_batch_request(root, mutations, minimum=1)
+    status = LIBRARY.ze_namespace_delete_cascade(ct.byref(batch))
+    del owners
+    raise_for_status(status)
+    return list(generations)
 
 
 def list_namespaces(root: str | Path) -> list[str]:

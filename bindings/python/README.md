@@ -94,6 +94,74 @@ is unchanged. A malformed filter raises `ze.InvalidArgument`. These
 operations use core store handles. Text stores use `delete_text()` for
 document deletion.
 
+## Namespace tokenizers and transactions
+
+Set `NamespaceSpec(tokenizer_profile=ze.TokenizerProfile.VOICE)` when opening a
+namespace with `ze.open_namespace(root, name, spec)`. The profiles are
+`TEXT_DEFAULT`, `CODE`, and `VOICE`. The equivalent strings are
+`"text_default"`, `"code"`, and `"voice"`. Code preserves stopwords and skips
+stemming. Voice normalizes number words so a query for `"25"` can match
+`"twenty five"`. Omission uses the declared embedding epoch's tokenizer or the
+text default. These profiles work for record-only namespaces and core builds.
+The profile is persisted and a different profile on reopen raises
+`ze.EpochMismatch`. An explicit profile must agree with any supplied epoch.
+
+`ze.namespace_batch(root, participants)` commits changes across 2 to 128
+existing namespaces under one root in a single durable transaction. Close
+each participant's writer and snapshot views before calling. Each
+`NamespaceMutation` supplies the namespace name and exact existing spec,
+including its tokenizer. Operations run in this order for each namespace:
+upserts, explicit deletes, then a structured `delete_where` filter. Use
+`StoredDocument` or `UpsertDocument` for upserts. Conditions are checked
+before that participant's deletes. A failed revision condition publishes none
+of the batch and surfaces as `ze.Io` with the C ABI's revision failure message.
+
+```python
+generations = ze.namespace_batch(root, [
+    ze.NamespaceMutation("notes", notes_spec, upserts=[ze.StoredDocument(7, text="draft")]),
+    ze.NamespaceMutation("archive", archive_spec, delete_where=ze.Filter.eq("ts", 10)),
+])
+```
+
+`ze.namespace_batch_live(root, participants)` takes the same fields on
+`LiveNamespaceMutation` plus a `store=` keyword for each namespace's writable
+handle in this process. The handles remain usable after success. Both
+functions return one generation per participant in input order. Existing
+readers keep their snapshots. An I/O error during commit can leave the
+outcome indeterminate. Close any live participant handles and reopen the
+namespaces to check the outcome before retrying.
+
+### Cascades
+
+`ze.declare_cascade(root, participants, declaration)` persists an ownership
+rule. Pass `CascadeParticipant(name, spec)` entries with the exact existing
+specs, then a `CascadeDeclaration(parent_index, child_index, attribute_id)`.
+The indices refer to the participant list. The child attribute must be
+`AttributeType.ID128`. Write its parent ID as an unsigned 128-bit Python
+integer in an `AttributeValue`. Null values have no parent. Exact
+redeclaration is idempotent, and a cycle raises `ze.CascadeCycle`
+(`ZE_ERR_CASCADE_CYCLE`). The rule is used by `delete_cascade`.
+
+```python
+ze.declare_cascade(root, [
+    ze.CascadeParticipant("notes", notes_spec),
+    ze.CascadeParticipant("chunks", chunks_spec),
+], ze.CascadeDeclaration(parent_index=0, child_index=1, attribute_id=1))
+
+generations = ze.delete_cascade(root, [
+    ze.CascadeDeleteParticipant("notes", notes_spec, deletes=[7]),
+    ze.CascadeDeleteParticipant("chunks", chunks_spec),
+])
+```
+
+`delete_cascade` atomically deletes explicit IDs and all their transitive
+dependants. Pass 1 to 128 participants, including every namespace reachable
+through the declared rules. Each `CascadeDeleteParticipant` takes optional
+explicit IDs. The return value is a list of generations in participant order.
+Close writers and snapshot views before declaring a rule or cascading a
+delete. After an I/O error during commit, reopen before retrying. Cascade
+deletion is logical and may leave deleted bytes in retained store files.
+
 ## Store verification
 
 Call `ze.verify(path)` with a string or a string-valued path-like object. Pass

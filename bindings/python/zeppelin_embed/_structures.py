@@ -483,6 +483,53 @@ class ZeFilter(ct.Structure):
     ]
 
 
+class ZeNamespaceMutation(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("name", UInt8Pointer),
+        ("name_len", ct.c_size_t),
+        ("spec", ct.POINTER(ZeNamespaceSpec)),
+        ("tokenizer_profile", ct.c_int32),
+        ("reserved", ct.c_uint32),
+        ("upserts", ZeConditionalUpsertRequest),
+        ("deletes", ct.POINTER(ZeDocId)),
+        ("delete_count", ct.c_size_t),
+        ("filter", ct.POINTER(ZeFilter)),
+    ]
+
+
+class ZeNamespaceBatchRequest(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("root", UInt8Pointer),
+        ("root_len", ct.c_size_t),
+        ("participants", ct.POINTER(ZeNamespaceMutation)),
+        ("participant_count", ct.c_size_t),
+        ("generations", ct.POINTER(ct.c_uint64)),
+    ]
+
+
+class ZeNamespaceBatchLiveRequest(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("batch", ZeNamespaceBatchRequest),
+        ("handles", ct.POINTER(ct.c_uint64)),
+    ]
+
+
+class ZeCascadeDeclaration(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("parent_index", ct.c_uint32),
+        ("child_index", ct.c_uint32),
+        ("attribute_id", ct.c_uint32),
+    ]
+
+
 class ZeScanRequest(ct.Structure):
     _fields_ = [
         ("abi_size", ct.c_uint32),

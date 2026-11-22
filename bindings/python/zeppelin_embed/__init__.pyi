@@ -1,14 +1,19 @@
 from ._errors import *  # noqa: F403
 from ._errors import RevisionConflict as RevisionConflict
 from ._errors import UnsupportedBuild as UnsupportedBuild
+from ._errors import ZeppelinError as ZeppelinError
 from ._ffi import ABI_VERSION as ABI_VERSION
 from ._ffi import TEXT_AVAILABLE as TEXT_AVAILABLE
 from ._library import LIBRARY_PATH as LIBRARY_PATH
 from ._store import DEFAULT_MODEL_REF as DEFAULT_MODEL_REF
 from ._store import CancelToken as CancelToken
 from ._store import Store as Store
+from ._store import declare_cascade as declare_cascade
+from ._store import delete_cascade as delete_cascade
 from ._store import epoch_identity as epoch_identity
 from ._store import list_namespaces as list_namespaces
+from ._store import namespace_batch as namespace_batch
+from ._store import namespace_batch_live as namespace_batch_live
 from ._store import open as open
 from ._store import open_model as open_model
 from ._store import open_namespace as open_namespace
@@ -20,6 +25,9 @@ from ._types import AttributeDefinition as AttributeDefinition
 from ._types import AttributeScanOrder as AttributeScanOrder
 from ._types import AttributeType as AttributeType
 from ._types import AttributeValue as AttributeValue
+from ._types import CascadeDeclaration as CascadeDeclaration
+from ._types import CascadeDeleteParticipant as CascadeDeleteParticipant
+from ._types import CascadeParticipant as CascadeParticipant
 from ._types import CommitTier as CommitTier
 from ._types import ComputeUnits as ComputeUnits
 from ._types import CountGroup as CountGroup
@@ -41,9 +49,11 @@ from ._types import GenerationReport as GenerationReport
 from ._types import GetResult as GetResult
 from ._types import GraphProfile as GraphProfile
 from ._types import GroupedCountResult as GroupedCountResult
+from ._types import LiveNamespaceMutation as LiveNamespaceMutation
 from ._types import MaintainReport as MaintainReport
 from ._types import MaintenanceStatus as MaintenanceStatus
 from ._types import MutationReport as MutationReport
+from ._types import NamespaceMutation as NamespaceMutation
 from ._types import NamespaceSpec as NamespaceSpec
 from ._types import Normalization as Normalization
 from ._types import ObservedComputeUnits as ObservedComputeUnits
@@ -71,8 +81,11 @@ from ._types import TextIngestReport as TextIngestReport
 from ._types import TextLegs as TextLegs
 from ._types import TextQueryResult as TextQueryResult
 from ._types import Tier as Tier
+from ._types import TokenizerProfile as TokenizerProfile
 from ._types import UpsertDocument as UpsertDocument
 from ._types import VectorSpace as VectorSpace
 from ._types import VerifyFinding as VerifyFinding
 from ._types import VerifyFindingKind as VerifyFindingKind
 from ._types import VerifyReport as VerifyReport
+
+class CascadeCycle(ZeppelinError): ...

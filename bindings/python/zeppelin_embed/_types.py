@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     import numpy as np
+
+    from ._store import Store
 
 
 class AccessMode(IntEnum):
@@ -72,6 +75,12 @@ class Normalization(IntEnum):
     UNIT_L2 = 1
 
 
+class TokenizerProfile(IntEnum):
+    TEXT_DEFAULT = 0
+    CODE = 1
+    VOICE = 2
+
+
 class EmbeddingRuntime(IntEnum):
     CORE_ML = 1
     MLX = 2
@@ -121,6 +130,7 @@ class VectorSpace:
 class NamespaceSpec:
     attributes: tuple[AttributeDefinition, ...] = ()
     vector_space: VectorSpace | None = None
+    tokenizer_profile: TokenizerProfile | str | None = None
 
 
 @dataclass(frozen=True)
@@ -139,6 +149,50 @@ class UpsertDocument(StoredDocument):
     """A document to write only when its live revision matches the condition."""
 
     expected_revision: int | None = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class NamespaceMutation:
+    """Ordered operations on one existing namespace in an atomic batch."""
+
+    name: str
+    spec: NamespaceSpec
+    upserts: Sequence[StoredDocument] = ()
+    deletes: Sequence[int | tuple[int, int]] = ()
+    delete_where: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class LiveNamespaceMutation(NamespaceMutation):
+    """A mutation paired with its writable store in this process."""
+
+    store: Store = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class CascadeParticipant:
+    """An existing namespace and its declared spec."""
+
+    name: str
+    spec: NamespaceSpec
+
+
+@dataclass(frozen=True)
+class CascadeDeleteParticipant:
+    """Explicit IDs to delete; the engine discovers their dependants."""
+
+    name: str
+    spec: NamespaceSpec
+    deletes: Sequence[int | tuple[int, int]] = ()
+
+
+@dataclass(frozen=True)
+class CascadeDeclaration:
+    """An id128 reference on a child namespace to a parent namespace."""
+
+    parent_index: int
+    child_index: int
+    attribute_id: int
 
 
 @dataclass(frozen=True)
