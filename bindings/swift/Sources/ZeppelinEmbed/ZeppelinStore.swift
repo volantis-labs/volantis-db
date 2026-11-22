@@ -234,6 +234,51 @@ public actor ZeppelinStore {
         }
     }
 
+    public func delete(conditional targets: [DeleteTarget]) async throws -> MutationReport {
+        let current = try openHandle()
+        return try await Self.runBlocking {
+            let ids = targets.map { Self.cDocumentID($0.id) }
+            let conditions = targets.map { cRevisionCondition($0.expectedRevision) }
+            return try ids.withUnsafeBufferPointer { idBuffer in
+                try conditions.withUnsafeBufferPointer { conditionBuffer in
+                    var batch = ZeDeleteRequest()
+                    batch.abi_size = abiSize(ZeDeleteRequest.self)
+                    batch.doc_ids = idBuffer.baseAddress
+                    batch.doc_id_count = idBuffer.count
+                    var request = ZeConditionalDeleteRequest()
+                    request.abi_size = abiSize(ZeConditionalDeleteRequest.self)
+                    request.batch = batch
+                    request.conditions = conditionBuffer.baseAddress
+                    request.condition_count = conditionBuffer.count
+                    var report = ZeMutationReport()
+                    report.abi_size = abiSize(ZeMutationReport.self)
+                    var conflict = ZeRevisionConflict()
+                    conflict.abi_size = abiSize(ZeRevisionConflict.self)
+                    try checkConditionalMutation(
+                        ze_delete_conditional(current, &request, &report, &conflict),
+                        conflict: conflict
+                    )
+                    return MutationReport(sequence: report.sequence, generation: report.generation)
+                }
+            }
+        }
+    }
+
+    public func deleteWhere(_ filter: Filter) async throws -> DeleteWhereReport {
+        let current = try openHandle()
+        return try await Self.runBlocking {
+            try withUnsafeFilter(filter) { filterPointer in
+                var request = ZeDeleteWhereRequest()
+                request.abi_size = abiSize(ZeDeleteWhereRequest.self)
+                request.filter = filterPointer
+                var report = ZeDeleteWhereReport()
+                report.abi_size = abiSize(ZeDeleteWhereReport.self)
+                try checkZeppelin(ze_delete_where(current, &request, &report))
+                return DeleteWhereReport(deleted: report.deleted_count, generation: report.generation)
+            }
+        }
+    }
+
     public func search(
         vector: [Float],
         options: SearchOptions

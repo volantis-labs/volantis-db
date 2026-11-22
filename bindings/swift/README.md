@@ -36,6 +36,47 @@ namespaces. Repeated calls reuse preparation; mutations invalidate it.
 Optional `cancellationToken` and `deadlineNanoseconds` controls are mutually
 exclusive. A cancelled call may retain a complete assembly and can be retried.
 
+### Conditional writes and filter deletion
+
+Use `upsert(conditional:)` and `delete(conditional:)` to check the live
+revisions of documents before writing. Each entry accepts `.exactly(revision)`
+to require a particular live revision, `.absent` to require a missing or
+deleted document, or `nil` to skip the check for that entry.
+
+```swift
+// replacement is an IngestDocument with a higher revision than the live one.
+let updated = try await store.upsert(conditional: [
+    ConditionalUpsertDocument(document: replacement, expectedRevision: .exactly(previousRevision))
+])
+let deleted = try await store.delete(conditional: [
+    DeleteTarget(id: replacement.id, expectedRevision: .exactly(replacement.revision))
+])
+```
+
+The writer checks all conditions against the same committed state before
+applying the batch. If any condition fails, the whole batch stays unchanged.
+Catch `RevisionConflict` to read the `.revisionConflict` code, the zero-based
+batch `index`, the document `id`, its `expectedRevision`, and its
+`currentRevision` (nil when missing or deleted). Successful writes return
+`MutationReport` with the sequence and generation. Upserts still follow the
+usual revision rules, including the revision floor left by a delete.
+
+`deleteWhere(_:)` takes a typed `Filter`. It atomically deletes all live
+matches and physically removes their bytes from the store before returning.
+If interrupted, the next writable open finishes the removal. The report
+contains `deleted` and `generation`. Zero matches leave the generation
+unchanged. An invalid filter throws `ZeppelinError.invalidArgument`, and a
+read-only handle throws `ZeppelinError.accessMode`. The call runs to completion
+without a cancellation token.
+
+```swift
+// Attribute 1 is a string column in this store's schema.
+let report = try await store.deleteWhere(.eq(1, .string("expired")))
+print(report.deleted, report.generation)
+```
+
+### Graph
+
 Graph methods use the same `ZeppelinStore` handle: `enableGraph`, `graphApply`,
 `graphQuery`, `cypher`, `getNodes`, `getRelationships`, and `graphResources`.
 Call `enableGraph()` explicitly before graph queries. `GraphNodeID` is an alias for `DocumentID`. A document node created with

@@ -48,7 +48,7 @@ private struct FlattenedFilter {
     }
 
     mutating func append(_ filter: Filter, at reserved: Int?, depth: Int) throws -> UInt32 {
-        guard depth <= 32, nodes.count < Self.maximumNodes else {
+        guard depth <= 32 else {
             throw ZeppelinError.invalidArgument
         }
         let index: Int

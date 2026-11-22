@@ -91,6 +91,43 @@ struct CAttributeValueRecord: Sendable {
 extension ZeppelinStore {
     public func upsert(_ documents: [IngestDocument]) async throws -> MutationReport {
         let current = try openHandle()
+        return try Self.withUpsertRequest(documents) { request in
+            var report = ZeMutationReport()
+            report.abi_size = abiSize(ZeMutationReport.self)
+            try checkZeppelin(ze_upsert(current, &request, &report))
+            return MutationReport(sequence: report.sequence, generation: report.generation)
+        }
+    }
+
+    public func upsert(
+        conditional documents: [ConditionalUpsertDocument]
+    ) async throws -> MutationReport {
+        let current = try openHandle()
+        let conditions = documents.map { cRevisionCondition($0.expectedRevision) }
+        return try Self.withUpsertRequest(documents.map(\.document)) { batch in
+            try conditions.withUnsafeBufferPointer { buffer in
+                var request = ZeConditionalUpsertRequest()
+                request.abi_size = abiSize(ZeConditionalUpsertRequest.self)
+                request.batch = batch
+                request.conditions = buffer.baseAddress
+                request.condition_count = buffer.count
+                var report = ZeMutationReport()
+                report.abi_size = abiSize(ZeMutationReport.self)
+                var conflict = ZeRevisionConflict()
+                conflict.abi_size = abiSize(ZeRevisionConflict.self)
+                try checkConditionalMutation(
+                    ze_upsert_conditional(current, &request, &report, &conflict),
+                    conflict: conflict
+                )
+                return MutationReport(sequence: report.sequence, generation: report.generation)
+            }
+        }
+    }
+
+    private static func withUpsertRequest<Result>(
+        _ documents: [IngestDocument],
+        _ body: (inout ZeUpsertRequest) throws -> Result
+    ) rethrows -> Result {
         let vectors = documents.flatMap(\.vector)
         let metadata = documents.flatMap { Array($0.metadata) }
         let texts = documents.flatMap { $0.text.map { Array($0.utf8) } ?? [] }
@@ -159,13 +196,7 @@ extension ZeppelinStore {
                                 request.documents = recordBuffer.baseAddress
                                 request.document_count = records.count
                                 request.dimension = documents.first?.vector.count ?? 0
-                                var report = ZeMutationReport()
-                                report.abi_size = abiSize(ZeMutationReport.self)
-                                try checkZeppelin(ze_upsert(current, &request, &report))
-                                return MutationReport(
-                                    sequence: report.sequence,
-                                    generation: report.generation
-                                )
+                                return try body(&request)
                             }
                         }
                     }
