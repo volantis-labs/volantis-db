@@ -31,7 +31,7 @@ mod sync;
 mod text_registry;
 
 use std::any::Any;
-use std::ffi::c_char;
+use std::ffi::{OsString, c_char};
 use std::mem::{align_of, size_of};
 use std::num::NonZeroUsize;
 use std::path::Path;
@@ -59,6 +59,7 @@ use zeppelin_embed::lifecycle::{
     AccessMode, CancelToken, Deadline, DocumentFields, DocumentScanCursor, DocumentScanRequest,
     DocumentScanSource, GraphSearchOptions, MAX_DOCUMENT_SCAN_LIMIT, OpenOptions, QueryControl,
     ScanDirection, ScanOrder, SearchOptions, SearchTier, Store, StoreState, StoredDocument,
+    list_namespaces,
 };
 use zeppelin_embed::meta::{
     ColumnDefinition, ColumnId, ColumnType, Predicate, PredicateValue, RangeBound, RangePredicate,
@@ -1010,56 +1011,7 @@ fn empty_namespace_list_result(abi_size: u32) -> ZeNamespaceListResult {
     }
 }
 
-fn namespace_io(path: &Path, source: std::io::Error) -> FfiError {
-    FfiError::new(
-        ZeErrorCode::ZeErrIo,
-        format!("namespace I/O {}: {source}", path.display()),
-    )
-}
-
-fn namespace_names(root: &Path) -> Result<Vec<Vec<u8>>, FfiError> {
-    let directory = std::fs::read_dir(root).map_err(|source| namespace_io(root, source))?;
-    let mut names = Vec::new();
-    for entry in directory {
-        let entry = entry.map_err(|source| namespace_io(root, source))?;
-        let file_type = entry
-            .file_type()
-            .map_err(|source| namespace_io(&entry.path(), source))?;
-        if !file_type.is_dir() {
-            continue;
-        }
-        let manifest = entry.path().join("manifest.ze");
-        let metadata = match std::fs::metadata(&manifest) {
-            Ok(metadata) => metadata,
-            Err(source) if source.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(source) => return Err(namespace_io(&manifest, source)),
-        };
-        if !metadata.is_file() {
-            continue;
-        }
-        let file_name = entry.file_name();
-        let encoded = file_name.as_encoded_bytes();
-        let mut name = Vec::new();
-        name.try_reserve_exact(encoded.len()).map_err(|_| {
-            FfiError::new(
-                ZeErrorCode::ZeErrOutOfMemory,
-                "namespace name allocation failed",
-            )
-        })?;
-        name.extend_from_slice(encoded);
-        names.try_reserve(1).map_err(|_| {
-            FfiError::new(
-                ZeErrorCode::ZeErrOutOfMemory,
-                "namespace list allocation failed",
-            )
-        })?;
-        names.push(name);
-    }
-    names.sort_unstable();
-    Ok(names)
-}
-
-fn publish_namespace_names(names: &[Vec<u8>]) -> Result<(*mut ZeNamespaceEntry, u32), FfiError> {
+fn publish_namespace_names(names: &[OsString]) -> Result<(*mut ZeNamespaceEntry, u32), FfiError> {
     if names.is_empty() {
         return Ok((std::ptr::null_mut(), 0));
     }
@@ -1089,6 +1041,7 @@ fn publish_namespace_names(names: &[Vec<u8>]) -> Result<(*mut ZeNamespaceEntry, 
     let entries = arena_pointer.cast::<ZeNamespaceEntry>();
     let mut name_pointer = unsafe { arena_pointer.cast::<u8>().add(entry_bytes) };
     for (index, name) in names.iter().enumerate() {
+        let name = name.as_encoded_bytes();
         unsafe {
             std::ptr::copy_nonoverlapping(name.as_ptr(), name_pointer, name.len());
             std::ptr::write(
@@ -2110,10 +2063,7 @@ pub extern "C" fn ze_namespace_list(
                 let request = marshal::read_struct(request)?;
                 let abi_size = marshal::validate_output(out_result)?;
                 let root = marshal::utf8_without_nul(request.root, request.root_len)?;
-                if root.is_empty() {
-                    return Err(FfiError::invalid("namespace root must not be empty"));
-                }
-                let names = namespace_names(Path::new(root))?;
+                let names = list_namespaces(Path::new(root)).map_err(FfiError::store)?;
                 let (entries, allocation_generation) = publish_namespace_names(&names)?;
                 marshal::write_output(
                     out_result,

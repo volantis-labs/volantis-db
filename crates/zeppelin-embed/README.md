@@ -19,6 +19,28 @@ Run the bundled example after cloning the repository:
 cargo run --release -p zeppelin-embed --example five_vectors_search
 ```
 
+## List namespaces
+
+```rust
+use std::path::Path;
+use zeppelin_embed::lifecycle::{StoreError, list_namespaces};
+
+fn main() -> Result<(), StoreError> {
+    for name in list_namespaces(Path::new("my-database"))? {
+        println!("{}", name.to_string_lossy());
+    }
+    Ok(())
+}
+```
+
+`list_namespaces` returns the native names (`OsString`) of direct child
+directories whose `manifest.ze` resolves to a regular file. Results are sorted
+by OS-encoded bytes and are empty when no children qualify. Listing uses
+filesystem metadata and works without opening a store.
+
+Empty paths and paths containing NUL yield `StoreErrorKind::InvalidArgument`.
+A missing or unreadable root yields `StoreErrorKind::Io`.
+
 See the [project README](https://github.com/zepdb/zeppelin-embed) for benchmark
 results, storage details, and the complete native API quickstart.
 

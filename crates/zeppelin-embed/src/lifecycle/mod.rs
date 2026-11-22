@@ -15,6 +15,7 @@ mod hybrid;
 pub mod lock;
 pub(crate) mod materialize;
 pub(crate) mod namespace_batch;
+mod namespace_list;
 pub use cascade::CascadeRule;
 #[cfg(any(test, feature = "test-seams"))]
 pub use namespace_batch::namespace_delete_cascade_with_steps;
@@ -43,6 +44,7 @@ pub use namespace_batch::{
     namespace_batch_live_on_vfs, namespace_batch_live_with_steps, namespace_batch_with_steps,
     namespace_reclaim, namespace_reclaim_on_vfs, namespace_relocate_with_steps,
 };
+pub use namespace_list::list_namespaces;
 pub(crate) mod stats;
 
 use crate::diag::{timing_elapsed, timing_start};
@@ -2021,6 +2023,11 @@ pub enum StoreError {
         /// Invalid store path.
         path: PathBuf,
     },
+    /// The namespace root contains no path or contains an interior NUL byte.
+    InvalidNamespaceRoot {
+        /// Precise validation failure.
+        detail: &'static str,
+    },
     /// Another writer owns the store's process or kernel lock.
     StoreBusy {
         /// Busy store directory.
@@ -2268,6 +2275,7 @@ impl std::fmt::Display for StoreError {
                     path.display()
                 )
             }
+            Self::InvalidNamespaceRoot { detail } => formatter.write_str(detail),
             Self::SnapshotViewsOpen => {
                 formatter.write_str("close open snapshots before physical removal")
             }
@@ -2549,6 +2557,7 @@ impl StoreError {
             | Self::WalRetire(_) => StoreErrorKind::Io,
             Self::NeighbourSourceNotFound { .. } | Self::MissingEmbedder | Self::Embedding(_) | Self::CascadeCycle { .. }
             | Self::NotDirectory { .. }
+            | Self::InvalidNamespaceRoot { .. }
             | Self::Tokenizer(_)
             | Self::SchemaMismatch { .. }
             | Self::ScanStale { .. }
@@ -2627,6 +2636,7 @@ impl std::error::Error for StoreError {
             Self::QueryPoolStart { source } => Some(source),
             Self::CascadeCycle { .. }
             | Self::NotDirectory { .. }
+            | Self::InvalidNamespaceRoot { .. }
             | Self::StoreBusy { .. }
             | Self::EpochUndeclared
             | Self::EpochUnstamped
