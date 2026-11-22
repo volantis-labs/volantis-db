@@ -352,9 +352,19 @@ public actor ZeppelinStore {
         vector: [Float]? = nil,
         text: String? = nil,
         eligibleIds: [DocumentID]? = nil,
+        filter: Filter? = nil,
+        timestampRange: Range<Int64>? = nil,
         options: QueryOptions
     ) async throws -> QueryResult {
-        try await executeQuery(vector: vector, text: text, eligibleIds: eligibleIds, options: options, onFFIEntry: nil)
+        try await executeQuery(
+            vector: vector,
+            text: text,
+            eligibleIds: eligibleIds,
+            filter: filter,
+            timestampRange: timestampRange,
+            options: options,
+            onFFIEntry: nil
+        )
     }
 
     @_spi(Testing)
@@ -385,10 +395,16 @@ public actor ZeppelinStore {
         vector: [Float]?,
         text: String?,
         eligibleIds: [DocumentID]? = nil,
+        filter: Filter? = nil,
+        timestampRange: Range<Int64>? = nil,
         options: QueryOptions,
         onFFIEntry: (@Sendable () -> Void)?
     ) async throws -> QueryResult {
         let current = try openHandle()
+        if let snippetBytes = options.snippetBytes, snippetBytes <= 0 {
+            throw ZeppelinError.invalidArgument
+        }
+        let snippetBytes = options.snippetBytes ?? 0
         let cancellationToken = try options.cancellationToken?.rawValue() ?? 0
         return try await Self.runBlocking {
             let vector = vector ?? []
@@ -427,50 +443,56 @@ public actor ZeppelinStore {
                     var result = ZeQueryResult()
                     result.abi_size = abiSize(ZeQueryResult.self)
                     defer { _ = ze_query_result_free(&result) }
-                    onFFIEntry?()
-                    if let eligibleIds {
-                        let ids = eligibleIds.map(Self.cDocumentID)
-                        try ids.withUnsafeBufferPointer { buffer in
-                            var v2 = ZeQueryRequestV2()
-                            v2.abi_size = abiSize(ZeQueryRequestV2.self)
-                            v2.query = request
-                            v2.has_eligible = 1
-                            v2.eligible_ids = buffer.baseAddress
-                            v2.eligible_count = buffer.count
-                            try checkZeppelin(ze_query_v2(current, &v2, nil, 0, &result, nil))
+                    var snippets = ZeQuerySnippets()
+                    snippets.abi_size = abiSize(ZeQuerySnippets.self)
+                    defer {
+                        if snippetBytes > 0 {
+                            _ = ze_query_snippets_free(&snippets)
                         }
-                    } else {
-                        try checkZeppelin(ze_query(current, &request, &result))
+                    }
+                    try Self.withUnsafeQueryFilter(filter, timestampRange: timestampRange) { constraints in
+                        try withUnsafeMutablePointer(to: &snippets) { pointer in
+                            let output = snippetBytes > 0 ? pointer : nil
+                            onFFIEntry?()
+                            if let eligibleIds {
+                                let ids = eligibleIds.map(Self.cDocumentID)
+                                try ids.withUnsafeBufferPointer { buffer in
+                                    var eligibleRequest = ZeQueryRequestV2()
+                                    eligibleRequest.abi_size = abiSize(ZeQueryRequestV2.self)
+                                    eligibleRequest.query = request
+                                    eligibleRequest.has_eligible = 1
+                                    eligibleRequest.eligible_ids = buffer.baseAddress
+                                    eligibleRequest.eligible_count = buffer.count
+                                    try checkZeppelin(
+                                        ze_query_v2(
+                                            current, &eligibleRequest, constraints, snippetBytes, &result, output
+                                        )
+                                    )
+                                }
+                            } else if let constraints {
+                                try checkZeppelin(
+                                    ze_query_filtered(current, &request, constraints, snippetBytes, &result, output)
+                                )
+                            } else if let output {
+                                try checkZeppelin(
+                                    ze_query_with_snippets(current, &request, snippetBytes, &result, output)
+                                )
+                            } else {
+                                try checkZeppelin(ze_query(current, &request, &result))
+                            }
+                        }
                     }
                     guard let mode = QueryMode(rawValue: result.mode) else {
                         throw ZeppelinError.internalError
                     }
-                    let fusion = result.has_fusion == 1
-                        ? FusionMethod(rawValue: result.fusion_method)
-                        : nil
-                    if result.has_fusion == 1 && fusion == nil {
-                        throw ZeppelinError.internalError
+                    let hits = try withUnsafePointer(to: &snippets) { pointer in
+                        try Self.copyQueryHits(result, snippets: snippetBytes > 0 ? pointer : nil)
                     }
                     return QueryResult(
-                        hits: try Self.copyQueryHits(result),
+                        hits: hits,
                         generation: result.generation,
                         mode: mode,
-                        diagnostics: QueryDiagnostics(
-                            approximate: result.approximate == 1,
-                            exactRescore: result.exact_rescore == 1,
-                            budgetExhausted: result.budget_exhausted == 1,
-                            fusionMethod: fusion,
-                            effectiveAlpha: fusion == nil ? nil : result.effective_alpha,
-                            fusionRounds: fusion == nil ? nil : result.fusion_rounds,
-                            embeddingEpoch: result.has_embedding_epoch == 1
-                                ? result.embedding_epoch : nil,
-                            tokenizerEpoch: result.has_tokenizer_epoch == 1
-                                ? result.tokenizer_epoch : nil,
-                            dimensionsTouched: result.dims_touched,
-                            bytesRead: result.bytes_read,
-                            documentsEvaluated: result.docs_evaluated,
-                            postingsDecoded: result.postings_decoded
-                        )
+                        diagnostics: try Self.copyQueryDiagnostics(result)
                     )
                 }
             }
@@ -803,23 +825,124 @@ public actor ZeppelinStore {
         }
     }
 
-    private nonisolated static func copyQueryHits(_ result: ZeQueryResult) throws -> [QueryHit] {
+    private nonisolated static func withUnsafeQueryFilter<Result>(
+        _ filter: Filter?,
+        timestampRange: Range<Int64>?,
+        _ body: (UnsafePointer<ZeQueryFilter>?) throws -> Result
+    ) throws -> Result {
+        guard filter != nil || timestampRange != nil else {
+            return try body(nil)
+        }
+        return try withUnsafeFilter(filter) { filterPointer in
+            var constraints = ZeQueryFilter()
+            constraints.abi_size = abiSize(ZeQueryFilter.self)
+            constraints.filter = filterPointer
+            if let timestampRange {
+                constraints.has_timestamp_range = 1
+                constraints.start_ts = timestampRange.lowerBound
+                constraints.end_ts = timestampRange.upperBound
+            }
+            return try withUnsafePointer(to: &constraints) { try body($0) }
+        }
+    }
+
+    private nonisolated static func copyQueryDiagnostics(_ result: ZeQueryResult) throws -> QueryDiagnostics {
+        let fusion = result.has_fusion == 1 ? FusionMethod(rawValue: result.fusion_method) : nil
+        if result.has_fusion == 1 && fusion == nil {
+            throw ZeppelinError.internalError
+        }
+        return QueryDiagnostics(
+            approximate: result.approximate == 1,
+            exactRescore: result.exact_rescore == 1,
+            budgetExhausted: result.budget_exhausted == 1,
+            fusionMethod: fusion,
+            effectiveAlpha: fusion == nil ? nil : result.effective_alpha,
+            fusionRounds: fusion == nil ? nil : result.fusion_rounds,
+            embeddingEpoch: result.has_embedding_epoch == 1 ? result.embedding_epoch : nil,
+            tokenizerEpoch: result.has_tokenizer_epoch == 1 ? result.tokenizer_epoch : nil,
+            dimensionsTouched: result.dims_touched,
+            bytesRead: result.bytes_read,
+            documentsEvaluated: result.docs_evaluated,
+            postingsDecoded: result.postings_decoded
+        )
+    }
+
+    private nonisolated static func copyQueryHits(
+        _ result: ZeQueryResult,
+        snippets: UnsafePointer<ZeQuerySnippets>?
+    ) throws -> [QueryHit] {
+        if let snippets, snippets.pointee.snippet_count != result.hit_count {
+            throw ZeppelinError.internalError
+        }
         if result.hit_count == 0 {
             return []
         }
         guard let base = result.hits else {
             throw ZeppelinError.internalError
         }
-        return UnsafeBufferPointer(start: base, count: result.hit_count).map { hit in
-            QueryHit(
+        let entries: UnsafeBufferPointer<ZeQuerySnippet>?
+        if let snippets {
+            guard let snippetBase = snippets.pointee.snippets else {
+                throw ZeppelinError.internalError
+            }
+            entries = UnsafeBufferPointer(start: snippetBase, count: result.hit_count)
+        } else {
+            entries = nil
+        }
+        return try UnsafeBufferPointer(start: base, count: result.hit_count).enumerated().map { index, hit in
+            let snippet: Snippet?
+            if let snippets, let entry = entries?[index], entry.has_snippet == 1 {
+                snippet = try copySnippet(entry, from: snippets, at: index)
+            } else {
+                snippet = nil
+            }
+            return QueryHit(
                 documentID: hit.has_document == 1
                     ? DocumentID(high: hit.doc_id.high, low: hit.doc_id.low) : nil,
                 revision: hit.has_revision == 1 ? hit.revision : nil,
                 score: hit.score,
                 vectorSquaredL2: hit.has_vector_score == 1 ? hit.vector_squared_l2 : nil,
-                lexicalBM25: hit.has_lexical_score == 1 ? hit.lexical_bm25 : nil
+                lexicalBM25: hit.has_lexical_score == 1 ? hit.lexical_bm25 : nil,
+                snippet: snippet
             )
         }
+    }
+
+    private nonisolated static func copySnippet(
+        _ snippet: ZeQuerySnippet,
+        from snippets: UnsafePointer<ZeQuerySnippets>,
+        at index: Int
+    ) throws -> Snippet {
+        var source = ZeSnippetSourceRanges()
+        source.abi_size = abiSize(ZeSnippetSourceRanges.self)
+        try checkZeppelin(ze_query_snippet_source_ranges(snippets, index, &source))
+        guard let bytes = snippet.text, snippet.text_len > 0,
+            let text = String(bytes: UnsafeBufferPointer(start: bytes, count: snippet.text_len), encoding: .utf8),
+            source.source_start >= 0, source.source_end >= source.source_start,
+            source.source_end - source.source_start == snippet.text_len,
+            snippet.highlight_count >= 0, snippet.highlight_count == source.highlight_count,
+            snippet.highlight_count == 0 || (snippet.highlights != nil && source.highlights != nil)
+        else {
+            throw ZeppelinError.internalError
+        }
+        let relative = UnsafeBufferPointer(start: snippet.highlights, count: snippet.highlight_count)
+        let absolute = UnsafeBufferPointer(start: source.highlights, count: source.highlight_count)
+        let highlights = try zip(relative, absolute).map { local, stored in
+            guard local.start >= 0, local.end >= local.start, local.end <= snippet.text_len,
+                stored.start == source.source_start + local.start,
+                stored.end == source.source_start + local.end
+            else {
+                throw ZeppelinError.internalError
+            }
+            return SnippetHighlight(byteRange: local.start..<local.end, sourceByteRange: stored.start..<stored.end)
+        }
+        return Snippet(
+            text: text,
+            sourceByteRange: source.source_start..<source.source_end,
+            highlights: highlights,
+            truncatedStart: snippet.truncated_start == 1,
+            truncatedEnd: snippet.truncated_end == 1
+        )
     }
 
     nonisolated static func withEpochRequest<Result>(

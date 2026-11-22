@@ -74,6 +74,47 @@ accepts 1 through 65,536. Exceeding the limit throws
 `ZeppelinError.budgetExceeded`. An unsupported attribute or an out-of-range
 limit throws `ZeppelinError.invalidArgument`.
 
+### Filter structured queries and return snippets
+
+`ZeppelinStore.query` accepts the same typed `Filter` used by scans. A
+`timestampRange` includes its lower bound and excludes its upper bound.
+The engine intersects both constraints with `eligibleIds` before ranking
+and fusion. An empty ID list matches no documents.
+
+```swift
+let result = try await store.query(
+    text: "harbour cafe",
+    filter: .eq(1, .string("note")),
+    timestampRange: 10..<20,
+    options: QueryOptions(k: 10, snippetBytes: 120)
+)
+for hit in result.hits {
+    guard let snippet = hit.snippet else { continue }
+    let bytes = Array(snippet.text.utf8)
+    let matches = snippet.highlights.map {
+        String(decoding: bytes[$0.byteRange], as: UTF8.self)
+    }
+    print(snippet.text, matches)
+}
+```
+
+The example uses a namespace whose attribute ID 1 stores a string. An unknown
+attribute or a filter value of the wrong type throws `ZeppelinError.invalidArgument`.
+
+A positive `snippetBytes` requests an excerpt for each hit whose text matched.
+The engine uses the query analyzer, including prefix expansion, to find
+highlights. Only matches fully inside the excerpt are highlighted. The budget
+is in UTF-8 bytes and the excerpt can extend by up to three bytes to finish a
+Unicode scalar. `truncatedStart` and `truncatedEnd` indicate where source text
+was cut. Snippets require a lexical leg. A vector-only request with snippets
+or a nonpositive byte budget throws `ZeppelinError.invalidArgument`.
+Omit `snippetBytes` to skip excerpt generation.
+
+`SnippetHighlight.byteRange` addresses the excerpt's UTF-8 bytes.
+`Snippet.sourceByteRange` and `SnippetHighlight.sourceByteRange` address the
+stored document's UTF-8 bytes. All ranges are half-open. A hybrid hit with no
+matching text has a nil `snippet`.
+
 ### Prepare lexical queries after open
 
 Use `try await store.warmLexical()` before exact or `lastAsPrefix` queries.

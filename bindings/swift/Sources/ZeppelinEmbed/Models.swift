@@ -342,6 +342,9 @@ public struct QueryOptions: Sendable {
     public var lastAsPrefix: Bool
     public var cancellationToken: ZeppelinCancellationToken?
     public var deadlineNanoseconds: UInt64
+    /// A positive UTF-8 byte budget for excerpts. Requires a lexical leg.
+    /// Nil disables snippets.
+    public var snippetBytes: Int?
 
     public init(
         k: Int,
@@ -358,7 +361,8 @@ public struct QueryOptions: Sendable {
         rarestExactDocumentFrequency: UInt64? = nil,
         lastAsPrefix: Bool = false,
         cancellationToken: ZeppelinCancellationToken? = nil,
-        deadlineNanoseconds: UInt64 = 0
+        deadlineNanoseconds: UInt64 = 0,
+        snippetBytes: Int? = nil
     ) {
         self.k = k
         self.threadBudget = threadBudget
@@ -375,6 +379,7 @@ public struct QueryOptions: Sendable {
         self.lastAsPrefix = lastAsPrefix
         self.cancellationToken = cancellationToken
         self.deadlineNanoseconds = deadlineNanoseconds
+        self.snippetBytes = snippetBytes
     }
 }
 
@@ -389,12 +394,31 @@ public enum FusionMethod: Int32, Sendable {
     case reciprocalRank = 1
 }
 
+public struct SnippetHighlight: Equatable, Sendable {
+    /// Half-open UTF-8 byte range within the excerpt.
+    public var byteRange: Range<Int>
+    /// Half-open UTF-8 byte range within the stored source text.
+    public var sourceByteRange: Range<Int>
+}
+
+public struct Snippet: Equatable, Sendable {
+    public var text: String
+    /// Half-open UTF-8 byte range of the excerpt within the stored source text.
+    public var sourceByteRange: Range<Int>
+    /// Matched ranges in ascending order.
+    public var highlights: [SnippetHighlight]
+    public var truncatedStart: Bool
+    public var truncatedEnd: Bool
+}
+
 public struct QueryHit: Equatable, Sendable {
     public var documentID: DocumentID?
     public var revision: UInt64?
     public var score: Double
     public var vectorSquaredL2: Double?
     public var lexicalBM25: Double?
+    /// Present when snippets were requested and this hit's text matched.
+    public var snippet: Snippet?
 }
 
 public struct QueryDiagnostics: Equatable, Sendable {
