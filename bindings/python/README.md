@@ -91,6 +91,52 @@ Damage is returned in the report. An invalid path argument raises
 raises `ze.Io` (`ZE_ERR_IO`). Graph-object checks require a graph-enabled
 native library.
 
+## Attribute-ordered scans and grouped counts
+
+Pass an `AttributeScanOrder` to `scan()` or `iter_documents()` to sort by a
+declared `U64`, `I64`, or `F64` attribute. Both directions break ties by
+ascending document ID and put missing values and NaNs last. Floating-point
+values sort numerically, with `-0.0` and `0.0` treated as equal.
+The existing `"storage"`, `"timestamp_ascending"`, and
+`"timestamp_descending"` orders are also available.
+
+```python
+order = ze.AttributeScanOrder(attribute_id=1, direction="descending")
+page = store.scan(order=order, limit=100)
+if page.cursor is not None:
+    next_page = store.scan(order=order, cursor=page.cursor, limit=100)
+
+for document in store.iter_documents(order=order):
+    print(document.doc_id)
+```
+
+Reuse the same order, attribute, and direction when continuing a scan.
+A different order or an undeclared or unsupported ordering attribute raises
+`ze.InvalidArgument` (`ZE_ERR_INVALID_ARGUMENT`). Use a timestamp order for
+attribute ID 0. A write between pages makes the cursor stale and raises
+`ze.ScanStale` (`ZE_ERR_SCAN_STALE`). Restart without a cursor.
+
+Pass `group_by` to `count()` to group matching live documents by a declared
+`U64`, `I64`, `DICTIONARY_STRING`, or `RAW_STRING` attribute. The optional
+structured `filter` and half-open `timestamp_range` apply to the whole count.
+
+```python
+result = store.count(group_by=ze.CountGroupBy(attribute_id=2, limit=100))
+for group in result.groups:
+    print(group.value, group.count)
+print(result.count, result.missing_count, result.generation)
+```
+
+`GroupedCountResult` gives the total `count`, the pinned `generation`, and a
+tuple of `CountGroup` values sorted by ascending numeric or UTF-8 byte order.
+Each group holds an `int` or `str` value and its count. Documents with a null
+grouping attribute contribute to `missing_count`. The group counts plus
+`missing_count` equal `count`. The limit defaults to 1,024 and accepts
+1 through 65,536 distinct values. Exceeding it raises `ze.BudgetExceeded`
+(`ZE_ERR_BUDGET_EXCEEDED`) for the entire call. Unknown attribute IDs,
+unsupported types, and invalid limits raise `ze.InvalidArgument`.
+Omitting `group_by` returns the scalar `CountResult`.
+
 ## Native library loading
 
 The loader uses `ZEPPELIN_EMBED_LIBRARY` when it is set. Otherwise, an installed

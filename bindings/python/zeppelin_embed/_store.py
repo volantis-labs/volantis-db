@@ -7,7 +7,7 @@ import os
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, NoReturn, Self, TypeVar
+from typing import Any, NoReturn, Self, TypeVar, overload
 
 import numpy as np
 
@@ -26,10 +26,13 @@ from ._library import LIBRARY
 from ._types import (
     AccessMode,
     AttributeDefinition,
+    AttributeScanOrder,
     AttributeType,
     AttributeValue,
     CommitTier,
     ComputeUnits,
+    CountGroup,
+    CountGroupBy,
     CountResult,
     DeleteTarget,
     DeleteWhereReport,
@@ -44,6 +47,7 @@ from ._types import (
     GenerationReport,
     GetResult,
     GraphProfile,
+    GroupedCountResult,
     MaintainReport,
     MaintenanceStatus,
     MutationReport,
@@ -1094,7 +1098,7 @@ class Store:
         *,
         cursor: ScanCursor | None = None,
         limit: int = 1_024,
-        order: str = "storage",
+        order: str | AttributeScanOrder = "storage",
         vector: bool = True,
         text: bool = True,
         metadata: bool = True,
@@ -1114,17 +1118,35 @@ class Store:
             "timestamp_descending": 2,
             "timestamp-descending": 2,
         }
-        try:
+        order_attribute_id = 0
+        if isinstance(order, AttributeScanOrder):
+            order_attribute_id = order.attribute_id
+            if (
+                not isinstance(order_attribute_id, int)
+                or isinstance(order_attribute_id, bool)
+                or not 1 <= order_attribute_id < 1 << 32
+            ):
+                invalid_argument("scan order attribute_id must be an integer in 1..=4294967295")
+            if order.direction == "ascending":
+                order_value = 3
+            elif order.direction == "descending":
+                order_value = 4
+            else:
+                invalid_argument("attribute scan direction must be 'ascending' or 'descending'")
+        elif isinstance(order, str) and order.lower() in orders:
             order_value = orders[order.lower()]
-        except (AttributeError, KeyError):
+        else:
             invalid_argument(f"scan order {order!r} is not supported")
         if cursor is None:
             cursor_generation = cursor_next_row = cursor_phase = 0
+            cursor_order = cursor_order_attribute_id = 0
             cursor_segment_id = (ct.c_uint8 * 16)()
         elif isinstance(cursor, ScanCursor):
             cursor_generation = cursor._generation
             cursor_next_row = cursor._next_row
             cursor_phase = cursor._phase
+            cursor_order = cursor._order
+            cursor_order_attribute_id = cursor._order_attribute_id
             cursor_segment_id = (ct.c_uint8 * 16).from_buffer_copy(cursor._segment_id)
         else:
             invalid_argument("cursor must be a ScanCursor or None")
@@ -1164,11 +1186,19 @@ class Store:
             cancel_token=0 if cancel_token is None else cancel_token.value,
             deadline_ns=deadline_ns,
         )
+        ordered = s.ZeScanOrderedRequest(
+            abi_size=ct.sizeof(s.ZeScanOrderedRequest),
+            scan=request,
+            order_attribute_id=order_attribute_id,
+            cursor_order=cursor_order,
+            cursor_order_attribute_id=cursor_order_attribute_id,
+        )
         result = s.sized(s.ZeScanResult)
+        status = self._call(LIBRARY.ze_scan_ordered, handle, ct.byref(ordered), ct.byref(result))
+        del filter_owners
+        raise_for_status(status, handle)
         primary: BaseException | None = None
         try:
-            status = self._call(LIBRARY.ze_scan, handle, ct.byref(request), ct.byref(result))
-            raise_for_status(status, handle)
             returned: list[StoredDocument] = []
             for index in range(result.document_count):
                 document = _stored_document(
@@ -1188,6 +1218,8 @@ class Store:
                     bytes(result.next_segment_id),
                     int(result.next_row),
                     int(result.next_phase),
+                    order_value,
+                    order_attribute_id,
                 )
                 if result.has_more
                 else None
@@ -1197,7 +1229,6 @@ class Store:
             primary = error
             raise
         finally:
-            del filter_owners
             free_status = self._call(LIBRARY.ze_scan_result_free, ct.byref(result))
             if free_status != 0:
                 if primary is None:
@@ -1208,7 +1239,7 @@ class Store:
     def iter_documents(
         self,
         *,
-        order: str = "storage",
+        order: str | AttributeScanOrder = "storage",
         vector: bool = True,
         text: bool = True,
         metadata: bool = True,
@@ -1233,15 +1264,49 @@ class Store:
             if cursor is None:
                 return
 
+    @overload
     def count(
         self,
         *,
         filter: dict[str, Any] | None = None,
         timestamp_range: tuple[int, int] | None = None,
+        group_by: None = None,
+    ) -> CountResult: ...
+
+    @overload
+    def count(
+        self,
+        *,
+        filter: dict[str, Any] | None = None,
+        timestamp_range: tuple[int, int] | None = None,
+        group_by: CountGroupBy,
+    ) -> GroupedCountResult: ...
+
+    def count(
+        self,
+        *,
+        filter: dict[str, Any] | None = None,
+        timestamp_range: tuple[int, int] | None = None,
+        group_by: CountGroupBy | None = None,
     ) -> CountResult:
-        """Count live documents matching a filter and timestamp range."""
+        """Count matching live documents, optionally grouping by one attribute."""
 
         handle = self._live_handle()
+        if group_by is not None:
+            if not isinstance(group_by, CountGroupBy):
+                invalid_argument("group_by must be a CountGroupBy or None")
+            if (
+                not isinstance(group_by.attribute_id, int)
+                or isinstance(group_by.attribute_id, bool)
+                or not 0 <= group_by.attribute_id < 1 << 32
+            ):
+                invalid_argument("group_by.attribute_id must be an unsigned 32-bit integer")
+            if (
+                not isinstance(group_by.limit, int)
+                or isinstance(group_by.limit, bool)
+                or not 1 <= group_by.limit <= 1 << 16
+            ):
+                invalid_argument("group_by.limit must be an integer in 1..=65536")
         if timestamp_range is None:
             has_timestamp_range, start_ts, end_ts = 0, 0, 0
         elif isinstance(timestamp_range, tuple) and len(timestamp_range) == 2:
@@ -1266,6 +1331,50 @@ class Store:
             start_ts=start_ts,
             end_ts=end_ts,
         )
+        if group_by is not None:
+            grouped_request = s.ZeCountGroupedRequest(
+                abi_size=ct.sizeof(s.ZeCountGroupedRequest),
+                count=request,
+                group_attribute_id=group_by.attribute_id,
+                group_limit=group_by.limit,
+            )
+            grouped = s.sized(s.ZeCountGroupedResult)
+            status = self._call(
+                LIBRARY.ze_count_grouped, handle, ct.byref(grouped_request), ct.byref(grouped)
+            )
+            del filter_owners
+            raise_for_status(status, handle)
+            primary: BaseException | None = None
+            try:
+                groups: list[CountGroup] = []
+                for index in range(grouped.group_count):
+                    group = grouped.groups[index]
+                    raw = group.value
+                    value: int | str
+                    if raw.value_type == 1:
+                        value = int(raw.u64_value)
+                    elif raw.value_type == 2:
+                        value = int(raw.i64_value)
+                    elif raw.value_type == 5:
+                        value = ct.string_at(raw.string_value, raw.string_len).decode("utf-8")
+                    else:
+                        invalid_argument("returned count group value type is invalid")
+                    groups.append(CountGroup(value, int(group.count)))
+                return GroupedCountResult(
+                    int(grouped.count), int(grouped.generation), tuple(groups), int(grouped.missing_count)
+                )
+            except BaseException as error:
+                primary = error
+                raise
+            finally:
+                free_status = self._call(LIBRARY.ze_count_grouped_result_free, ct.byref(grouped))
+                if free_status != 0:
+                    if primary is None:
+                        raise_for_status(free_status, handle)
+                    else:
+                        primary.add_note(
+                            f"ze_count_grouped_result_free: {last_error_message(handle)}"
+                        )
         result = s.sized(s.ZeCountResult)
         status = self._call(LIBRARY.ze_count, handle, ct.byref(request), ct.byref(result))
         del filter_owners

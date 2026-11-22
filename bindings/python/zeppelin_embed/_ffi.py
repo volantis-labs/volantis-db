@@ -66,8 +66,14 @@ _bind(
     [Handle, ct.POINTER(s.ZeDeleteWhereRequest), ct.POINTER(s.ZeDeleteWhereReport)],
 )
 _bind("ze_scan", [Handle, ct.POINTER(s.ZeScanRequest), ct.POINTER(s.ZeScanResult)])
+_bind("ze_scan_ordered", [Handle, ct.POINTER(s.ZeScanOrderedRequest), ct.POINTER(s.ZeScanResult)])
 _bind("ze_scan_result_free", [ct.POINTER(s.ZeScanResult)])
 _bind("ze_count", [Handle, ct.POINTER(s.ZeCountRequest), ct.POINTER(s.ZeCountResult)])
+_bind(
+    "ze_count_grouped",
+    [Handle, ct.POINTER(s.ZeCountGroupedRequest), ct.POINTER(s.ZeCountGroupedResult)],
+)
+_bind("ze_count_grouped_result_free", [ct.POINTER(s.ZeCountGroupedResult)])
 _bind("ze_search", [Handle, ct.POINTER(s.ZeSearchRequest), ct.POINTER(s.ZeSearchResult)])
 _bind(
     "ze_search_filtered",

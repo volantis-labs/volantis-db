@@ -494,6 +494,17 @@ class ZeScanRequest(ct.Structure):
     ]
 
 
+class ZeScanOrderedRequest(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("scan", ZeScanRequest),
+        ("order_attribute_id", ct.c_uint32),
+        ("cursor_order", ct.c_int32),
+        ("cursor_order_attribute_id", ct.c_uint32),
+    ]
+
+
 class ZeScanResult(ct.Structure):
     _fields_ = [
         ("abi_size", ct.c_uint32),
@@ -523,6 +534,36 @@ class ZeCountResult(ct.Structure):
     _fields_ = [
         ("abi_size", ct.c_uint32),
         ("abi_reserved", ct.c_uint32),
+        ("count", ct.c_uint64),
+        ("generation", ct.c_uint64),
+    ]
+
+
+class ZeCountGroupedRequest(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("count", ZeCountRequest),
+        ("group_attribute_id", ct.c_uint32),
+        ("reserved", ct.c_uint32),
+        ("group_limit", ct.c_size_t),
+    ]
+
+
+class ZeCountGroup(ct.Structure):
+    _fields_ = [
+        ("value", ZeAttributeValue),
+        ("count", ct.c_uint64),
+    ]
+
+
+class ZeCountGroupedResult(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("groups", ct.POINTER(ZeCountGroup)),
+        ("group_count", ct.c_size_t),
+        ("missing_count", ct.c_uint64),
         ("count", ct.c_uint64),
         ("generation", ct.c_uint64),
     ]

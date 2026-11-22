@@ -17,10 +17,13 @@ from ._store import open_with_epoch as open_with_epoch
 from ._store import verify as verify
 from ._types import AccessMode as AccessMode
 from ._types import AttributeDefinition as AttributeDefinition
+from ._types import AttributeScanOrder as AttributeScanOrder
 from ._types import AttributeType as AttributeType
 from ._types import AttributeValue as AttributeValue
 from ._types import CommitTier as CommitTier
 from ._types import ComputeUnits as ComputeUnits
+from ._types import CountGroup as CountGroup
+from ._types import CountGroupBy as CountGroupBy
 from ._types import CountResult as CountResult
 from ._types import DeleteTarget as DeleteTarget
 from ._types import DeleteWhereReport as DeleteWhereReport
@@ -37,6 +40,7 @@ from ._types import FusionReport as FusionReport
 from ._types import GenerationReport as GenerationReport
 from ._types import GetResult as GetResult
 from ._types import GraphProfile as GraphProfile
+from ._types import GroupedCountResult as GroupedCountResult
 from ._types import MaintainReport as MaintainReport
 from ._types import MaintenanceStatus as MaintenanceStatus
 from ._types import MutationReport as MutationReport

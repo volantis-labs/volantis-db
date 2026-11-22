@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     import numpy as np
@@ -164,11 +164,21 @@ class GetResult:
 
 
 @dataclass(frozen=True)
+class AttributeScanOrder:
+    """Order by a declared numeric attribute."""
+
+    attribute_id: int
+    direction: Literal["ascending", "descending"]
+
+
+@dataclass(frozen=True)
 class ScanCursor:
     _generation: int
     _segment_id: bytes
     _next_row: int
     _phase: int
+    _order: int = 0
+    _order_attribute_id: int = 0
 
 
 @dataclass(frozen=True)
@@ -182,6 +192,26 @@ class ScanPage:
 class CountResult:
     count: int
     generation: int
+
+
+@dataclass(frozen=True)
+class CountGroupBy:
+    """Group by a declared integer or string attribute."""
+
+    attribute_id: int
+    limit: int = 1_024
+
+
+@dataclass(frozen=True)
+class CountGroup:
+    value: int | str
+    count: int
+
+
+@dataclass(frozen=True)
+class GroupedCountResult(CountResult):
+    groups: tuple[CountGroup, ...]
+    missing_count: int
 
 
 @dataclass(frozen=True)

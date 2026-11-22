@@ -233,6 +233,33 @@ def _ranked_document(doc_id: int, rank: int) -> ze.StoredDocument:
     )
 
 
+def test_attribute_ordered_scan_pages_reject_a_different_order(tmp_path: Path) -> None:
+    spec = ze.NamespaceSpec(
+        attributes=(ze.AttributeDefinition(1, "rank", ze.AttributeType.U64, nullable=True),),
+        vector_space=ze.VectorSpace(1),
+    )
+    with ze.open_namespace(tmp_path, "ordered", spec) as store:
+        store.upsert([_ranked_document(3, 7), _ranked_document(2, 9)])
+        store.seal()
+        store.upsert([_ranked_document(1, 7), _scan_document(4, 40)])
+
+        ascending = ze.AttributeScanOrder(1, "ascending")
+        descending = ze.AttributeScanOrder(1, "descending")
+        first = store.scan(order=ascending, limit=1, attributes=False)
+        assert first.cursor is not None
+        assert [doc.doc_id for doc in first.documents] == [1]
+        assert first.documents[0].attributes is None
+        remaining = store.scan(order=ascending, cursor=first.cursor, limit=3)
+        assert [doc.doc_id for doc in remaining.documents] == [3, 2, 4]
+        assert remaining.cursor is None
+        assert remaining.generation == first.generation
+        assert [doc.doc_id for doc in store.iter_documents(order=descending)] == [2, 1, 3, 4]
+
+        with pytest.raises(ze.InvalidArgument) as error:
+            store.scan(order=descending, cursor=first.cursor)
+        assert error.value.code_name == "ZE_ERR_INVALID_ARGUMENT"
+
+
 def test_delete_where_removes_only_matches_and_reports_generation(tmp_path: Path) -> None:
     spec = ze.NamespaceSpec(
         attributes=(ze.AttributeDefinition(1, "rank", ze.AttributeType.U64),),
@@ -303,6 +330,58 @@ def test_count_filter_matches_scan_and_filtered_search_matches_exact_postfilter(
         assert [(hit.doc_id, hit.score) for hit in filtered.hits] == [
             (hit.doc_id, hit.score) for hit in expected
         ]
+
+
+def test_grouped_count_filters_and_rejects_excess_groups(tmp_path: Path) -> None:
+    spec = ze.NamespaceSpec(
+        attributes=(
+            ze.AttributeDefinition(1, "label", ze.AttributeType.DICTIONARY_STRING, nullable=True),
+            ze.AttributeDefinition(2, "rank", ze.AttributeType.I64, nullable=True),
+        ),
+    )
+
+    def record(doc_id: int, timestamp: int, label: str, rank: int) -> ze.StoredDocument:
+        return ze.StoredDocument(
+            doc_id,
+            timestamp=timestamp,
+            attributes=(
+                ze.AttributeValue(1, ze.AttributeType.DICTIONARY_STRING, label),
+                ze.AttributeValue(2, ze.AttributeType.I64, rank),
+            ),
+        )
+
+    with ze.open_namespace(tmp_path, "grouped", spec) as store:
+        store.upsert([record(1, 10, "zèbre", -7), record(2, 11, "alpha", 8)])
+        store.seal()
+        report = store.upsert(
+            [
+                record(3, 12, "zèbre", -7),
+                ze.StoredDocument(4, timestamp=13),
+                record(5, 14, "outside-filter", 100),
+                record(6, 20, "outside-time", -7),
+            ]
+        )
+        selected = ze.Filter.or_(ze.Filter.is_null("rank"), ze.Filter.in_("rank", [-7, 8]))
+        by_label = store.count(
+            group_by=ze.CountGroupBy(1), filter=selected, timestamp_range=(10, 20)
+        )
+        assert by_label == ze.GroupedCountResult(
+            count=4,
+            generation=report.generation,
+            groups=(ze.CountGroup("alpha", 1), ze.CountGroup("zèbre", 2)),
+            missing_count=1,
+        )
+        by_rank = store.count(
+            group_by=ze.CountGroupBy(2, limit=2), filter=selected, timestamp_range=(10, 20)
+        )
+        assert by_rank.groups == (ze.CountGroup(-7, 2), ze.CountGroup(8, 1))
+        assert by_rank.missing_count == 1
+        assert by_rank.count == 4
+        assert by_rank.generation == report.generation
+
+        with pytest.raises(ze.BudgetExceeded) as error:
+            store.count(group_by=ze.CountGroupBy(1, limit=1))
+        assert error.value.code_name == "ZE_ERR_BUDGET_EXCEEDED"
 
 
 def test_record_only_namespace_supports_records_and_rejects_vector_search(
