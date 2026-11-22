@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-const { TextStore } = createRequire(import.meta.url)('..');
+const { TextStore, ZeppelinError } = createRequire(import.meta.url)('..');
 const bundle = fileURLToPath(new URL('../../../crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem', import.meta.url));
 
 test('TextStore exposes the text API', () => {
@@ -51,6 +51,99 @@ async function fixture(run) {
     rmSync(root, {recursive: true, force: true});
   }
 }
+
+test('text query returns the v2 outcome in sync and async calls', {skip: !supported}, async () => {
+  const previous = process.env.ZE_QUERY_COREML;
+  process.env.ZE_QUERY_COREML = 'off';
+  try {
+    await fixture(async store => {
+      const {generation} = store.ingest([{id, text: 'bronze zeppelin'}]);
+      for (const method of ['query', 'queryAsync']) {
+        for (const legs of ['lexical', 'dense', 'hybrid']) {
+          const result = await store[method]({text: 'bronze', legs, tier: 'exact'});
+          assert.equal(result.hits[0].id, id);
+          assert.equal(typeof result.embeddingEpoch, 'bigint');
+          assert.equal(typeof result.tokenizerEpoch, 'bigint');
+          const {diagnostics, timings, backend, queryTokens, embeddingCalls} = result;
+          assert.equal(diagnostics?.generation, generation);
+          assert.equal(diagnostics.mode, legs === 'dense' ? 'vector' : legs);
+          assert.equal(diagnostics.approximate, false);
+          assert.equal(diagnostics.budgetExhausted, false);
+          assert.equal(typeof diagnostics.exactRescore, 'boolean');
+          for (const counter of ['dimsTouched', 'bytesRead', 'docsEvaluated', 'postingsDecoded']) {
+            assert.equal(typeof diagnostics[counter], 'bigint', counter);
+          }
+          if (legs !== 'dense') assert.equal(diagnostics.tokenizerEpoch, result.tokenizerEpoch);
+          if (legs === 'hybrid') {
+            assert.ok(['convex', 'reciprocalRank'].includes(diagnostics.fusion?.method));
+            assert.equal(typeof diagnostics.fusion.rounds, 'bigint');
+            assert.ok(Number.isFinite(diagnostics.fusion.effectiveAlpha));
+          } else {
+            assert.equal(diagnostics.fusion, undefined);
+          }
+          if (legs === 'lexical') {
+            assert.equal(backend, undefined);
+            assert.equal(queryTokens, 0n);
+            assert.equal(embeddingCalls, 0n);
+          } else {
+            assert.equal(backend?.runtimeName, 'mlx-c');
+            assert.equal(typeof backend.gpu, 'boolean');
+            assert.equal(backend.requestedComputeUnits, backend.gpu ? 2 : 1);
+            assert.equal(backend.observedComputeUnits, undefined);
+            assert.equal(backend.sequenceLength, undefined);
+            assert.equal(typeof queryTokens, 'bigint');
+            assert.ok(queryTokens > 0n);
+            assert.equal(embeddingCalls, 1n);
+          }
+          if (process.env.ZE_TEST_QUERY_TIMING === '1') assert.ok(timings);
+          if (timings !== undefined) {
+            for (const stage of ['tokenizationNs', 'lexicalAnalysisNs', 'embeddingQueueNs',
+              'embeddingEvaluationNs', 'embeddingNormalizationNs', 'retrievalNs',
+              'materializationNs', 'endToEndNs']) {
+              assert.equal(typeof timings[stage], 'bigint', stage);
+            }
+            if (legs === 'lexical') assert.equal(timings.embeddingEvaluationNs, 0n);
+          }
+        }
+        const empty = await store[method]({text: 'bronze', k: 0});
+        assert.deepEqual(empty.hits, []);
+        assert.equal(empty.diagnostics, undefined);
+        assert.equal(empty.backend, undefined);
+        assert.equal(empty.queryTokens, 0n);
+        assert.equal(empty.embeddingCalls, 0n);
+      }
+      const options = {text: 'bronze', legs: 'lexical', signal: AbortSignal.abort()};
+      const cancelled = error => error instanceof ZeppelinError &&
+        error.code === 'ZE_ERR_CANCELLED' && error.errorCode === 12;
+      assert.throws(() => store.query(options), cancelled);
+      await assert.rejects(store.queryAsync(options), cancelled);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.ZE_QUERY_COREML;
+    else process.env.ZE_QUERY_COREML = previous;
+  }
+});
+
+test('text ingest accepts and validates maintenance budgets in sync and async calls', {skip: !supported}, () =>
+  fixture(async store => {
+    const docs = [{id, text: 'bronze zeppelin'}];
+    const before = store.health().generation;
+    for (const field of ['maintenanceWallTimeNs', 'maintenanceBytes']) {
+      const invalid = error => error instanceof RangeError &&
+        error.code === 'ERR_OUT_OF_RANGE' && error.message.includes(field);
+      for (const value of [-1n, 1n << 64n, 256]) {
+        assert.throws(() => store.ingest(docs, {[field]: value}), invalid);
+        await assert.rejects(store.ingestAsync(docs, {[field]: value}), invalid);
+      }
+    }
+    assert.equal(store.health().generation, before);
+    const budgets = {maintenanceWallTimeNs: 100000000n, maintenanceBytes: 67108864n};
+    const sync = store.ingest(docs, budgets);
+    assert.equal(sync.documents, 1n);
+    const async = await store.ingestAsync([{...docs[0], revision: 2n}], budgets);
+    assert.equal(async.documents, 1n);
+    assert.ok(async.generation > sync.generation);
+  }));
 
 test('text observed compute units loads the tiny CoreML plan (ZE-521)', {skip: !supported}, async t => {
   const [major, minor] = execFileSync('sw_vers', ['-productVersion'], {encoding: 'utf8'}).trim().split('.').map(Number);

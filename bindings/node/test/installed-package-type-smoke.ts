@@ -75,14 +75,25 @@ graph.close();
 import { TextStore, TextQueryResult, TextHealthReport, TextIngestReport } from '@zepdb/zeppelin-embed';
 async function textExample(bundle: string) {
   const text = await TextStore.openAsync('/tmp/text-store', bundle);
-  const ingested: TextIngestReport = await text.ingestAsync([{id: 1n, revision: 1n, text: 'bronze zeppelin'}]);
+  const docs = [{id: 1n, revision: 1n, text: 'bronze zeppelin'}];
+  const ingested: TextIngestReport = await text.ingestAsync(docs, {maintenanceWallTimeNs: 100000000n, maintenanceBytes: 67108864n});
+  text.ingest(docs, {maintenanceWallTimeNs: 0n, maintenanceBytes: 0n});
+  // @ts-expect-error Maintenance wall time requires an unsigned bigint.
+  text.ingest(docs, {maintenanceWallTimeNs: 100});
+  // @ts-expect-error Maintenance bytes require an unsigned bigint.
+  await text.ingestAsync(docs, {maintenanceBytes: 1024});
   const hits: TextQueryResult = await text.queryAsync({text: 'bronze', legs: 'hybrid', tier: 'exact', signal: new AbortController().signal});
+  const embeddingCalls: bigint = hits.embeddingCalls;
+  const queryTokens: bigint = hits.queryTokens;
+  const generation: bigint | undefined = hits.diagnostics?.generation;
+  const endToEndNs: bigint | undefined = hits.timings?.endToEndNs;
+  const runtimeName: string | undefined = hits.backend?.runtimeName;
   const health: TextHealthReport = text.health();
   text.query({text: 'bronze', legs: 'lexical', deadlineNs: 1000000000n});
   await text.maintainAsync({wallTimeNs: 100000000n, bytes: 67108864n});
   await text.deleteAsync([1n]);
   text.close();
-  return {ingested, hits, health};
+  return {ingested, hits, health, embeddingCalls, queryTokens, generation, endToEndNs, runtimeName};
 }
 void textExample;
 void TextStore.openModel({path: '/tmp/text-model', repo: 'owner/model', revision: '0'.repeat(40),

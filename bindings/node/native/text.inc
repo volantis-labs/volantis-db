@@ -14,6 +14,11 @@ bool TextNumber(napi_env env, napi_value object, const char *name,
   return NapiOk(env, napi_create_double(env, value, &result), "text number") &&
          SetNamed(env, object, name, result);
 }
+bool TextBool(napi_env env, napi_value object, const char *name, bool value) {
+  napi_value result;
+  return NapiOk(env, napi_get_boolean(env, value, &result), "text boolean") &&
+         SetNamed(env, object, name, result);
+}
 bool TextString(napi_env env, napi_value object, const char *name,
                 const uint8_t *bytes, size_t length) {
   napi_value result;
@@ -275,6 +280,108 @@ napi_value TextOpen(napi_env env, napi_callback_info info) {
 }
 
 enum class TextOp { Ingest, Query, Delete, Maintain, Health, ObservedComputeUnits };
+
+bool SetTextDiagnostics(napi_env env, napi_value result,
+                        const ZeQueryResult &d) {
+  const char *const modes[] = {"vector", "lexical", "hybrid"};
+  if (d.mode < 0 || d.mode >= 3) {
+    napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+                     "text query returned an unknown execution mode");
+    return false;
+  }
+  napi_value diagnostics, mode;
+  if (!NapiOk(env, napi_create_object(env, &diagnostics), "text diagnostics") ||
+      !NapiOk(
+          env,
+          napi_create_string_utf8(env, modes[d.mode], NAPI_AUTO_LENGTH, &mode),
+          "text query mode") ||
+      !SetNamed(env, diagnostics, "mode", mode) ||
+      !TextBig(env, diagnostics, "generation", d.generation) ||
+      !TextBool(env, diagnostics, "approximate", d.approximate != 0) ||
+      !TextBool(env, diagnostics, "exactRescore", d.exact_rescore != 0) ||
+      !TextBool(env, diagnostics, "budgetExhausted", d.budget_exhausted != 0) ||
+      (d.has_embedding_epoch &&
+       !TextBig(env, diagnostics, "embeddingEpoch", d.embedding_epoch)) ||
+      (d.has_tokenizer_epoch &&
+       !TextBig(env, diagnostics, "tokenizerEpoch", d.tokenizer_epoch)) ||
+      !TextBig(env, diagnostics, "dimsTouched", d.dims_touched) ||
+      !TextBig(env, diagnostics, "bytesRead", d.bytes_read) ||
+      !TextBig(env, diagnostics, "docsEvaluated", d.docs_evaluated) ||
+      !TextBig(env, diagnostics, "postingsDecoded", d.postings_decoded))
+    return false;
+  if (d.has_fusion) {
+    const char *const methods[] = {"convex", "reciprocalRank"};
+    if (d.fusion_method < 0 || d.fusion_method >= 2) {
+      napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+                       "text query returned an unknown fusion method");
+      return false;
+    }
+    napi_value fusion, method;
+    if (!NapiOk(env, napi_create_object(env, &fusion), "text query fusion") ||
+        !NapiOk(env,
+                napi_create_string_utf8(env, methods[d.fusion_method],
+                                        NAPI_AUTO_LENGTH, &method),
+                "text fusion method") ||
+        !SetNamed(env, fusion, "method", method) ||
+        !TextNumber(env, fusion, "effectiveAlpha", d.effective_alpha) ||
+        !TextBig(env, fusion, "rounds", d.fusion_rounds) ||
+        !SetNamed(env, diagnostics, "fusion", fusion))
+      return false;
+  }
+  return SetNamed(env, result, "diagnostics", diagnostics);
+}
+
+bool SetTextTimings(napi_env env, napi_value result,
+                    const ZeTextQueryOutcome &outcome) {
+  // The ABI fixes the stage order in ZeTextQueryOutcome::timings_ns.
+  const char *const stages[] = {
+      "tokenizationNs",           "lexicalAnalysisNs",
+      "embeddingQueueNs",         "embeddingEvaluationNs",
+      "embeddingNormalizationNs", "retrievalNs",
+      "materializationNs",        "endToEndNs"};
+  static_assert(sizeof(stages) / sizeof(stages[0]) ==
+                sizeof(outcome.timings_ns) / sizeof(outcome.timings_ns[0]));
+  napi_value timings;
+  if (!NapiOk(env, napi_create_object(env, &timings), "text timings"))
+    return false;
+  for (size_t i = 0; i < sizeof(stages) / sizeof(stages[0]); ++i) {
+    if (!TextBig(env, timings, stages[i], outcome.timings_ns[i]))
+      return false;
+  }
+  return SetNamed(env, result, "timings", timings);
+}
+
+bool SetTextBackend(napi_env env, napi_value result,
+                    const ZeTextQueryOutcome &outcome) {
+  if (outcome.requested_compute_units < 1 ||
+      outcome.requested_compute_units > 4) {
+    napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+                     "text query returned unknown compute units");
+    return false;
+  }
+  napi_value backend;
+  if (!NapiOk(env, napi_create_object(env, &backend), "text backend") ||
+      !TextString(env, backend, "runtimeName", outcome.runtime_name,
+                  outcome.runtime_name_len) ||
+      !TextBool(env, backend, "gpu", outcome.backend_gpu != 0) ||
+      !TextNumber(env, backend, "requestedComputeUnits",
+                  outcome.requested_compute_units) ||
+      (outcome.has_sequence_length &&
+       !TextBig(env, backend, "sequenceLength", outcome.sequence_length)))
+    return false;
+  if (outcome.has_observed_compute_units) {
+    napi_value units;
+    if (!NapiOk(env, napi_create_object(env, &units), "text compute units") ||
+        !TextBig(env, units, "cpuOps", outcome.observed_cpu_ops) ||
+        !TextBig(env, units, "gpuOps", outcome.observed_gpu_ops) ||
+        !TextBig(env, units, "neuralEngineOps",
+                 outcome.observed_neural_engine_ops) ||
+        !SetNamed(env, backend, "observedComputeUnits", units))
+      return false;
+  }
+  return SetNamed(env, result, "backend", backend);
+}
+
 struct TextData {
   ze_handle handle;
   std::vector<std::string> texts;
@@ -378,6 +485,10 @@ napi_value TextCall(napi_env env, napi_callback_info info) {
                        &r.batch.channel_capacity) ||
             !TextCount(env, args[1], "chunkMax", 0, &r.chunk_max) ||
             !TextCount(env, args[1], "chunkOverlap", 0, &r.chunk_overlap) ||
+            !GetOptionalUint64(env, args[1], "maintenanceWallTimeNs", 0,
+                               &r.maintenance_wall_time_ns) ||
+            !GetOptionalUint64(env, args[1], "maintenanceBytes", 0,
+                               &r.maintenance_bytes) ||
             !TextControl(env, args[1], &r.cancel_token, &r.deadline_ns))
           return nullptr;
         r.chunk_policy = r.chunk_max ? 1 : 0;
@@ -472,7 +583,8 @@ napi_value TextCall(napi_env env, napi_callback_info info) {
                 !SetNamed(env, result, "allThreadsJoined", joined))
               return nullptr;
           } else if constexpr (Op == TextOp::Query) {
-            const auto &r = data->outcome.result;
+            const auto &outcome = data->outcome;
+            const auto &r = outcome.result;
             napi_value hits;
             if (!NapiOk(env,
                         napi_create_array_with_length(env, r.hit_count, &hits),
@@ -499,7 +611,15 @@ napi_value TextCall(napi_env env, napi_callback_info info) {
             }
             if (!SetNamed(env, result, "hits", hits) ||
                 !TextBig(env, result, "embeddingEpoch", r.embedding_epoch) ||
-                !TextBig(env, result, "tokenizerEpoch", r.tokenizer_epoch))
+                !TextBig(env, result, "tokenizerEpoch", r.tokenizer_epoch) ||
+                !TextBig(env, result, "queryTokens", outcome.query_tokens) ||
+                !TextBig(env, result, "embeddingCalls",
+                         outcome.embedding_calls) ||
+                (outcome.has_diagnostics &&
+                 !SetTextDiagnostics(env, result, outcome.diagnostics)) ||
+                (outcome.has_timings &&
+                 !SetTextTimings(env, result, outcome)) ||
+                (outcome.has_backend && !SetTextBackend(env, result, outcome)))
               return nullptr;
           } else if constexpr (Op == TextOp::Delete) {
             if (!TextBig(env, result, "sequence", data->deleted.sequence) ||

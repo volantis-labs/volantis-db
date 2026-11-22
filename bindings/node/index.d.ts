@@ -1321,6 +1321,10 @@ export interface TextIngestOptions {
   /** Omit to reject overlong documents; set to split into token windows. */
   readonly chunkMax?: number;
   readonly chunkOverlap?: number;
+  /** Unsigned nanoseconds per maintenance slice. Defaults to 0n. */
+  readonly maintenanceWallTimeNs?: bigint;
+  /** Unsigned bytes per maintenance slice. Defaults to 0n. */
+  readonly maintenanceBytes?: bigint;
   readonly deadlineNs?: bigint;
 }
 export interface TextDocument {
@@ -1360,10 +1364,50 @@ export interface TextQueryHit {
   readonly vectorSquaredL2?: number;
   readonly lexicalBm25?: number;
 }
+export interface TextQueryDiagnostics extends Omit<QueryResult, 'hits'> {
+  readonly embeddingEpoch?: bigint;
+  readonly tokenizerEpoch?: bigint;
+  readonly dimsTouched: bigint;
+  readonly bytesRead: bigint;
+  readonly docsEvaluated: bigint;
+  readonly postingsDecoded: bigint;
+}
+/** Nanosecond spans from a timing-enabled build. Spans can overlap. */
+export interface TextQueryTimings {
+  readonly tokenizationNs: bigint;
+  readonly lexicalAnalysisNs: bigint;
+  readonly embeddingQueueNs: bigint;
+  readonly embeddingEvaluationNs: bigint;
+  readonly embeddingNormalizationNs: bigint;
+  readonly retrievalNs: bigint;
+  readonly materializationNs: bigint;
+  readonly endToEndNs: bigint;
+}
+export interface TextQueryBackend {
+  readonly runtimeName: string;
+  readonly gpu: boolean;
+  /** 1 CPU, 2 CPU and GPU, 3 CPU and Neural Engine, 4 all. */
+  readonly requestedComputeUnits: 1 | 2 | 3 | 4;
+  /** Present when cached CoreML compute-plan placement is available. */
+  readonly observedComputeUnits?: {
+    readonly cpuOps: bigint;
+    readonly gpuOps: bigint;
+    readonly neuralEngineOps: bigint;
+  };
+  /** Present for a fixed-width model input. */
+  readonly sequenceLength?: bigint;
+}
 export interface TextQueryResult {
   readonly hits: readonly TextQueryHit[];
   readonly embeddingEpoch: bigint;
   readonly tokenizerEpoch: bigint;
+  readonly queryTokens: bigint;
+  readonly embeddingCalls: bigint;
+  /** Absent for k=0. */
+  readonly diagnostics?: TextQueryDiagnostics;
+  readonly timings?: TextQueryTimings;
+  /** Present when a model runtime participated. */
+  readonly backend?: TextQueryBackend;
 }
 export interface TextMaintainBudget {
   /** Defaults to 100ms. */

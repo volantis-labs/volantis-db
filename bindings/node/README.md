@@ -699,8 +699,35 @@ forms. Async forms run native work off the JS thread. `query` defaults to dense;
 exclusive with `signal`. In-flight AbortSignal cancellation requires an async
 call. Cancellation of ingest may leave acknowledged partial writes.
 
+Both query forms return a `TextQueryResult` with `hits`, the store's
+`embeddingEpoch` and `tokenizerEpoch`, and `bigint` counts for `queryTokens`
+(nonpadding model tokens) and `embeddingCalls` (completed query embeddings).
+Lexical queries and queries with `k: 0` return zero for both counts.
+
+- `diagnostics` contains the pinned `generation`, the executed `mode`
+  (`vector`, `lexical`, or `hybrid`), `approximate`, `exactRescore`,
+  `budgetExhausted`, and `bigint` counters `dimsTouched`, `bytesRead`,
+  `docsEvaluated`, and `postingsDecoded`. The leg epochs and `fusion` report
+  are present when the engine reports them. `diagnostics` is omitted for `k: 0`.
+- `timings` is present in timing-enabled builds. Its `bigint` nanosecond spans
+  are `tokenizationNs`, `lexicalAnalysisNs`, `embeddingQueueNs`,
+  `embeddingEvaluationNs`, `embeddingNormalizationNs`, `retrievalNs`,
+  `materializationNs`, and `endToEndNs`. The spans can overlap.
+- `backend` is present when a model runtime participates. It reports
+  `runtimeName`, `gpu`, and `requestedComputeUnits` (1 CPU, 2 CPU and GPU,
+  3 CPU and Neural Engine, 4 all). Fixed-width models also report
+  `sequenceLength` as a `bigint`. When CoreML placement has been cached,
+  `observedComputeUnits` contains `cpuOps`, `gpuOps`, and `neuralEngineOps`
+  as `bigint` counts from the plan.
+
 Ingest rejects overlong documents unless `chunkMax` is set; `chunkOverlap`
 controls overlap. Re-ingest with a higher revision replaces the previous chunks.
+Both `ingest` and `ingestAsync` take `maintenanceWallTimeNs` and
+`maintenanceBytes` as unsigned 64-bit `bigint` options. Each defaults to `0n`.
+Either zero disables ingest maintenance. When both are positive, they bound each
+maintenance slice and ingest runs those slices to completion. Values outside the
+unsigned 64-bit `bigint` range throw or reject with `RangeError`
+(`ERR_OUT_OF_RANGE`).
 
 Explicitly call `store.observedComputeUnits()` or `await store.observedComputeUnitsAsync()` to load the CoreML compute plan on demand: four `bigint` counts describe planned placement, not an execution trace; returns `null` without a CoreML query model.
 
