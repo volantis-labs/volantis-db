@@ -235,6 +235,21 @@ but retain their input files. Close the snapshots and reopen the writable store
 to reclaim those retired files. Snapshot reads and cursors keep their original
 generation throughout sealing and merging.
 
+`store.maintain({ wallTimeNs, bytes })` runs due tier transitions. Both fields
+are required unsigned 64-bit bigints. `wallTimeNs` sets the
+monotonic time budget in nanoseconds and `bytes` sets the graph work budget.
+The report contains `status` (0 complete, 1 budget exhausted) and three bigint
+counters, `graphsBuilt`, `bytesConsumed` and `checkpointsResumed`. A zero budget
+in either field returns budget exhausted with all counters at zero.
+
+`await store.maintainAsync({ wallTimeNs, bytes })` uses the same budgets and
+report. It copies the budget at the call and runs on a native worker in the
+store's async write queue. Both calls require a writable handle and have no
+cancellation option. Invalid budgets and read-only handles produce
+`ZeppelinError` with `ZE_ERR_INVALID_ARGUMENT` and `ZE_ERR_ACCESS_MODE`,
+respectively. For the sealed merge previously available as `maintainAsync()`,
+call `await store.mergeAsync()`.
+
 `deleteWhere` deletes every document that matches a filter, in one mutation,
 and removes their bytes from disk. It takes the same `Filter` as `scan` and
 `count`, and the filter is required:

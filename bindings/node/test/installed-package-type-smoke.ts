@@ -12,6 +12,7 @@ import {
   type CountGroup,
   type CountResult,
   type Document,
+  type MaintainReport,
   type QueryResult,
   type SearchHit,
   type StoreState,
@@ -42,6 +43,8 @@ const records = openNamespace(
 );
 const sealed: bigint = records.seal().generation;
 const merged: bigint = records.merge().generation;
+const maintained: MaintainReport = records.maintain({ wallTimeNs: 0n, bytes: 0n });
+const maintaining: Promise<MaintainReport> = records.maintainAsync({ wallTimeNs: 0n, bytes: 0n });
 const grouped = records.count({ groupBy: { attributeId: 1, limit: 16 } });
 const groups: CountGroup[] = grouped.groups;
 const missing: bigint = grouped.missingCount;
@@ -65,7 +68,7 @@ const report: VerifyReport = verify('typecheck-records/notes');
 const damage: VerifyFindingKind | undefined = report.findings[0]?.kind;
 const offset: bigint | undefined = report.findings[0]?.offset;
 
-console.log(ABI_VERSION, generation, sealed, merged, groups, missing, plain, hits, mode, lexicalScore, effectiveAlpha, uuid);
+console.log(ABI_VERSION, generation, sealed, merged, maintained, maintaining, groups, missing, plain, hits, mode, lexicalScore, effectiveAlpha, uuid);
 console.log(report.ok, damage, offset);
 token.close();
 records.close();

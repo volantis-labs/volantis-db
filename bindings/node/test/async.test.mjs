@@ -23,13 +23,44 @@ test('async store operations equal sync results', () => fixture(async (s, root) 
   assert.deepEqual(await s.scanAsync(), s.scan());
   await s.sealAsync();
   assert.deepEqual(await s.mergeAsync(), s.merge());
-  assert.deepEqual(await s.maintainAsync(), s.merge());
   const token = await s.purgeAsync([1n], { wait: false });
   assert.equal(typeof (await s.awaitPurgeAsync(token.tokenId)).generation, 'bigint');
   assert.equal((await s.purgeAsync([999n])).isNoOp, true);
   await s.backupAsync(join(root, 'backup'));
   const backup = await openNamespaceAsync(root, 'backup', {}, { readOnly: true });
   try { assert.deepEqual(await backup.scanAsync(), s.scan()); } finally { backup.close(); }
+}));
+
+const emptyMaintenance = {
+  graphsBuilt: 0n,
+  bytesConsumed: 0n,
+  checkpointsResumed: 0n,
+};
+
+test('Store.maintain honors the wall-time budget', () => fixture(s => {
+  const bytes = (1n << 64n) - 1n;
+  assert.deepEqual(s.maintain({ wallTimeNs: 1_000_000_000n, bytes }),
+    { ...emptyMaintenance, status: 0 });
+  assert.deepEqual(s.maintain({ wallTimeNs: 0n, bytes }),
+    { ...emptyMaintenance, status: 1 });
+  assert.throws(() => s.maintain({ wallTimeNs: 0n, bytes: bytes + 1n }),
+    e => e instanceof ZeppelinError && e.code === 'ZE_ERR_INVALID_ARGUMENT' && e.errorCode === 1);
+}));
+
+test('Store.maintainAsync honors the queued byte budget', () => fixture(async s => {
+  const budget = { wallTimeNs: 1_000_000_000n, bytes: 0n };
+  const write = s.upsertAsync([{ id: 1n, text: 'queued write' }]);
+  const pending = s.maintainAsync(budget);
+  budget.bytes = 1n;
+  await write;
+  assert.deepEqual(await pending, { ...emptyMaintenance, status: 1 });
+  const snapshot = s.openSnapshot();
+  try {
+    await assert.rejects(snapshot.maintainAsync(budget),
+      e => e instanceof ZeppelinError && e.code === 'ZE_ERR_ACCESS_MODE');
+  } finally {
+    snapshot.close();
+  }
 }));
 test('async calls remain responsive and close safely', () => fixture(async s => {
   await s.upsertAsync([{ id: 1n, text: 'hello' }]);

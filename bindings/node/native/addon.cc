@@ -3939,6 +3939,59 @@ napi_value MergeStore(napi_env env, napi_callback_info info) {
   });
 }
 
+template <bool Async = false>
+napi_value MaintainStore(napi_env env, napi_callback_info info) {
+  return Guard(env, [&]() -> napi_value {
+    size_t argc = 2;
+    napi_value args[2];
+    napi_value receiver;
+    if (!NapiOk(env, napi_get_cb_info(env, info, &argc, args, &receiver, nullptr),
+                "read maintain arguments"))
+      return nullptr;
+    NativeStore *store = UnwrapStore(env, receiver);
+    if (store == nullptr)
+      return nullptr;
+    ZeMaintainRequest request{};
+    request.abi_size = sizeof(request);
+    if (argc < 2)
+      return ThrowWorkerError(env, ZE_ERR_INVALID_ARGUMENT,
+                              "maintenance requires wallTimeNs and bytes");
+    if (!GetUint64(env, args[0], "wallTimeNs", &request.wall_time_ns) ||
+        !GetUint64(env, args[1], "bytes", &request.bytes))
+      return nullptr;
+    auto report = std::make_shared<ZeMaintainReport>();
+    report->abi_size = sizeof(ZeMaintainReport);
+    const auto handle = store->handle;
+    return RunNative<Async>(
+        env, receiver, handle,
+        [handle, request, report]() {
+          return ze_maintain(handle, &request, report.get());
+        },
+        [env, report](ze_error_code status,
+                      const std::string &message) -> napi_value {
+          if (status != ZE_OK)
+            return ThrowWorkerError(env, status, message);
+          napi_value result, report_status;
+          auto set_counter = [&](const char *name, uint64_t count) {
+            napi_value value;
+            return NapiOk(env, napi_create_bigint_uint64(env, count, &value),
+                          "create maintenance counter") &&
+                   SetNamed(env, result, name, value);
+          };
+          if (!NapiOk(env, napi_create_object(env, &result),
+                      "create maintenance report") ||
+              !NapiOk(env, napi_create_int32(env, report->status, &report_status),
+                      "create maintenance status") ||
+              !SetNamed(env, result, "status", report_status) ||
+              !set_counter("graphsBuilt", report->graphs_built) ||
+              !set_counter("bytesConsumed", report->bytes_consumed) ||
+              !set_counter("checkpointsResumed", report->checkpoints_resumed))
+            return nullptr;
+          return result;
+        });
+  });
+}
+
 napi_value ReindexTextStore(napi_env env, napi_callback_info info) {
   return Guard(env, [&]() -> napi_value {
     size_t argc = 0;
@@ -5341,6 +5394,10 @@ napi_value Initialize(napi_env env, napi_value exports) {
       {"mergeAsync", nullptr, MergeStore<true>, nullptr, nullptr, nullptr,
        napi_default, nullptr},
       {"merge", nullptr, MergeStore<false>, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
+      {"maintainAsync", nullptr, MaintainStore<true>, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
+      {"maintain", nullptr, MaintainStore<false>, nullptr, nullptr, nullptr,
        napi_default, nullptr},
       {"openSnapshot", nullptr, OpenSnapshotStore, nullptr, nullptr, nullptr,
        napi_default, nullptr},

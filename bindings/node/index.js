@@ -119,6 +119,22 @@ function callNative(callback) {
   }
 }
 
+function maintenanceBudget(budget) {
+  if (budget === null || typeof budget !== 'object' || Array.isArray(budget) ||
+      !Object.hasOwn(budget, 'wallTimeNs') || !Object.hasOwn(budget, 'bytes') ||
+      Reflect.ownKeys(budget).length !== 2) {
+    throw new ZeppelinError('maintenance budget requires wallTimeNs and bytes', 'ZE_ERR_INVALID_ARGUMENT', 1);
+  }
+  const { wallTimeNs, bytes } = budget;
+  const limit = 1n << 64n;
+  for (const [field, value] of [['wallTimeNs', wallTimeNs], ['bytes', bytes]]) {
+    if (typeof value !== 'bigint' || value < 0n || value >= limit) {
+      throw new ZeppelinError(`${field} must be an unsigned 64-bit bigint`, 'ZE_ERR_INVALID_ARGUMENT', 1);
+    }
+  }
+  return { wallTimeNs, bytes };
+}
+
 /**
  * The native token handle, kept off the public shape so a token is used
  * through its methods rather than by reading a bigint out of it.
@@ -459,7 +475,10 @@ class Store {
     });
   }
   async mergeAsync() { return this._queueWrite(() => this._native.mergeAsync()); }
-  async maintainAsync() { return this.mergeAsync(); }
+  async maintainAsync(budget) {
+    const { wallTimeNs, bytes } = maintenanceBudget(budget);
+    return this._queueWrite(() => this._native.maintainAsync(wallTimeNs, bytes));
+  }
   async purgeAsync(ids, options = {}) {
     const owned = structuredClone(ids);
     const ownedOptions = { ...options };
@@ -637,6 +656,11 @@ class Store {
   /** Merge small sealed segments synchronously during application idle time. */
   merge() {
     return callNative(() => this._native.merge());
+  }
+
+  maintain(budget) {
+    const { wallTimeNs, bytes } = maintenanceBudget(budget);
+    return callNative(() => this._native.maintain(wallTimeNs, bytes));
   }
 
   openSnapshot() {

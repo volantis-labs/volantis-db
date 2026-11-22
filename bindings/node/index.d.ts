@@ -651,6 +651,21 @@ export declare class UnsupportedRuntimeError extends Error {
   readonly code: 'ERR_ZEPPELIN_UNSUPPORTED_RUNTIME';
 }
 
+export interface MaintainBudget {
+  /** Monotonic wall time in nanoseconds, as an unsigned 64-bit bigint. */
+  readonly wallTimeNs: bigint;
+  /** Maximum graph work bytes, as an unsigned 64-bit bigint. */
+  readonly bytes: bigint;
+}
+
+export interface MaintainReport {
+  /** 0 complete, 1 budget exhausted. */
+  readonly status: 0 | 1;
+  readonly graphsBuilt: bigint;
+  readonly bytesConsumed: bigint;
+  readonly checkpointsResumed: bigint;
+}
+
 /**
  * A store is one namespace. Its writes are atomic batches.
  *
@@ -721,8 +736,8 @@ export declare class Store {
   sealAsync(): Promise<SealReport>;
   /** Off-thread merge of sealed segments. */
   mergeAsync(): Promise<SealReport>;
-  /** Alias for mergeAsync. */
-  maintainAsync(): Promise<SealReport>;
+  /** Off-thread tier maintenance, ordered with the Store's async writes. */
+  maintainAsync(budget: MaintainBudget): Promise<MaintainReport>;
   /** Off-thread purge; wait defaults to true. */
   purgeAsync(ids: readonly DocumentId[], options?: { readonly wait?: true }): Promise<PurgeReport>;
   purgeAsync(ids: readonly DocumentId[], options: { readonly wait: false }): Promise<PurgeTokenReport>;
@@ -881,6 +896,8 @@ export declare class Store {
    * Requires a writable store. A failure may follow completed atomic batches.
    */
   merge(): { readonly generation: bigint };
+  /** Runs due tier transitions within the specified work budget. */
+  maintain(budget: MaintainBudget): MaintainReport;
   /**
    * Write a consistent snapshot of the store at one generation into
    * `target`, for a backup or an export. The copy runs on a worker thread,
