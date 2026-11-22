@@ -37,6 +37,54 @@ def test_namespace_create_reopen_schema_mismatch_and_list(tmp_path: Path) -> Non
         ze.open_namespace(tmp_path, "articles", _vector_spec(nullable=True))
 
 
+def test_schema_reads_native_user_columns_in_persisted_order(tmp_path: Path) -> None:
+    with ze.open_namespace(tmp_path, "empty", ze.NamespaceSpec()) as store:
+        assert store.schema() == ()
+
+    columns = (
+        ze.AttributeDefinition(9, "café", ze.AttributeType.DICTIONARY_STRING, nullable=True),
+        ze.AttributeDefinition(2, "rank", ze.AttributeType.U64),
+        ze.AttributeDefinition(5, "parent", ze.AttributeType.ID128, nullable=True),
+        ze.AttributeDefinition(8, "", ze.AttributeType.BOOL),
+    )
+    with ze.open_namespace(tmp_path, "typed", ze.NamespaceSpec(attributes=columns)):
+        pass
+
+    reordered = ze.NamespaceSpec(attributes=columns[::-1])
+    with ze.open_namespace(tmp_path, "typed", reordered, access_mode=ze.AccessMode.READ_ONLY) as store:
+        assert store.schema() == columns
+
+    with pytest.raises(ze.Closed) as caught:
+        store.schema()
+    assert caught.value.code_name == "ZE_ERR_CLOSED"
+
+
+def test_merge_combines_sealed_segments_and_preserves_active_rows(tmp_path: Path) -> None:
+    with ze.open_namespace(tmp_path, "records", ze.NamespaceSpec()) as store:
+        for doc_id in (1, 2):
+            store.upsert([ze.StoredDocument(doc_id, text=f"sealed {doc_id}")])
+            store.seal()
+        store.upsert([ze.StoredDocument(3, text="active")])
+        before = store.get([1, 2, 3])
+        assert before.missing_count == 0
+        assert store.stats().active_row_count == 1
+
+        with ze.CancelToken() as token:
+            token.cancel()
+            with pytest.raises(ze.Cancelled) as caught:
+                store.merge(cancel_token=token)
+        assert caught.value.code_name == "ZE_ERR_CANCELLED"
+        assert store.get([1, 2, 3]) == before
+
+        report = store.merge()
+        assert report == ze.GenerationReport(before.generation + 1)
+        after = store.get([1, 2, 3])
+        assert after.generation == report.generation
+        assert after.documents == before.documents
+        assert store.stats().active_row_count == 1
+        assert store.merge() == report
+
+
 def _all_types_spec() -> ze.NamespaceSpec:
     return ze.NamespaceSpec(
         attributes=(

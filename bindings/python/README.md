@@ -171,6 +171,23 @@ grouping attribute contribute to `missing_count`. The group counts plus
 unsupported types, and invalid limits raise `ze.InvalidArgument`.
 Omitting `group_by` returns the scalar `CountResult`.
 
+## Schema readback and sealed segment merging
+
+Declare namespace columns with `NamespaceSpec(attributes=...)` and read them
+back with `store.schema()`. It returns a tuple of `AttributeDefinition` values
+in native schema order, with each column's ID, UTF-8 name, type, and nullability.
+The implicit `ts` column is excluded, and a schema with no user columns returns
+an empty tuple. `AttributeType.ID128` is available for schema definitions.
+Reading the schema of a closed store raises `ze.Closed`.
+
+Call `store.merge()` during idle time on a writable store to consolidate small,
+compatible sealed scan segments. Each atomic batch takes at most 16 segments
+and 8 MiB of input files. The call holds the writer slot until it returns and
+leaves active rows unsealed. It returns a `GenerationReport` with the last publication
+generation, or the current generation when no merge is due. Pass
+`cancel_token=token` to cancel cooperatively. Cancellation raises `ze.Cancelled`
+and preserves any batches already published.
+
 ## Native library loading
 
 The loader uses `ZEPPELIN_EMBED_LIBRARY` when it is set. Otherwise, an installed

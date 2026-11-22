@@ -30,6 +30,10 @@ _bind(
 )
 _bind("ze_namespace_list_result_free", [ct.POINTER(s.ZeNamespaceListResult)])
 _bind(
+    "ze_schema_column",
+    [Handle, ct.c_size_t, s.UInt8Pointer, ct.c_size_t, ct.POINTER(s.ZeSchemaColumnResult)],
+)
+_bind(
     "ze_open_with_epoch",
     [ct.POINTER(s.ZeOpenRequest), ct.POINTER(s.ZeEpochRequest), ct.POINTER(Handle)],
 )
@@ -109,6 +113,7 @@ _bind(
 _bind("ze_query_snippets_free", [ct.POINTER(s.ZeQuerySnippets)])
 _bind("ze_query_result_free", [ct.POINTER(s.ZeQueryResult)])
 _bind("ze_seal", [Handle, ct.POINTER(s.ZeSealRequest), ct.POINTER(s.ZeGenerationReport)])
+_bind("ze_merge_sealed", [Handle, ct.POINTER(s.ZeSealRequest), ct.POINTER(s.ZeGenerationReport)])
 _bind(
     "ze_drop_partition",
     [Handle, ct.POINTER(s.ZeDropPartitionRequest), ct.POINTER(s.ZePartitionReport)],

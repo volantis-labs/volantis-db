@@ -328,6 +328,8 @@ def _attribute_value(
             invalid_argument("Bool attribute value must be bool")
         result.value_type = 4
         result.bool_value = int(value)
+    elif attribute_type is AttributeType.ID128:
+        invalid_argument("Id128 attribute values are not supported by this Python binding")
     else:
         if not isinstance(value, str):
             invalid_argument("string attribute value must be str")
@@ -829,6 +831,39 @@ class Store:
             active_snapshot_leases=int(report.active_snapshot_leases),
             phys_footprint=int(report.phys_footprint) if report.has_phys_footprint else None,
         )
+
+    def schema(self) -> tuple[AttributeDefinition, ...]:
+        """Read the native user columns in schema order, excluding the implicit ts column."""
+        handle = self._live_handle()
+        result = s.sized(s.ZeSchemaColumnResult)
+        columns: list[AttributeDefinition] = []
+        while True:
+            index = len(columns)
+            raise_for_status(
+                self._call(LIBRARY.ze_schema_column, handle, index, None, 0, ct.byref(result)),
+                handle,
+            )
+            if index == result.column_count:
+                return tuple(columns)
+
+            # Even an empty name needs nonzero capacity for the copy call.
+            name = (ct.c_uint8 * max(1, result.name_len))()
+            raise_for_status(
+                self._call(
+                    LIBRARY.ze_schema_column, handle, index, name, len(name), ct.byref(result)
+                ),
+                handle,
+            )
+            try:
+                attribute_type = AttributeType(result.attribute_type)
+            except ValueError:
+                invalid_argument(f"unknown schema attribute type {result.attribute_type}")
+            columns.append(AttributeDefinition(
+                attribute_id=result.attribute_id,
+                name=ct.string_at(name, result.name_len).decode("utf-8"),
+                attribute_type=attribute_type,
+                nullable=bool(result.nullable),
+            ))
 
     def ingest(
         self,
@@ -2029,6 +2064,20 @@ class Store:
         report = s.sized(s.ZeGenerationReport)
         raise_for_status(
             self._call(LIBRARY.ze_seal, handle, ct.byref(request), ct.byref(report)),
+            handle,
+        )
+        return GenerationReport(int(report.generation))
+
+    def merge(self, cancel_token: CancelToken | None = None) -> GenerationReport:
+        """Merge small compatible sealed segments and return the publication generation."""
+        handle = self._live_handle()
+        if cancel_token is not None and not isinstance(cancel_token, CancelToken):
+            invalid_argument("cancel_token must be a CancelToken or None")
+        request = s.sized(s.ZeSealRequest)
+        request.cancel_token = 0 if cancel_token is None else cancel_token.value
+        report = s.sized(s.ZeGenerationReport)
+        raise_for_status(
+            self._call(LIBRARY.ze_merge_sealed, handle, ct.byref(request), ct.byref(report)),
             handle,
         )
         return GenerationReport(int(report.generation))

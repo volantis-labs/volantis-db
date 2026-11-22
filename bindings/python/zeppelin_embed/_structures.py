@@ -74,6 +74,18 @@ class ZeAttributeDefinition(ct.Structure):
     ]
 
 
+class ZeSchemaColumnResult(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("column_count", ct.c_size_t),
+        ("name_len", ct.c_size_t),
+        ("attribute_id", ct.c_uint32),
+        ("attribute_type", ct.c_int32),
+        ("nullable", ct.c_uint32),
+    ]
+
+
 class ZeNamespaceSpec(ct.Structure):
     _fields_ = [
         ("abi_size", ct.c_uint32),

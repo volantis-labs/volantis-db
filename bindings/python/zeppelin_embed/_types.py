@@ -92,6 +92,7 @@ class AttributeType(IntEnum):
     BOOL = 4
     DICTIONARY_STRING = 5
     RAW_STRING = 6
+    ID128 = 7
 
 
 @dataclass(frozen=True)

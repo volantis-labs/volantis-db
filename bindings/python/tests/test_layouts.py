@@ -41,6 +41,7 @@ LAYOUTS: dict[str, tuple[int, int, dict[str, int]]] = {
     "ZeEpochAliasReport": (56, 8, {"abi_size": 0, "abi_reserved": 4, "generation": 8, "previous_embedding_epoch": 16, "previous_tokenizer_epoch": 24, "published_embedding_epoch": 32, "published_tokenizer_epoch": 40, "manifest_committed": 48, "reserved": 52}),
     "ZeEpochDropReport": (32, 8, {"abi_size": 0, "abi_reserved": 4, "generation": 8, "segments_dropped": 16, "bytes_reclaimed": 24}),
     "ZeAttributeDefinition": (32, 8, {"attribute_id": 0, "name": 8, "name_len": 16, "attribute_type": 24, "nullable": 28}),
+    "ZeSchemaColumnResult": (40, 8, {"abi_size": 0, "abi_reserved": 4, "column_count": 8, "name_len": 16, "attribute_id": 24, "attribute_type": 28, "nullable": 32}),
     "ZeNamespaceSpec": (48, 8, {"abi_size": 0, "abi_reserved": 4, "attributes": 8, "attribute_count": 16, "has_vector_space": 24, "dimensions": 28, "normalization": 32, "epoch": 40}),
     "ZeNamespaceOpenRequest": (112, 8, {"abi_size": 0, "abi_reserved": 4, "root": 8, "root_len": 16, "name": 24, "name_len": 32, "open": 40, "spec": 104}),
     "ZeNamespaceListRequest": (24, 8, {"abi_size": 0, "abi_reserved": 4, "root": 8, "root_len": 16}),
