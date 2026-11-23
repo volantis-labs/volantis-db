@@ -180,6 +180,45 @@ def test_upsert_every_attribute_type_round_trips_through_get(tmp_path: Path) -> 
     assert document.attributes == _document(1).attributes
 
 
+def test_id128_attributes_round_trip_and_filter(tmp_path: Path) -> None:
+    attribute_type = ze.AttributeType.ID128
+    spec = ze.NamespaceSpec(
+        attributes=(ze.AttributeDefinition(1, "parent", attribute_type, nullable=True),),
+    )
+    high_bit_id = 0xFEDC_BA98_7654_3210_0123_4567_89AB_CDEF
+    maximum_id = (1 << 128) - 1
+    documents = [
+        ze.StoredDocument(doc_id, attributes=(ze.AttributeValue(1, attribute_type, value),))
+        for doc_id, value in enumerate((0, high_bit_id, maximum_id), start=1)
+    ]
+    with ze.open_namespace(tmp_path, "ids", spec) as store:
+        store.upsert([*documents, ze.StoredDocument(4)])
+        for bad in (-1, 1 << 128, True, "not an id"):
+            with pytest.raises(ze.InvalidArgument, match="unsigned 128-bit integer"):
+                store.upsert([
+                    ze.StoredDocument(5, attributes=(ze.AttributeValue(1, attribute_type, bad),))
+                ])
+            with pytest.raises(ze.InvalidArgument, match="unsigned 128-bit integer"):
+                store.count(filter=ze.Filter.eq("parent", bad))
+        assert store.count().count == 4
+        store.seal()
+
+    with ze.open_namespace(tmp_path, "ids", spec) as store:
+        fetched = store.get([1, 2, 3]).documents
+        assert [doc.attributes for doc in fetched if doc is not None] == [
+            doc.attributes for doc in documents
+        ]
+        matching = store.scan(filter=ze.Filter.eq("parent", high_bit_id))
+        assert [doc.doc_id for doc in matching.documents] == [2]
+        members = store.scan(filter=ze.Filter.in_(1, [0, maximum_id]))
+        assert sorted(doc.doc_id for doc in members.documents) == [1, 3]
+        assert store.count(filter=ze.Filter.is_null("parent")).count == 1
+        with pytest.raises(ze.InvalidArgument):
+            store.count(group_by=ze.CountGroupBy(1))
+        with pytest.raises(ze.InvalidArgument):
+            store.scan(order=ze.AttributeScanOrder(1, "ascending"))
+
+
 def test_conditional_upsert_checks_the_batch_atomically(tmp_path: Path) -> None:
     with ze.open_namespace(tmp_path, "cas", ze.NamespaceSpec()) as store:
         store.upsert([ze.StoredDocument(1, revision=4)])

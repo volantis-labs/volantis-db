@@ -167,6 +167,8 @@ extension ZeppelinStore {
                 throw ZeppelinError.internalError
             }
             return .string(value)
+        case 6:
+            return .id128(DocumentID(high: UInt64(bitPattern: raw.i64_value), low: raw.u64_value))
         default:
             throw ZeppelinError.internalError
         }

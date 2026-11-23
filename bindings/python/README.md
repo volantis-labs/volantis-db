@@ -193,6 +193,31 @@ Damage is returned in the report. An invalid path argument raises
 raises `ze.Io` (`ZE_ERR_IO`). Graph-object checks require a graph-enabled
 native library.
 
+## ID128 attributes
+
+Declare an `AttributeType.ID128` column for unsigned 128-bit identifiers.
+Pass a Python `int` from 0 through `2**128 - 1` to `AttributeValue`. Reads
+return the same integer type. A UUID can be converted with `UUID(...).int`.
+
+```python
+from uuid import UUID
+
+import zeppelin_embed as ze
+
+parent = UUID("fedcba98-7654-3210-0123-456789abcdef").int
+kind = ze.AttributeType.ID128
+spec = ze.NamespaceSpec(attributes=(ze.AttributeDefinition(1, "parent", kind),))
+with ze.open_namespace("example-store", "children", spec) as store:
+    store.upsert([ze.StoredDocument(1, attributes=(ze.AttributeValue(1, kind, parent),))])
+    page = store.scan(filter=ze.Filter.eq("parent", parent))
+    print(page.documents[0].attributes)
+```
+
+Use the column name or ID with `Filter.eq`, `Filter.not_eq`, `Filter.in_`,
+and `Filter.not_in`. Nullable columns also support `Filter.is_null`.
+Malformed or out-of-range values raise `ze.InvalidArgument`. The engine
+rejects range predicates, grouped counts and attribute ordering on ID128 columns.
+
 ## Attribute-ordered scans and grouped counts
 
 Pass an `AttributeScanOrder` to `scan()` or `iter_documents()` to sort by a

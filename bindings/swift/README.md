@@ -39,6 +39,34 @@ Use `try await store.upsert(documents)` to store `IngestDocument.attributes`.
 carries attributes, ingest throws `ZeppelinIngestError.attributesRequireUpsert`
 before writing any document in the batch.
 
+### ID128 attributes
+
+Declare an attribute with type `.id128` and pass a `DocumentID` to
+`AttributeValue.id128`. Construct it from two `UInt64` words or a Foundation
+`UUID` using `DocumentID(uuid:)`. Read results return `.id128(DocumentID)`.
+
+```swift
+let parent = DocumentID(high: 0xFEDC_BA98_7654_3210, low: 0x0123_4567_89AB_CDEF)
+let spec = NamespaceSpec(
+    attributes: [AttributeDefinition(id: 1, name: "parent", type: .id128, nullable: false)],
+    vectorSpace: nil
+)
+let store = try await ZeppelinStore.openNamespace(root: root, name: "children", spec: spec)
+_ = try await store.upsert([
+    IngestDocument(
+        id: DocumentID(high: 0, low: 1), revision: 1, timestamp: 0, vector: [],
+        attributes: [1: .id128(parent)]
+    )
+])
+let page = try await store.scan(filter: .eq(1, .id128(parent)))
+try await store.close()
+```
+
+Use `.id128` values in `.eq`, `.notEq`, `.in`, and `.notIn` filters. Nullable
+columns also support `.isNull`. JSON Lines export and import preserve both
+words of the identifier. Import throws `DecodingError` for malformed words.
+The engine rejects range predicates, grouped counts and attribute ordering on ID128 columns.
+
 ### Scan in attribute order
 
 Pass an `AttributeScanOrder` to order a page by a declared `u64`, `i64`, or

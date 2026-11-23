@@ -168,6 +168,77 @@ final class RecordStoreTests: XCTestCase {
         try await store.close()
     }
 
+    func testID128AttributesRoundTripAndFilter() async throws {
+        let root = try namespaceRoot(#function)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let spec = NamespaceSpec(
+            attributes: [AttributeDefinition(id: 1, name: "parent", type: .id128, nullable: true)],
+            vectorSpace: nil
+        )
+        let zero = DocumentID(high: 0, low: 0)
+        let highBitID = DocumentID(high: 0xFEDC_BA98_7654_3210, low: 0x0123_4567_89AB_CDEF)
+        let maximumID = DocumentID(high: .max, low: .max)
+        let documents = [zero, highBitID, maximumID].enumerated().map { index, value in
+            IngestDocument(
+                id: DocumentID(high: 0, low: UInt64(index + 1)),
+                revision: 1,
+                timestamp: 0,
+                vector: [],
+                attributes: [1: .id128(value)]
+            )
+        }
+        let source = try await ZeppelinStore.openNamespace(root: root, name: "ids", spec: spec)
+        _ = try await source.upsert(documents + [
+            IngestDocument(id: DocumentID(high: 0, low: 4), revision: 1, timestamp: 0, vector: [])
+        ])
+        _ = try await source.seal()
+        try await source.close()
+
+        let store = try await ZeppelinStore.openNamespace(root: root, name: "ids", spec: spec)
+        let fetched = try await store.get(documents.map(\.id), fields: .attributes)
+        XCTAssertEqual(fetched.documents.compactMap { $0?.attributes }, documents.map(\.attributes))
+        let matching = try await store.scan(filter: .eq(1, .id128(highBitID)))
+        XCTAssertEqual(matching.documents.map(\.id), [documents[1].id])
+        let members = try await store.scan(filter: .in(1, [.id128(zero), .id128(maximumID)]))
+        XCTAssertEqual(Set(members.documents.map(\.id)), Set([documents[0].id, documents[2].id]))
+        let nulls = try await store.count(filter: .isNull(1))
+        XCTAssertEqual(nulls.count, 1)
+        do {
+            _ = try await store.count(groupBy: CountGroupBy(attributeID: 1))
+            XCTFail("grouped count accepted an ID128 column")
+        } catch let error as ZeppelinError {
+            XCTAssertEqual(error, .invalidArgument)
+        }
+        do {
+            _ = try await store.scan(order: AttributeScanOrder(attributeID: 1, direction: .ascending))
+            XCTFail("ordered scan accepted an ID128 column")
+        } catch let error as ZeppelinError {
+            XCTAssertEqual(error, .invalidArgument)
+        }
+
+        let url = root.appendingPathComponent("ids.jsonl")
+        try await store.exportJSONLines(to: url, fields: .attributes)
+        try await store.close()
+        let imported = try await ZeppelinStore.openNamespace(root: root, name: "imported", spec: spec)
+        try await imported.importJSONLines(from: url)
+        let copy = try await imported.get(documents.map(\.id), fields: .attributes)
+        XCTAssertEqual(copy.documents.compactMap { $0?.attributes }, documents.map(\.attributes))
+
+        let overflowingID = """
+            {"id_high":0,"id_low":5,"revision":1,"timestamp":0,
+            "attributes":[{"id":1,"type":"id128","idHigh":18446744073709551616,"idLow":1}]}
+            """.replacingOccurrences(of: "\n", with: "")
+        try Data(overflowingID.utf8).write(to: url)
+        do {
+            try await imported.importJSONLines(from: url)
+            XCTFail("import accepted an overflowing ID128 word")
+        } catch is DecodingError {
+            let count = try await imported.count()
+            XCTAssertEqual(count.count, 4)
+        }
+        try await imported.close()
+    }
+
     func testGetPreservesPresentMissingTombstonedAndSupersededResults() async throws {
         let root = try namespaceRoot(#function)
         defer { try? FileManager.default.removeItem(at: root) }

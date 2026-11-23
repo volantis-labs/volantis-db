@@ -8,6 +8,8 @@ private struct JSONLineAttribute: Codable {
     var f64: Double?
     var bool: Bool?
     var string: String?
+    var idHigh: UInt64?
+    var idLow: UInt64?
 
     init(id: UInt32, value: AttributeValue) {
         self.id = id
@@ -29,6 +31,10 @@ private struct JSONLineAttribute: Codable {
         case .string(let value):
             type = "string"
             string = value
+        case .id128(let value):
+            type = "id128"
+            idHigh = value.high
+            idLow = value.low
         }
     }
 
@@ -46,6 +52,11 @@ private struct JSONLineAttribute: Codable {
             return .bool(bool ?? false)
         case "string" where string != nil:
             return .string(string ?? "")
+        case "id128":
+            if let idHigh, let idLow {
+                return .id128(DocumentID(high: idHigh, low: idLow))
+            }
+            fallthrough
         default:
             throw DecodingError.dataCorrupted(
                 DecodingError.Context(

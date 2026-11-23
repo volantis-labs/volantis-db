@@ -353,12 +353,11 @@ def _attribute_value(
         result.value_type = 4
         result.bool_value = int(value)
     elif attribute_type is AttributeType.ID128:
-        if not isinstance(value, int) or isinstance(value, bool):
-            invalid_argument("ID128 attribute value must be an unsigned 128-bit integer")
-        doc_id = _doc_id(value)
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < 1 << 128:
+            invalid_argument("ID128 attribute value must fit an unsigned 128-bit integer")
         result.value_type = 6
-        result.u64_value = doc_id.low
-        result.i64_value = ct.c_int64(doc_id.high).value
+        result.u64_value = value & ((1 << 64) - 1)
+        result.i64_value = ct.c_int64(value >> 64).value
     else:
         if not isinstance(value, str):
             invalid_argument("string attribute value must be str")

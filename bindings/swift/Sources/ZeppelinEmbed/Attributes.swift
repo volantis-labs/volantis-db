@@ -32,6 +32,7 @@ public enum AttributeValue: Sendable, Equatable {
     case f64(Double)
     case bool(Bool)
     case string(String)
+    case id128(DocumentID)
 }
 
 struct CAttributeValueRecord: Sendable {
@@ -67,6 +68,10 @@ struct CAttributeValueRecord: Sendable {
             let bytes = Array(value.utf8)
             stringLength = bytes.count
             strings.append(contentsOf: bytes)
+        case .id128(let value):
+            valueType = 6
+            u64Value = value.low
+            i64Value = Int64(bitPattern: value.high)
         }
     }
 
