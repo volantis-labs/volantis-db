@@ -792,7 +792,7 @@ def model_card(args: argparse.Namespace, pair: dict, pair_sha256: str, inputs: d
               "This repository ships the text above, the model card and `licenses/`. Other "
               "source pack files, for example `provenance/` manifests and `benchmarks/`, are "
               "not in this repository.", "",
-              f"Source pack status (`PAIR.json`): {pair['release_status']}", "",
+              "Training-data source obligations apply (see `licenses/`).", "",
               f"Source pack `PAIR.json` SHA-256: `{pair_sha256}`. "
               "The bundle stores this digest as its pair alignment identity.", "",
               "## Licences", "",

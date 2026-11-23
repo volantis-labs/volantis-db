@@ -126,13 +126,15 @@ class Release(unittest.TestCase):
             "en, de", "FakeBelebele nld_Latn: 0.764 with this query tower, 0.929 with e5",
             "| fake_group | 3 | 0.600 | 0.700 |",
             "MLX only", "`query_coreml` is null",
-            "FAKE-987 provenance: invented weights", STATUS,
+            "FAKE-987 provenance: invented weights",
+            "Training-data source obligations apply (see `licenses/`).",
             "`licenses/FAKE-LICENSE.txt`", f"{len(bundle):,}",
             hashlib.sha256(manifest_bytes).hexdigest(),
             hashlib.sha256(self.pair.read_bytes()).hexdigest(),
         ]:
             self.assertIn(expected, card)
         self.assertNotIn("deu_Latn: 0.914 with this", card)
+        self.assertNotIn(STATUS, card)
         # Same pack and flags give the same bytes; an output is never overwritten.
         again = self.root / "again"
         self.release(again, "--document-precision", "fp16", "--query-coreml", "none")
