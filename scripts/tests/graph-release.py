@@ -184,7 +184,7 @@ class ReleaseTests(unittest.TestCase):
                 with self.subTest(artifact=artifact):
                     self.assertIsNone(self.g.policy('footprint/' + artifact)['section_bytes_max'])
                 continue
-            sizes = ((12288*1024, True), (12288*1024+1, False)) if features else (
+            sizes = ((13312*1024, True), (13312*1024+1, False)) if features else (
                 (5285*1024, True), (5632*1024, True), (5632*1024+1, False))
             for size, passes in sizes:
                 with self.subTest(artifact=artifact, section_bytes=size):
@@ -318,7 +318,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_macos_x64_text_archive_has_its_own_gate(self):
         # WF-992 owner decision: x86_64 graph+text is gated at 14,336 KB, not
-        # at the 12,288 KB graph-only gate and not at the arm64 28,672 KB gate.
+        # at the 13,312 KB graph-only gate and not at the arm64 28,672 KB gate.
         workflow = (self.g.ROOT / '.github/workflows/node.yml').read_text()
         package = workflow.split('  package:', 1)[1].split('  windows-package:', 1)[0]
         commands = [shlex.split(line.strip()) for line in package.splitlines()
@@ -326,7 +326,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual([c[1] for c in commands], ['--text-graph-archive', '--x64-text-graph-archive'])
         script = str(self.g.ROOT / 'scripts/size-budget.sh')
         env = dict(os.environ, CARGO_TARGET_DIR=str(self.root / 'target'))
-        for kib, code in ((12288 + 1, 0), (14336 + 1, 1)):
+        for kib, code in ((13312 + 1, 0), (14336 + 1, 1)):
             source = self.root / f'x64-{kib}.c'
             source.write_text(f'char ze_size_fixture[{kib} * 1024 - 512] = {{1}};\n')
             obj, archive = self.root / f'x64-{kib}.o', self.root / f'x64-{kib}.a'

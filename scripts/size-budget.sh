@@ -8,13 +8,16 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUDGET_KB="${ZE_SIZE_BUDGET_KB:-5632}"
 # Owner decision 2026-09-27 (CLAUDE.md, ZE-253): complete graph FFI
 # archive (core + FFI + Cypher) is gated at 12,288 KB.
-GRAPH_BUDGET_KB="${ZE_GRAPH_SIZE_BUDGET_KB:-12288}"
+# WF-992, owner decision 2026-11-23: raised to 13,312 KB on every platform.
+# The Windows x64 graph archive measured 12,478 KB after the E24 engine work.
+GRAPH_BUDGET_KB="${ZE_GRAPH_SIZE_BUDGET_KB:-13312}"
 # ZE-506, orchestrator decision 2026-10-19 (flagged to the owner for veto):
 # the arm64 full graph+text FFI archive is gated at 28,672 KB.
 TEXT_BUDGET_KB=28672
 # WF-992, owner decision 2026-11-23: the macOS x86_64 graph+text FFI archive
 # (pure-Rust CPU runtime, no MLX) is gated at 14,336 KB. WF-991 measured
-# 12,474 KB. The graph-only 12,288 KB and arm64 28,672 KB gates are unchanged.
+# 12,474 KB. The graph-only gate (13,312 KB) and the arm64 28,672 KB gate are
+# separate.
 X64_TEXT_BUDGET_KB=14336
 
 if [[ ! "$BUDGET_KB" =~ ^[0-9]+$ ]]; then
