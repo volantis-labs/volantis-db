@@ -124,8 +124,6 @@ fn execute_live(
     coordinator: Option<&StoreLock>,
     logical_delete: bool,
 ) -> Result<Vec<u64>, StoreError> {
-    use crate::ingest::wal_payload::{self, TransactionBinding};
-    use std::sync::Arc;
     let root = std::fs::canonicalize(root).map_err(|e| io(root, e))?;
     let minimum = if logical_delete { 1 } else { 2 };
     if !(minimum..=128).contains(&participants.len()) {
@@ -134,28 +132,77 @@ fn execute_live(
             "namespace batch requires 2..128 participants",
         ));
     }
+    let mut proofs = BTreeMap::new();
     for p in &mut participants {
-        p.store.prepare_embedded(&mut p.mutation.upserts)?;
+        let declaration = p
+            .mutation
+            .options
+            .declared_epoch()
+            .map(crate::epoch::StoreEpoch::identity);
+        if let Some(proof) = p
+            .store
+            .prepare_embedded(&mut p.mutation.upserts, declaration, true)?
+        {
+            proofs.insert(p.mutation.name.clone(), proof);
+        }
     }
+    loop {
+        let result = execute_prepared(
+            &root,
+            &participants,
+            vfs,
+            step,
+            coordinator,
+            logical_delete,
+            &proofs,
+        );
+        if result.is_ok() || !proofs.values().any(|proof| proof.invalidated()) {
+            return result;
+        }
+        for p in &mut participants {
+            if proofs
+                .get(&p.mutation.name)
+                .is_some_and(|proof| proof.invalidated())
+            {
+                proofs.remove(&p.mutation.name);
+                p.store.restore_embedded_inputs(&mut p.mutation.upserts)?;
+                p.store
+                    .prepare_embedded(&mut p.mutation.upserts, None, false)?;
+            }
+        }
+    }
+}
+
+fn execute_prepared(
+    root: &Path,
+    participants: &[LiveNamespaceMutation<'_>],
+    vfs: &dyn Vfs,
+    step: &mut dyn FnMut(&str) -> std::io::Result<()>,
+    coordinator: Option<&StoreLock>,
+    logical_delete: bool,
+    proofs: &BTreeMap<String, super::embedded::ReuseProof>,
+) -> Result<Vec<u64>, StoreError> {
+    use crate::ingest::wal_payload::{self, TransactionBinding};
+    use std::sync::Arc;
     let _coordinator = match coordinator {
         Some(_) => None,
-        None => Some(StoreLock::acquire(&root).map_err(StoreError::Lock)?),
+        None => Some(StoreLock::acquire(root).map_err(StoreError::Lock)?),
     };
-    reclamation::run(vfs, &root, step)?;
+    reclamation::run(vfs, root, step)?;
     let deleting = participants
         .iter()
         .any(|p| !p.mutation.deletes.is_empty() || p.mutation.delete_where.is_some());
     if deleting && !logical_delete {
-        reclamation::require_retired_erased(vfs, &root)?;
+        reclamation::require_retired_erased(vfs, root)?;
     }
-    normalize_accepted(vfs, &root, step)?;
-    let (mut root_id, existing_descriptor) = root_record_vfs(vfs, &root)?;
+    normalize_accepted(vfs, root, step)?;
+    let (mut root_id, existing_descriptor) = root_record_vfs(vfs, root)?;
     if read_optional_vfs(vfs, &root.join(RECORD))?.is_none() {
-        root_id = Some(NamespaceRootId::generate().map_err(|e| io(&root, e))?);
+        root_id = Some(NamespaceRootId::generate().map_err(|e| io(root, e))?);
     }
     let existing_routes = match existing_descriptor {
         RootDescriptor::Legacy(routes) => routes,
-        RootDescriptor::Staged(_) => return Err(invalid(&root, "pending adoption")),
+        RootDescriptor::Staged(_) => return Err(invalid(root, "pending adoption")),
     };
     let order = participants
         .iter()
@@ -163,15 +210,15 @@ fn execute_live(
         .map(|(index, p)| (p.mutation.name.clone(), index))
         .collect::<BTreeMap<_, _>>();
     if order.len() != participants.len() {
-        return Err(invalid(&root, "duplicate participant"));
+        return Err(invalid(root, "duplicate participant"));
     }
     let mut identities = std::collections::BTreeSet::new();
     for (name, index) in &order {
         let p = participants
             .get(*index)
-            .ok_or_else(|| invalid(&root, "participant index"))?;
+            .ok_or_else(|| invalid(root, "participant index"))?;
         if !name_valid(name) || p.mutation.options.access_mode != AccessMode::ReadWrite {
-            return Err(invalid(&root, "invalid or read-only participant"));
+            return Err(invalid(root, "invalid or read-only participant"));
         }
         let logical = root.join(name);
         if std::fs::symlink_metadata(&logical)
@@ -197,7 +244,7 @@ fn execute_live(
         .map(|index| {
             participants
                 .get(*index)
-                .ok_or_else(|| invalid(&root, "participant index"))
+                .ok_or_else(|| invalid(root, "participant index"))
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut maintenance = Vec::new();
@@ -210,7 +257,7 @@ fn execute_live(
             p.store
                 .maintenance
                 .lock()
-                .map_err(|_| invalid(&root, "maintenance lock"))?,
+                .map_err(|_| invalid(root, "maintenance lock"))?,
         );
     }
     for p in &ordered {
@@ -218,7 +265,7 @@ fn execute_live(
             .store
             .state
             .lock()
-            .map_err(|_| invalid(&root, "state lock"))?;
+            .map_err(|_| invalid(root, "state lock"))?;
         match *state {
             super::StoreState::Open => {}
             super::StoreState::Closing => return Err(StoreError::Closing),
@@ -231,7 +278,7 @@ fn execute_live(
             .store
             .writer_lock
             .lock()
-            .map_err(|_| invalid(&root, "writer lock"))?;
+            .map_err(|_| invalid(root, "writer lock"))?;
         if owner.is_none() {
             return Err(StoreError::ReadOnly);
         }
@@ -242,7 +289,7 @@ fn execute_live(
             p.store
                 .wal_writer
                 .lock()
-                .map_err(|_| invalid(&root, "WAL lock"))?,
+                .map_err(|_| invalid(root, "WAL lock"))?,
         );
     }
     for p in &ordered {
@@ -250,7 +297,7 @@ fn execute_live(
             p.store
                 .active
                 .lock()
-                .map_err(|_| invalid(&root, "active lock"))?,
+                .map_err(|_| invalid(root, "active lock"))?,
         );
     }
     let mut source_snapshots = Vec::new();
@@ -280,7 +327,7 @@ fn execute_live(
             .store
             .snapshot
             .read()
-            .map_err(|_| invalid(&root, "snapshot lock"))?
+            .map_err(|_| invalid(root, "snapshot lock"))?
             .as_ref()
             .cloned()
             .ok_or(StoreError::Closed)?;
@@ -309,7 +356,17 @@ fn execute_live(
         )
         .map_err(StoreError::Tokenizer)?;
         if tokenizer.config() != p.store.tokenizer.config() {
-            return Err(invalid(&root, "participant tokenizer mismatch"));
+            return Err(invalid(root, "participant tokenizer mismatch"));
+        }
+        if !p.mutation.upserts.is_empty() {
+            p.store.validate_embedded_epoch(snapshot.epoch_alias())?;
+        }
+        if let Some(proof) = proofs.get(&p.mutation.name) {
+            proof.validate(
+                p.store,
+                active.as_ref().ok_or(StoreError::Closed)?.generation,
+                snapshot.epoch_alias(),
+            )?;
         }
         source_snapshots.push(snapshot);
     }
@@ -339,7 +396,7 @@ fn execute_live(
         | (u128::from(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|_| invalid(&root, "transaction clock"))?
+                .map_err(|_| invalid(root, "transaction clock"))?
                 .as_nanos() as u64,
         ) << 32)
         | u128::from(NEXT.fetch_add(1, Ordering::Relaxed));
@@ -366,7 +423,7 @@ fn execute_live(
             transaction,
             participant: match root_id {
                 Some(id) => portable::participant_id(id, &p.mutation.name)?,
-                None => participant_identity(&root, &p.mutation.name)?,
+                None => participant_identity(root, &p.mutation.name)?,
             },
             first_seq,
             last_seq: first_seq
@@ -397,7 +454,7 @@ fn execute_live(
                 generations
                     .get(&p.mutation.name)
                     .copied()
-                    .ok_or_else(|| invalid(&root, "missing generation"))
+                    .ok_or_else(|| invalid(root, "missing generation"))
             })
             .collect();
     }
@@ -407,15 +464,15 @@ fn execute_live(
             if read_optional_vfs(vfs, &root.join(RECORD))?.is_none() {
                 publish(
                     vfs,
-                    &root,
+                    root,
                     &encode_root_record(root_id, &RootDescriptor::Legacy(Routes::new()))?,
                     step,
                 )?;
-                step("bootstrap root published").map_err(|e| io(&root, e))?;
+                step("bootstrap root published").map_err(|e| io(root, e))?;
             } else {
                 // Visibility after an interrupted rename does not prove that
                 // the root entry is durable. References must never outlive it.
-                sync_dir(vfs, &root, step)?;
+                sync_dir(vfs, root, step)?;
             }
             for p in &ordered {
                 let logical = root.join(&p.mutation.name);
@@ -424,7 +481,7 @@ fn execute_live(
                     publish_reference(
                         vfs,
                         &logical,
-                        &encode_participant_reference(root_id, &root, &p.mutation.name, 1)?,
+                        &encode_participant_reference(root_id, root, &p.mutation.name, 1)?,
                         step,
                     )?;
                     step("participant reference installed").map_err(|e| io(&logical, e))?;
@@ -450,14 +507,14 @@ fn execute_live(
             )?;
             sync_dir(p.store.vfs.as_ref(), &p.store.directory, step)?;
             let count = u32::try_from(stage.records.len())
-                .map_err(|_| invalid(&root, "prepared member count"))?;
+                .map_err(|_| invalid(root, "prepared member count"))?;
             let frames = stage
                 .records
                 .iter()
                 .zip(0_u32..)
                 .map(|((op, payload), index)| {
                     wal_payload::encode_prepared(selection.binding, index, count, *op, payload)
-                        .map_err(|e| invalid(&root, &e.to_string()))
+                        .map_err(|e| invalid(root, &e.to_string()))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let refs = frames
@@ -474,7 +531,7 @@ fn execute_live(
                 .map_err(|e| io(&p.store.directory, e))?;
             step("prepared WAL sync").map_err(|e| io(&p.store.directory, e))?;
             let active = Arc::get_mut(&mut stage.active.segment)
-                .ok_or_else(|| invalid(&root, "private active ownership"))?;
+                .ok_or_else(|| invalid(root, "private active ownership"))?;
             for (row, seq) in stage.rows.iter().zip(selection.binding.first_seq..) {
                 for row in row {
                     active.set_sequence(*row, crate::wal::LogSeq::new(seq))?;
@@ -485,7 +542,7 @@ fn execute_live(
             if read_optional_vfs(vfs, &root.join(RECORD))?.is_none() {
                 publish(
                     vfs,
-                    &root,
+                    root,
                     &encode_root_record(root_id, &RootDescriptor::Legacy(Routes::new()))?,
                     step,
                 )?;
@@ -497,7 +554,7 @@ fn execute_live(
                     durable_write(
                         vfs,
                         &reference,
-                        &encode_participant_reference(root_id, &root, &p.mutation.name, 1)?,
+                        &encode_participant_reference(root_id, root, &p.mutation.name, 1)?,
                         step,
                     )?;
                     sync_dir(vfs, &logical, step)?;
@@ -516,7 +573,7 @@ fn execute_live(
             Ok(snapshot) => snapshots.push(snapshot),
             Err(_) => {
                 rollback_stages(&ordered, staged, &selections, &lengths, &mut wals)?;
-                return Err(invalid(&root, "snapshot lock"));
+                return Err(invalid(root, "snapshot lock"));
             }
         }
     }
@@ -535,9 +592,9 @@ fn execute_live(
             .collect::<Result<Vec<_>, StoreError>>()?;
         publication_attempted = true;
         vfs.rename(&temporary, &root.join(RECORD))
-            .map_err(|e| io(&root, e))?;
-        step("commit rename").map_err(|e| io(&root, e))?;
-        sync_dir(vfs, &root, step)?;
+            .map_err(|e| io(root, e))?;
+        step("commit rename").map_err(|e| io(root, e))?;
+        sync_dir(vfs, root, step)?;
         Ok(publications)
     })();
     let mut publications = match published {
@@ -563,7 +620,7 @@ fn execute_live(
             });
             **snapshot = Some(Arc::clone(&stage.snapshot));
         }
-        step("live states installed").map_err(|e| io(&root, e))?;
+        step("live states installed").map_err(|e| io(root, e))?;
         for ((p, stage), selection) in ordered.iter().zip(&staged).zip(&selections) {
             if let Some(selection) = selection {
                 accept(
@@ -577,7 +634,7 @@ fn execute_live(
         }
         publish(
             vfs,
-            &root,
+            root,
             &encode_root_record(root_id, &RootDescriptor::Legacy(descriptor.1.clone()))?,
             step,
         )
@@ -626,8 +683,8 @@ fn execute_live(
         completed.insert(p.mutation.name.clone(), generation);
     }
     if deleting && !logical_delete {
-        reclamation::run(vfs, &root, step)?;
-        reclamation::require_retired_erased(vfs, &root)?;
+        reclamation::run(vfs, root, step)?;
+        reclamation::require_retired_erased(vfs, root)?;
     }
     for publication in publications {
         publication.complete();
@@ -639,12 +696,12 @@ fn execute_live(
     drop(maintenance);
     drop(ordered);
     participants
-        .iter_mut()
+        .iter()
         .map(|p| {
             by_name
                 .get(&p.mutation.name)
                 .copied()
-                .ok_or_else(|| invalid(&root, "missing generation"))
+                .ok_or_else(|| invalid(root, "missing generation"))
         })
         .collect()
 }

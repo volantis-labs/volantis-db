@@ -2535,10 +2535,55 @@ fn run_i20_post_ack_retry(seed: u64, invocation_id: u64) -> Result<I20Evidence, 
     run_i20_post_ack_retry_from_fixture(i20_fixture(seed, false), invocation_id)
 }
 
+#[path = "../../crates/volantis-db/tests/test_support/namespace_model.rs"]
+mod namespace_model;
+
+// Pair the post-ack schedule with an invalidated pre-commit read. The first
+// attempt must infer again after deletion. Replaying its ack must do neither
+// inference nor publication.
+fn check_embedded_retry_then_replay(seed: u64) -> Result<(), Box<dyn std::error::Error>> {
+    let directory = tempdir()?;
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    let model = Arc::new(namespace_model::CountingModel {
+        pause: Some(barrier.clone()),
+        ..Default::default()
+    });
+    let store = Store::open_embedded(directory.path(), OpenOptions::new(), model.clone())?;
+    let id = DocId::new(u128::from(seed) + 1);
+    let doc = |id, rev, text: &str| {
+        IngestDocument::new(DocumentVersion::new(id, Revision::new(rev)), vec![]).with_text(text)
+    };
+    store.ingest(IngestBatch::new(vec![doc(id, 1, "target")]))?;
+    let batch = IngestBatch::new(vec![
+        doc(id, 2, "target"),
+        doc(DocId::new(0x10000000000000001), 1, "pause"),
+    ]);
+    let (deleted, committed) =
+        std::thread::scope(|scope| -> Result<_, Box<dyn std::error::Error>> {
+            let writer = scope.spawn(|| store.ingest(batch.clone()));
+            barrier.wait();
+            let deleted = store.delete(DeleteBatch::new(vec![id]));
+            barrier.wait();
+            Ok((
+                deleted?,
+                writer.join().map_err(|_| "embedded writer panicked")??,
+            ))
+        })?;
+    let replay = store.ingest(batch)?;
+    if committed.generation() != deleted.generation() + 1
+        || replay != committed
+        || model.documents.load(std::sync::atomic::Ordering::SeqCst) != 4
+    {
+        return Err("embedded pre-commit retry and post-ack replay diverged".into());
+    }
+    Ok(())
+}
+
 fn run_i20_post_ack_retry_from_fixture(
     fixture: I20FixtureV1,
     invocation_id: u64,
 ) -> Result<I20Evidence, String> {
+    check_embedded_retry_then_replay(fixture.seed).map_err(|error| error.to_string())?;
     let clean = run_i20_clean_from_fixture(fixture.clone())?;
     let directory = tempdir().map_err(|error| format!("create I20 fault directory: {error}"))?;
     let controller = IngestRetentionFaultController::new(invocation_id);

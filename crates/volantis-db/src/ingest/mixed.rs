@@ -53,6 +53,10 @@ impl Store {
             .as_ref()
             .cloned()
             .ok_or(StoreError::Closed)?;
+        self.validate_embedded_epoch(snapshot.epoch_alias())?;
+        if let Some(proof) = &batch.reuse {
+            proof.validate(self, current.generation, snapshot.epoch_alias())?;
+        }
         check_revision_conditions(
             &current.segment,
             &snapshot,

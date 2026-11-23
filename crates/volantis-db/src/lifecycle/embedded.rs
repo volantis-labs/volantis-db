@@ -135,6 +135,86 @@ pub(crate) fn verify_row(
     Ok(())
 }
 
+fn repack(
+    text: &str,
+    stored: &[u8],
+    caller: &[u8],
+    dims: usize,
+) -> Result<(Vec<f32>, Vec<u8>), StoreError> {
+    verify_row(Some(text), Some(stored), dims)?;
+    let (_, suffix) = unpack(stored)?;
+    let mut remaining = suffix;
+    let (_, bytes) = read_chunk(&mut remaining, text, dims)?;
+    let mut first = Vec::new();
+    first
+        .try_reserve_exact(dims)
+        .map_err(|_| invalid("embedded vector allocation failed"))?;
+    for word in bytes.chunks_exact(4) {
+        first.push(f32::from_le_bytes(
+            word.try_into().map_err(|_| invalid("short coordinate"))?,
+        ));
+    }
+    let mut packed = Vec::new();
+    let size = caller
+        .len()
+        .checked_add(suffix.len())
+        .and_then(|n| n.checked_add(ROW_TAG.len() + 4))
+        .ok_or_else(|| invalid("embedded row overflow"))?;
+    packed
+        .try_reserve_exact(size)
+        .map_err(|_| invalid("embedded row allocation failed"))?;
+    packed.extend_from_slice(ROW_TAG);
+    put_word(&mut packed, caller.len())?;
+    packed.extend_from_slice(caller);
+    packed.extend_from_slice(suffix);
+    Ok((first, packed))
+}
+
+// Private to one prepared write. The flag identifies only this admission's
+// pre-publication refusal even through native writer error conversions.
+#[derive(Clone, Debug)]
+pub(crate) struct ReuseProof {
+    owner: std::sync::Weak<stats::Accounting>,
+    generation: u64,
+    epoch: crate::epoch::EpochIdentity,
+    invalidated: Arc<std::sync::atomic::AtomicBool>,
+}
+impl PartialEq for ReuseProof {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.invalidated, &other.invalidated)
+    }
+}
+impl ReuseProof {
+    fn new(store: &Store, generation: u64, epoch: crate::epoch::EpochIdentity) -> Self {
+        Self {
+            generation,
+            epoch,
+            invalidated: Arc::default(),
+            owner: Arc::downgrade(&store.accounting),
+        }
+    }
+    pub(crate) fn invalidated(&self) -> bool {
+        self.invalidated.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    pub(crate) fn validate(
+        &self,
+        store: &Store,
+        generation: u64,
+        alias: Option<crate::epoch::EpochIdentity>,
+    ) -> Result<(), StoreError> {
+        super::validate_epoch_identity(alias, Some(self.epoch), true, AccessMode::ReadOnly)?;
+        if generation != self.generation || !self.owner.ptr_eq(&Arc::downgrade(&store.accounting)) {
+            self.invalidated
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            return Err(StoreError::ScanStale {
+                cursor_generation: self.generation,
+                current_generation: generation,
+            });
+        }
+        Ok(())
+    }
+}
+
 fn check_vector(vector: &[f32], dims: usize) -> Result<(), StoreError> {
     if dims == 0 || vector.len() != dims || vector.iter().any(|v| !v.is_finite()) {
         return Err(invalid("invalid embedding dimensions or coordinates"));
@@ -217,23 +297,133 @@ impl Store {
             .ok_or(StoreError::MissingEmbedder)
     }
 
+    pub(crate) fn validate_embedded_epoch(
+        &self,
+        alias: Option<crate::epoch::EpochIdentity>,
+    ) -> Result<(), StoreError> {
+        if self.is_embedded() {
+            super::validate_epoch_identity(
+                alias,
+                self.epoch.as_ref().map(StoreEpoch::identity),
+                true,
+                AccessMode::ReadOnly,
+            )?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn prepare_embedded(
         &self,
         documents: &mut [IngestDocument],
-    ) -> Result<(), StoreError> {
+        declaration: Option<crate::epoch::EpochIdentity>,
+        allow_reuse: bool,
+    ) -> Result<Option<ReuseProof>, StoreError> {
         if !self.is_embedded() || documents.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
         let model = self.embedder.as_ref().ok_or(StoreError::MissingEmbedder)?;
-        for doc in documents {
+        let epoch = self
+            .epoch
+            .as_ref()
+            .ok_or(StoreError::MissingEmbedder)?
+            .identity();
+        for doc in documents.iter() {
             if !doc.vector().is_empty() {
                 return Err(invalid(
                     "embedded upsert requires text without a caller vector",
                 ));
             }
+            if doc.text().is_none() {
+                return Err(invalid("embedded upsert requires text"));
+            }
+        }
+        enum Source {
+            Encode,
+            Stored,
+            Earlier(usize),
+        }
+        let mut sources = Vec::new();
+        let mut generation = None;
+        if allow_reuse && declaration.is_none_or(|value| value == epoch) {
+            let admitted = self.admit_document_read()?;
+            if admitted.snapshot.epoch_alias() == Some(epoch) {
+                sources
+                    .try_reserve_exact(documents.len())
+                    .map_err(|_| invalid("embedded batch allocation failed"))?;
+                let mut latest = std::collections::HashMap::new();
+                latest
+                    .try_reserve(documents.len())
+                    .map_err(|_| invalid("embedded revision allocation failed"))?;
+                let fields =
+                    DocumentFields::TEXT | DocumentFields::METADATA | DocumentFields::CHUNKS;
+                for slice in documents.chunks_mut(64) {
+                    let mut ids = Vec::new();
+                    ids.try_reserve_exact(slice.len())
+                        .map_err(|_| invalid("embedded ID allocation failed"))?;
+                    ids.extend(slice.iter().map(|doc| doc.version().doc_id()));
+                    for (doc, row) in slice
+                        .iter_mut()
+                        .zip(Self::read_document_ids(&admitted, &ids, fields)?)
+                    {
+                        let version = doc.version();
+                        let prior = latest.get(&version.doc_id()).copied();
+                        let revision = prior
+                            .map(|(revision, _)| revision)
+                            .or_else(|| row.as_ref().map(|r| r.revision));
+                        let source = if let Some((_, index)) = prior {
+                            Source::Earlier(index)
+                        } else if let Some(row) = row
+                            && row.text.as_deref() == doc.text()
+                        {
+                            let (vector, metadata) = repack(
+                                doc.text()
+                                    .ok_or_else(|| invalid("missing embedded source"))?,
+                                row.metadata.as_deref().unwrap_or_default(),
+                                doc.metadata(),
+                                self.embedded_dims()?,
+                            )?;
+                            doc.set_embedded(vector, metadata);
+                            Source::Stored
+                        } else {
+                            Source::Encode
+                        };
+                        if revision.is_none_or(|r| version.revision() > r) {
+                            latest.insert(version.doc_id(), (version.revision(), sources.len()));
+                        }
+                        sources.push(source);
+                    }
+                }
+                generation = Some(admitted.generation);
+            }
+        }
+        let mut reused = false;
+        for index in 0..documents.len() {
+            let (prior, remaining) = documents.split_at_mut(index);
+            let doc = remaining.first_mut().ok_or(StoreError::ActiveRowOverflow)?;
             let text = doc
                 .text()
-                .ok_or_else(|| invalid("embedded upsert requires text"))?;
+                .ok_or_else(|| invalid("missing embedded source"))?;
+            match sources.get(index) {
+                Some(Source::Stored) => {
+                    reused = true;
+                    continue;
+                }
+                Some(Source::Earlier(index)) => {
+                    let previous = prior.get(*index).ok_or(StoreError::ActiveRowOverflow)?;
+                    if previous.text() == Some(text) {
+                        let (vector, packed) = repack(
+                            text,
+                            previous.metadata(),
+                            doc.metadata(),
+                            self.embedded_dims()?,
+                        )?;
+                        doc.set_embedded(vector, packed);
+                        reused = true;
+                        continue;
+                    }
+                }
+                _ => {}
+            }
             let chunks = model.document(text).map_err(StoreError::Embedding)?;
             let first = chunks
                 .first()
@@ -253,6 +443,23 @@ impl Store {
                 }
             }
             doc.set_embedded(first.vector.clone(), metadata);
+        }
+        Ok(generation
+            .filter(|_| reused)
+            .map(|g| ReuseProof::new(self, g, epoch)))
+    }
+    pub(crate) fn restore_embedded_inputs(
+        &self,
+        docs: &mut [IngestDocument],
+    ) -> Result<(), StoreError> {
+        for doc in docs {
+            let (caller, _) = unpack(doc.metadata())?;
+            let mut metadata = Vec::new();
+            metadata
+                .try_reserve_exact(caller.len())
+                .map_err(|_| invalid("caller metadata allocation failed"))?;
+            metadata.extend_from_slice(caller);
+            doc.set_embedded(Vec::new(), metadata);
         }
         Ok(())
     }
@@ -452,4 +659,27 @@ impl PublishedSnapshot {
         }
         Ok(())
     }
+}
+
+#[cfg(test)]
+#[test]
+#[allow(clippy::expect_used)]
+fn same_text_reuse_rejects_corrupt_chunks() {
+    let header = b"ZECHUNK1\x02\0\0\0\0\xff";
+    let suffix = [0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 128, 63, 0, 0, 0, 0];
+    let pack = |suffix: &[u8]| repack("é", &[header.as_slice(), suffix].concat(), &[7, 0, 9], 2);
+    let (first, packed) = pack(&suffix).expect("old format");
+    assert_eq!(first, vec![1., 0.]);
+    assert_eq!(
+        packed,
+        [b"ZECHUNK1\x03\0\0\0\x07\0\x09".as_slice(), &suffix].concat()
+    );
+    assert!(pack(&[]).is_err());
+    assert!(pack(&suffix[..15]).is_err());
+    let mut malformed = suffix;
+    malformed[4] = 1;
+    assert!(pack(&malformed).is_err());
+    malformed = suffix;
+    malformed[8..12].copy_from_slice(&f32::INFINITY.to_le_bytes());
+    assert!(pack(&malformed).is_err());
 }

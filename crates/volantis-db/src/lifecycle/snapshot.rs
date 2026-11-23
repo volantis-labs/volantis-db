@@ -400,7 +400,7 @@ pub struct PublishedSnapshot {
     pub(crate) graph_enabled: bool,
     #[cfg(feature = "graph-cypher")]
     pub(crate) graph_manifest: Option<Arc<SnapshotGraphManifest>>,
-    epoch_alias: Option<crate::epoch::EpochIdentity>,
+    pub(super) epoch_alias: Option<crate::epoch::EpochIdentity>,
     pub(super) embedded_epoch: Option<crate::epoch::StoreEpoch>,
     graph_profile:
         Result<crate::graph::search::EpochGraphProfile, crate::graph::search::GraphProfileError>,

@@ -3434,10 +3434,16 @@ impl Store {
                 )
                 .map_err(StoreError::Manifest)?;
             // The initial snapshot was loaded before the manifest existed.
+            snapshot.epoch_alias = declared_epoch;
             snapshot.embedded_epoch = options
                 .epoch
                 .as_ref()
-                .filter(|epoch| epoch.embedding.alignment_digest.starts_with(embedded::EPOCH_TAG))
+                .filter(|epoch| {
+                    epoch
+                        .embedding
+                        .alignment_digest
+                        .starts_with(embedded::EPOCH_TAG)
+                })
                 .cloned();
             open_publication = Some(publication);
         }
@@ -4490,12 +4496,20 @@ impl Store {
         ids: &[crate::ingest::DocId],
         fields: DocumentFields,
     ) -> Result<(u64, Vec<Option<StoredDocument>>), StoreError> {
-        let AdmittedDocumentRead {
-            generation,
-            active,
-            snapshot,
-            active_query,
-        } = self.admit_document_read()?;
+        let admitted = self.admit_document_read()?;
+        Ok((
+            admitted.generation,
+            Self::read_document_ids(&admitted, ids, fields)?,
+        ))
+    }
+
+    fn read_document_ids(
+        admitted: &AdmittedDocumentRead<'_>,
+        ids: &[crate::ingest::DocId],
+        fields: DocumentFields,
+    ) -> Result<Vec<Option<StoredDocument>>, StoreError> {
+        let active = &admitted.active;
+        let snapshot = &admitted.snapshot;
         let mut documents = Vec::new();
         documents
             .try_reserve_exact(ids.len())
@@ -4507,7 +4521,7 @@ impl Store {
             let mut document = active
                 .existing(*id)
                 .filter(|(row, _, _)| !active.is_tombstoned(*row))
-                .map(|(row, _, _)| materialize_active_document(&active, row, fields))
+                .map(|(row, _, _)| materialize_active_document(active, row, fields))
                 .transpose()?;
             for segment in snapshot.segments() {
                 for row in segment.query_rows_for_doc_id(*id)? {
@@ -4522,8 +4536,7 @@ impl Store {
             }
             documents.push(document);
         }
-        drop(active_query);
-        Ok((generation, documents))
+        Ok(documents)
     }
 
     /// Enumerates one deterministic, bounded page of live documents.

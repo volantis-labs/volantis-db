@@ -298,6 +298,7 @@ pub(crate) fn column_inputs(columns: &[(ColumnId, PredicateValue)]) -> Vec<Colum
 /// One atomic caller batch of document upserts.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct IngestBatch {
+    pub(crate) reuse: Option<crate::lifecycle::embedded::ReuseProof>,
     documents: Vec<IngestDocument>,
     epoch: Option<crate::epoch::EpochIdentity>,
 }
@@ -335,9 +336,15 @@ impl DeleteBatch {
 }
 
 impl IngestBatch {
-    pub(crate) fn embed_documents(&mut self, store: &Store) -> Result<(), StoreError> {
-        store.prepare_embedded(&mut self.documents)?;
-        self.epoch = self.epoch.or(store.epoch_identity());
+    pub(crate) fn embed_documents(
+        &mut self,
+        store: &Store,
+        allow_reuse: bool,
+    ) -> Result<(), StoreError> {
+        self.reuse = store.prepare_embedded(&mut self.documents, self.epoch, allow_reuse)?;
+        self.epoch = self
+            .epoch
+            .or_else(|| store.epoch.as_ref().map(crate::epoch::StoreEpoch::identity));
         Ok(())
     }
 
@@ -346,6 +353,7 @@ impl IngestBatch {
     pub const fn new(documents: Vec<IngestDocument>) -> Self {
         Self {
             documents,
+            reuse: None,
             epoch: None,
         }
     }
@@ -1266,18 +1274,28 @@ impl Store {
     /// Commits one active-segment upsert and returns its WAL/generation coordinates.
     pub fn ingest(&self, mut batch: IngestBatch) -> Result<IngestAck, IngestError> {
         if self.is_embedded() {
-            batch.embed_documents(self)?;
+            batch.embed_documents(self, true)?;
         }
+        let result = self.ingest_prepared(&batch);
+        if result.is_err() && batch.reuse.as_ref().is_some_and(|p| p.invalidated()) {
+            self.restore_embedded_inputs(&mut batch.documents)?;
+            batch.embed_documents(self, false)?;
+            return self.ingest_prepared(&batch);
+        }
+        result
+    }
+
+    fn ingest_prepared(&self, batch: &IngestBatch) -> Result<IngestAck, IngestError> {
         #[cfg(feature = "graph-cypher")]
         {
             self.with_native_document_recovery(
-                || self.ingest_attempt(&batch),
+                || self.ingest_attempt(batch),
                 IngestError::is_native_reclaim_debt,
                 |error| error,
             )
         }
         #[cfg(not(feature = "graph-cypher"))]
-        self.ingest_attempt(&batch)
+        self.ingest_attempt(batch)
     }
 
     fn ingest_attempt(&self, batch: &IngestBatch) -> Result<IngestAck, IngestError> {
@@ -1389,6 +1407,10 @@ impl Store {
             .as_ref()
             .cloned()
             .ok_or(StoreError::Closed)?;
+        self.validate_embedded_epoch(snapshot.epoch_alias())?;
+        if let Some(proof) = &batch.reuse {
+            proof.validate(self, current_generation, snapshot.epoch_alias())?;
+        }
         check_revision_conditions(
             current_segment.as_ref(),
             &snapshot,

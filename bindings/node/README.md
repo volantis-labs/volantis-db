@@ -834,7 +834,10 @@ Each source revision occupies one Store row. The namespace epoch carries the
 pinned model declaration. The row metadata envelope stores the caller metadata
 followed by chunk byte ranges and little-endian float vectors. Normal Store
 reads expose the caller metadata. Replacing or deleting the row retires all of
-its chunks. Store verification covers the persisted row bytes.
+its chunks. A higher revision of a live ID with byte-identical UTF-8 source and
+the same embedding and tokenizer epoch reuses every stored chunk vector and
+source span. The new revision supplies the timestamp, attributes and caller
+metadata. A new ID or changed source runs the document encoder. Store verification covers the persisted row bytes.
 
 C callers pass a size-versioned `ZeEmbeddedNamespaceSpec` through its
 `ZeNamespaceSpec` prefix with `has_vector_space = 2`. Pass a

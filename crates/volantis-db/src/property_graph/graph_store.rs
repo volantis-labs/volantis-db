@@ -219,11 +219,10 @@ impl Store {
         control: &QueryControl,
     ) -> Result<GraphWriteResult, GraphStoreError> {
         let batch = batch.into();
-        let BoundGraphBatch { writes, documents } = batch.bind(self)?;
-        let prepared = match documents.as_deref() {
-            Some(documents) => self.apply_native_mixed(documents, &writes, control)?,
-            None => self.apply_native_graph(&writes, control)?,
-        };
+        let prepared = batch.apply_prepared(self, |writes, documents| match documents {
+            Some(documents) => self.apply_native_mixed(documents, writes, control),
+            None => self.apply_native_graph(writes, control),
+        })?;
         // A published generation is the commit tail's own proof, so it alone
         // decides `Committed`. Without one, a `Changed` batch never reached
         // durability, which breaks the writer's contract: nothing committed.
@@ -287,13 +286,9 @@ impl Store {
         control: &QueryControl,
         materializer: &mut M,
     ) -> Result<(GraphWriteOutcome, GraphGeneration, M::Registration), GraphStoreError> {
-        let BoundGraphBatch { writes, documents } = batch.into().bind(self)?;
-        let prepared = self.apply_native_mixed_with_materializer(
-            documents.as_deref(),
-            &writes,
-            control,
-            materializer,
-        )?;
+        let prepared = batch.into().apply_prepared(self, |writes, documents| {
+            self.apply_native_mixed_with_materializer(documents, writes, control, materializer)
+        })?;
         let outcome = match (prepared.changed_generation(), prepared.disposition()) {
             (Some(generation), _) => GraphWriteOutcome::Committed { generation },
             (None, BatchDisposition::Replayed) => GraphWriteOutcome::Replayed,
@@ -492,7 +487,35 @@ impl<'a, 'b, 'c> GraphBatch<'a, 'b, 'c> {
         }
     }
 
-    fn bind(&self, store: &Store) -> Result<BoundGraphBatch<'a, 'b, 'c>, GraphStoreError> {
+    fn apply_prepared<T>(
+        &self,
+        store: &Store,
+        mut apply: impl FnMut(
+            &[StructuredWrite<'b, 'c>],
+            Option<&crate::ingest::IngestBatch>,
+        ) -> Result<T, NativeGraphError>,
+    ) -> Result<T, GraphStoreError> {
+        let mut bound = self.bind(store, true)?;
+        let result = apply(&bound.writes, bound.documents.as_deref());
+        if result.is_err()
+            && bound
+                .documents
+                .as_deref()
+                .and_then(|b| b.reuse.as_ref())
+                .is_some_and(|p| p.invalidated())
+        {
+            drop(bound);
+            bound = self.bind(store, false)?;
+            return Ok(apply(&bound.writes, bound.documents.as_deref())?);
+        }
+        Ok(result?)
+    }
+
+    fn bind(
+        &self,
+        store: &Store,
+        allow_reuse: bool,
+    ) -> Result<BoundGraphBatch<'a, 'b, 'c>, GraphStoreError> {
         if self.writes.len() > crate::property_graph::MAX_GRAPH_CHANGES {
             return Err(GraphStoreError::limit("graph batch exceeds 16,384 items"));
         }
@@ -505,7 +528,7 @@ impl<'a, 'b, 'c> GraphBatch<'a, 'b, 'c> {
             {
                 batch
                     .to_mut()
-                    .embed_documents(store)
+                    .embed_documents(store, allow_reuse)
                     .map_err(|error| GraphStoreError::graph(NativeGraphError::Store(error)))?;
             }
             return Ok(BoundGraphBatch { writes, documents });
@@ -554,8 +577,8 @@ impl<'a, 'b, 'c> GraphBatch<'a, 'b, 'c> {
             };
             documents.push(linked.document.clone());
         }
-        store
-            .prepare_embedded(&mut documents)
+        let reuse = store
+            .prepare_embedded(&mut documents, None, allow_reuse)
             .map_err(|error| GraphStoreError::graph(NativeGraphError::Store(error)))?;
         let mut input_bytes = 0_u64;
         // Minimum Begin/Commit envelope (512 bytes) and its mixed wrapper.
@@ -656,7 +679,13 @@ impl<'a, 'b, 'c> GraphBatch<'a, 'b, 'c> {
         drop(wal_slot);
         admit_preparation(store, &writes)?;
         let mut batch = crate::ingest::IngestBatch::new(documents);
-        if let Some(epoch) = store.epoch_identity() {
+        batch.reuse = reuse;
+        let epoch = if store.is_embedded() {
+            store.epoch.as_ref().map(crate::epoch::StoreEpoch::identity)
+        } else {
+            store.epoch_identity()
+        };
+        if let Some(epoch) = epoch {
             batch = batch.with_epoch(epoch);
         }
         Ok(BoundGraphBatch {
