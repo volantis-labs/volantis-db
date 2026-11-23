@@ -38,7 +38,7 @@ env:
 jobs:
   text:
     name: Text build, lint, tests and Swift TextStoreTests (arm64)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -129,7 +129,7 @@ jobs:
 
   real-model:
     name: Pinned HF model verification and tokenizer parity (arm64, no MLX)
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       ZE_MODEL_CACHE: ${{ github.workspace }}/.model-cache
     steps:

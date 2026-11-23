@@ -494,7 +494,7 @@ results after close and reopen. Ordinary repeated `require` also works.
 The macOS arm64 addon (including MLX text) targets macOS 13.0, the Metal 3.0
 floor for MLX's shaders; the Intel addon targets macOS 11.0. The Electron
 44.4.1 app bundle also declares macOS 13.0 as its minimum, so on arm64 the
-addon requires macOS 13.0 or later. CI executes on macos-14,
+addon requires macOS 13.0 or later. CI executes on macos-15,
 not every older OS. The addon performs no runtime network requests
 except `TextStore.openModel`, which downloads a pinned model unless `offline`
 is set; installation and CI may download packages and Electron.

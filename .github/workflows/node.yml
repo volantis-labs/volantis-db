@@ -54,7 +54,7 @@ env:
 jobs:
   package:
     name: macOS package
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -326,7 +326,7 @@ jobs:
   electron-package:
     name: Signed Electron lifecycle (${{ matrix.arch }})
     needs: package
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 35
     strategy:
       fail-fast: false
@@ -360,7 +360,7 @@ jobs:
   electron-isolation:
     name: Electron and Node isolation (${{ matrix.arch }})
     needs: package
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 35
     strategy:
       fail-fast: false
@@ -396,7 +396,7 @@ jobs:
   assemble:
     name: Assemble the release tarball
     needs: [package, windows-package]
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -437,7 +437,7 @@ jobs:
     name: Publish npm package
     if: github.event_name == 'workflow_dispatch'
     needs: [assemble, electron-package, electron-isolation]
-    runs-on: macos-14
+    runs-on: macos-15
     environment: npm
     permissions:
       contents: read

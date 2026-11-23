@@ -106,7 +106,7 @@ Licensed under [GPL-3.0-only](https://www.gnu.org/licenses/gpl-3.0.html).
 ## CI and the local text release gate
 
 `.github/workflows/text-ci.yml` builds and lints text and FFI with `text`
-enabled on hosted `macos-14`, runs every non-ignored test in both crates,
+enabled on hosted `macos-15`, runs every non-ignored test in both crates,
 and builds the full graph+text XCFramework to run all Swift `TextStoreTests`.
 Rust releases require these checks before publishing either crate.
 The `text-x64-macos` job builds both crates without MLX and runs every

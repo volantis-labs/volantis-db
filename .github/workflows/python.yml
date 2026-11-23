@@ -12,8 +12,8 @@ env:
 
 jobs:
   quality:
-    name: Python quality (macos-14)
-    runs-on: macos-14
+    name: Python quality (macos-15)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,7 +42,7 @@ jobs:
 
   wheels:
     name: Wheel (macOS arm64)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

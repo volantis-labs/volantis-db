@@ -12,8 +12,8 @@ env:
 
 jobs:
   fmt:
-    name: fmt (macos-14)
-    runs-on: macos-14
+    name: fmt (macos-15)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -23,8 +23,8 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
-    name: clippy (macos-14)
-    runs-on: macos-14
+    name: clippy (macos-15)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -43,8 +43,8 @@ jobs:
         run: cargo clippy -p volantis-db -- -D warnings
 
   doc:
-    name: doc (macos-14)
-    runs-on: macos-14
+    name: doc (macos-15)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -57,8 +57,8 @@ jobs:
           --features volantis-db-workspace-tests/graph-result-test-support
 
   test:
-    name: test (macos-14)
-    runs-on: macos-14
+    name: test (macos-15)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -100,8 +100,8 @@ jobs:
         run: PROPTEST_CASES=1024 cargo test -p volantis-db kernels
 
   format-compat:
-    name: format-compat (macos-14)
-    runs-on: macos-14
+    name: format-compat (macos-15)
+    runs-on: macos-15
     env:
       CARGO_BUILD_JOBS: "3"
       ZE_FORMAT_COMPAT: "1"
@@ -121,8 +121,8 @@ jobs:
       - run: cargo test -p volantis-db --features graph-cypher --test namespace_relocate -- --ignored conversion_accepts_the_routed_layout_written_by_0_6_0
 
   swift-test:
-    name: swift-test (macos-14)
-    runs-on: macos-14
+    name: swift-test (macos-15)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -135,8 +135,8 @@ jobs:
       - run: ZE_USE_LOCAL_FFI=1 ZE_ENABLE_GRAPH=1 swift test --jobs 4 -Xswiftc -DZE72_TEST_BRIDGE -Xswiftc -DZE_SWIFT_QUERY_TEST_SUPPORT
 
   deny:
-    name: deny (macos-14)
-    runs-on: macos-14
+    name: deny (macos-15)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -153,8 +153,8 @@ jobs:
           -- --ignored --exact
 
   size-budget:
-    name: size-budget (macos-14)
-    runs-on: macos-14
+    name: size-budget (macos-15)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -174,8 +174,8 @@ jobs:
           python3 scripts/release/check-graph-artifact.py --legacy target/ze107/legacy/release/libvolantis_db_ffi.a --graph target/ze107/graph-cypher/release/libvolantis_db_ffi.a --graph-only --output target/ze107/evidence
 
   platform-truth-smoke:
-    name: platform-truth-smoke (macos-14)
-    runs-on: macos-14
+    name: platform-truth-smoke (macos-15)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -185,8 +185,8 @@ jobs:
       - run: cargo run -p volantis-db-bench --bin platform-truth -- --smoke
 
   ffi-sanitizers:
-    name: ffi-${{ matrix.sanitizer }} (macos-14)
-    runs-on: macos-14
+    name: ffi-${{ matrix.sanitizer }} (macos-15)
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
@@ -231,8 +231,8 @@ jobs:
           -p volantis-db-ffi --test ffi_soak -- --ignored
 
   ffi-soak:
-    name: ffi-soak (macos-14, 10k rounds)
-    runs-on: macos-14
+    name: ffi-soak (macos-15, 10k rounds)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -242,8 +242,8 @@ jobs:
       - run: cargo test -p volantis-db-ffi --test ffi_soak -- --ignored --nocapture
 
   kernel-perf-floor:
-    name: kernel-perf-floor (macos-14)
-    runs-on: macos-14
+    name: kernel-perf-floor (macos-15)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
