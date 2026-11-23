@@ -35,6 +35,10 @@ First release of Volantis DB.
   embedded by the engine, with 128-bit ids, revisions, typed attributes,
   filters on every query leg, cascade deletes, atomic batches, backup and
   Cypher `ze.vector_search` / `ze.hybrid_search` with query text.
+- Embedded namespaces store an upsert with omitted or empty text as a row
+  with zero chunks and no vector, with no model call. It is readable and
+  filterable, never a dense or neighbour hit, and never pending. A space is
+  real text.
 - Language APIs over one native engine: Rust crates, a versioned C ABI
   (`volantis_db.h`), Python (`volantis-db`), Node.js and TypeScript
   (`volantis-db`), and Swift (`VolantisDB` package).

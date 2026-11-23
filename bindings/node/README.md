@@ -874,6 +874,16 @@ the same embedding and tokenizer epoch reuses every stored chunk vector and
 source span. The new revision supplies the timestamp, attributes and caller
 metadata. A new ID or changed source runs the document encoder. Store verification covers the persisted row bytes.
 
+An upsert with omitted `text` or `text: ''` stores an empty row: it keeps the
+ID, revision, timestamp, attributes and caller metadata, and has zero chunks
+and no vector. It makes no model call on any `embeddingSchedule` and never
+counts as pending. Get, scan, count and filters return it; dense, lexical and
+hybrid chunk search, `search`, and Cypher `ze.vector_search` /
+`ze.hybrid_search` never return it. A single space is real text and is
+embedded. A higher revision with real text embeds the row (`'immediate'`) or
+makes it pending (`'background'`, `'paused'`). A higher revision with empty
+text retires all earlier chunks and the vector in the same generation.
+
 C callers pass a size-versioned `ZeEmbeddedNamespaceSpec` through its
 `ZeNamespaceSpec` prefix with `has_vector_space = 2`. Pass a
 `ZeEmbeddedQueryRequest` to `ze_query_embedded` with space for `k` chunk ranks.
@@ -940,6 +950,9 @@ distance. Zero is an exact match. For a whole source document, a candidate
 gets its highest score across all source chunks and appears once. Equal scores
 sort by ascending candidate ID and chunk number. Source-document chunks are
 excluded by default. Set `includeSource: true` to include them.
+
+An empty row is never a candidate. As a source, its ID or `{id, chunk: 0}`
+throws `ZE_ERR_NOT_FOUND`, the same as a missing ID or chunk.
 
 `filter`, `timestampRange` and `eligibleIds` constrain candidates before
 ranking. Supply `k` (1–4096) for a maximum per source. With only a threshold,
