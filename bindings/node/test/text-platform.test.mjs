@@ -16,7 +16,7 @@ for (const platform of ['darwin', 'win32']) {
     vm.runInContext(source, context);
     const {TextStore, VolantisError} = exports.exports;
     const unavailable = error => error instanceof VolantisError && error.code === 'ZE_ERR_UNSUPPORTED' &&
-      error.errorCode === 11 && error.message === 'text API is available on macOS arm64 only';
+      error.errorCode === 11 && error.message === 'text API is available on macOS only';
     assert.throws(() => TextStore.open('unused', 'unused'), unavailable);
     await assert.rejects(TextStore.openAsync('unused', 'unused'), unavailable);
     await assert.rejects(TextStore.openModel({}), unavailable);

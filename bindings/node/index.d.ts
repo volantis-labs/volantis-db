@@ -1410,7 +1410,11 @@ export interface StoreRelationshipOptions {
 
 export type GraphPlanQueryOptions = GraphControlOptions & { readonly parameters?: Readonly<Record<string, GraphParameter>> };
 
-/** Text embeddings and retrieval. Requires the darwin-arm64 prebuild. */
+/**
+ * Text embeddings and retrieval. Requires a macOS prebuild: darwin-arm64 runs
+ * MLX, darwin-x64 runs both towers on the CPU in fp32 from the same FP16
+ * bundle. Windows is not yet supported.
+ */
 export interface TextModelRef {
   readonly repo: string;
   /** Pinned 40-hex commit. */

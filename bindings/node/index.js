@@ -892,8 +892,9 @@ function requireGraph() {
 
 // Text handles use the same generation registry and native worker pool as Store.
 function requireText() {
-  if (process.platform !== 'darwin' || process.arch !== 'arm64' || binding.textSupported !== true) {
-    throw new VolantisError('text API is available on macOS arm64 only', 'ZE_ERR_UNSUPPORTED', 11);
+  // MLX runs text on arm64; the fp32 CPU runtime runs it on x64 (WF-991).
+  if (process.platform !== 'darwin' || binding.textSupported !== true) {
+    throw new VolantisError('text API is available on macOS only', 'ZE_ERR_UNSUPPORTED', 11);
   }
 }
 

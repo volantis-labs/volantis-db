@@ -204,7 +204,7 @@ start), ZE-517 (cached resolution), and ZE-528 (ingest memory).
 
 See complete default-model examples for [Rust](crates/volantis-db-text/README.md),
 [Python](bindings/python/README.md#text-api-macos-arm64),
-[Node](bindings/node/README.md#textstore-macos-arm64), and
+[Node](bindings/node/README.md#textstore-macos), and
 [Swift](bindings/swift/README.md#textstore).
 
 ### C text example

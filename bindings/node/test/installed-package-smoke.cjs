@@ -129,9 +129,15 @@ try {
       text.delete([1n]);
       for (const legs of ['lexical', 'hybrid']) assert.deepEqual(text.query({text: 'bronze', legs}).hits, []);
     } finally { text.close(); }
+  } else if (process.platform === 'darwin') {
+    // WF-991: the x64 prebuild runs text on the fp32 CPU runtime, which runs
+    // BERT towers only. The GTE fixture reaches that runtime and is refused
+    // with a typed model error, not with the text-free platform error.
+    assert.throws(() => TextStore.open(join(textRoot, 'store'), join(__dirname, 'gte.zem')), error =>
+      error.name === 'VolantisError' && error.code === 'ZE_ERR_MODEL' && /Gte architecture/.test(error.message));
   } else {
     assert.throws(() => TextStore.open('unused', 'unused'), error =>
-      error.name === 'VolantisError' && error.code === 'ZE_ERR_UNSUPPORTED' && /macOS arm64 only/.test(error.message));
+      error.name === 'VolantisError' && error.code === 'ZE_ERR_UNSUPPORTED' && /macOS only/.test(error.message));
   }
 } finally { rmSync(textRoot, {recursive: true, force: true}); }
 console.log(`installed text API: ${process.platform}-${process.arch} ok`);

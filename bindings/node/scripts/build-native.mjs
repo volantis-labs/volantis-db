@@ -83,7 +83,8 @@ if (isDarwin) {
     // from the bare `target/release` directory.
     const built = spawnSync('cargo',
       ['build', '--locked', '--release', '--target', slice.rustTarget, '-p', 'volantis-db-ffi',
-        '--features', slice.clangArch === 'arm64' ? 'graph-cypher,text' : 'graph-cypher',
+        // Both slices carry text: MLX on arm64, the fp32 CPU runtime on x64 (WF-991).
+        '--features', 'graph-cypher,text',
         '--message-format=json-render-diagnostics'],
       {cwd: repository, env: environment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 64 * 1024 * 1024});
     if (built.error) throw built.error;
@@ -113,7 +114,7 @@ if (isDarwin) {
         slice.clangArch,
         '-DNAPI_VERSION=8',
         '-DZE_GRAPH',
-        ...(slice.clangArch === 'arm64' ? ['-DZE_TEXT'] : []),
+        '-DZE_TEXT',
         '-I',
         nodeHeaders,
         '-I',
@@ -124,7 +125,10 @@ if (isDarwin) {
         source,
         archive,
         '-liconv',
-        ...(slice.clangArch === 'arm64' ? ['-lobjc', '-framework', 'Foundation', '-framework', 'CoreML', '-framework', 'Metal', '-framework', 'Accelerate'] : []),
+        // x64 links only the model resolver (ze_model.m, Foundation): no MLX,
+        // Metal, Core ML or Accelerate.
+        '-lobjc', '-framework', 'Foundation',
+        ...(slice.clangArch === 'arm64' ? ['-framework', 'CoreML', '-framework', 'Metal', '-framework', 'Accelerate'] : []),
         '-fvisibility=hidden',
         `-Wl,-exported_symbols_list,${exportsFile}`,
         '-Wl,-dead_strip',

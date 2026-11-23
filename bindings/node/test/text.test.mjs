@@ -278,8 +278,9 @@ test('openModel downloads pinned local fixture with progress and opens offline c
   }
 });
 
-test('text-free prebuild reports a typed platform error', {skip: supported}, async () => {
-  const unavailable = error => error.name === 'VolantisError' && error.code === 'ZE_ERR_UNSUPPORTED' && /text API is available on macOS arm64 only/.test(error.message);
+// Both macOS prebuilds carry text since WF-991; only other platforms are text-free.
+test('text-free prebuild reports a typed platform error', {skip: process.platform === 'darwin'}, async () => {
+  const unavailable = error => error.name === 'VolantisError' && error.code === 'ZE_ERR_UNSUPPORTED' && /text API is available on macOS only/.test(error.message);
   assert.throws(() => TextStore.open('unused', 'unused'), unavailable);
   await assert.rejects(TextStore.openAsync('unused', 'unused'), unavailable);
   await assert.rejects(TextStore.openModel({}), unavailable);

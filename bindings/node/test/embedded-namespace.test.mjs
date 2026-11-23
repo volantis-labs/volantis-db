@@ -329,3 +329,63 @@ test('WF-988 empty embedded rows', {skip: !nativeMetal}, async () => {
     rmSync(root, {recursive: true, force: true});
   }
 });
+
+// WF-991: both macOS prebuilds carry text. arm64 runs MLX; x64 runs the fp32
+// CPU runtime from the same bundle. On darwin-x64 a text-free addon fails here.
+const textSupported = process.platform === 'darwin' &&
+  createRequire(import.meta.url)(`../prebuilds/darwin-${process.arch}/volantis_db.node`).textSupported;
+
+function pinnedCache(root, repo, files, revision = '9'.repeat(40)) {
+  const sha = data => createHash('sha256').update(data).digest('hex');
+  const [name] = Object.keys(files)[0].split('.');
+  const manifest = Buffer.from(JSON.stringify({format: 1, name, bundle: `${name}.zem`, query_coreml: null,
+    files: Object.entries(files).map(([path, data]) => ({path, size: data.length, sha256: sha(data)}))}));
+  const entry = join(root, repo.replace('/', '%2F'), revision);
+  mkdirSync(entry, {recursive: true});
+  writeFileSync(join(entry, 'volantis-model.json'), manifest);
+  for (const [path, data] of Object.entries(files)) writeFileSync(join(entry, path), data);
+  return {repo, revision, manifestSha256: sha(manifest)};
+}
+
+test('wf991 portable pinned namespace', {skip: process.platform !== 'darwin'}, async () => {
+  assert.equal(textSupported, true, `darwin-${process.arch} prebuild must carry text`);
+  const root = mkdtempSync(join(tmpdir(), 'wf991-'));
+  const modelCacheDir = join(root, 'cache');
+  // WF-986 tiny BERT pair: the CPU runtime runs BERT towers only.
+  const bytes = readFileSync(new URL('../../../crates/volantis-db-text/tests/fixtures/wf986/pair.zem', import.meta.url));
+  const spec = {embeddedModel: pinnedCache(modelCacheDir, 'fixture/fake-wf991', {'tiny.zem': bytes})};
+  const docs = [{id: 99101n, revision: 1n, text: 'Fake tulip ZQ986'}, {id: 99102n, revision: 1n, text: 'Balise fictive ZQ986'}];
+  let store;
+  try {
+    store = await openNamespaceAsync(join(root, 'store'), 'notes', spec, {...options, modelCacheDir, offline: true});
+    await store.upsertAsync(docs);
+    const hits = store.queryEmbedded({text: 'Fake tulip', leg: 'dense', k: 2});
+    assert.deepEqual(hits.map(hit => hit.id).sort(), docs.map(doc => doc.id));
+    const vector = store.get([docs[0].id], {vector: true}).documents[0].vector;
+    assert.ok(vector instanceof Float32Array && vector.length === 4);
+    store.close(); store = undefined;
+    store = openNamespace(join(root, 'store'), 'notes', spec, {...options, modelCacheDir, offline: true});
+    assert.deepEqual(store.queryEmbedded({text: 'Fake tulip', leg: 'dense', k: 2}).map(hit => hit.id), hits.map(hit => hit.id));
+    assert.deepEqual(store.get([docs[0].id], {vector: true}).documents[0].vector, vector);
+  } finally { store?.close(); rmSync(root, {recursive: true, force: true}); }
+});
+
+// WF-991 opt-in smoke: the default model from a pre-filled local cache
+// (WF991_MODEL_CACHE), offline. Under `arch -x86_64` this is the Intel path.
+test('wf991 default model from a local cache', {skip: process.platform !== 'darwin' || !process.env.WF991_MODEL_CACHE}, async () => {
+  const {TextStore} = createRequire(import.meta.url)('..');
+  const root = mkdtempSync(join(tmpdir(), 'wf991-default-'));
+  const spec = {embeddedModel: {...TextStore.defaultModel}};
+  let store;
+  try {
+    store = await openNamespaceAsync(join(root, 'store'), 'notes', spec,
+      {...options, modelCacheDir: process.env.WF991_MODEL_CACHE, offline: true});
+    await store.upsertAsync([
+      {id: 1n, revision: 1n, text: 'Paris is the capital and largest city of France.'},
+      {id: 2n, revision: 1n, text: 'Bananas are yellow.'},
+    ]);
+    const hits = store.queryEmbedded({text: 'What is the capital of France?', leg: 'dense', k: 2});
+    console.log(`wf991 default model ${process.platform}-${process.arch}: ${JSON.stringify(hits, (key, value) => typeof value === 'bigint' ? `${value}` : value)}`);
+    assert.equal(hits[0].id, 1n);
+  } finally { store?.close(); rmSync(root, {recursive: true, force: true}); }
+});

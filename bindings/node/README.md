@@ -690,13 +690,16 @@ reuse the current caches; mutations invalidate preparation, so warm again
 after writes when first-query latency matters. Prefer the async method to
 keep Wallflower's event loop free.
 
-## TextStore (macOS arm64)
+## TextStore (macOS)
 
-Requires macOS 13.0 or later on Apple silicon. `TextStore` embeds text locally and searches dense, lexical or hybrid legs. The
-arm64 prebuild includes MLX and its `mlx.metallib` beside the addon; keep both
-files together when repackaging. Intel macOS and Windows builds throw a typed
-`VolantisError` with code `ZE_ERR_UNSUPPORTED` and the message
-`text API is available on macOS arm64 only`.
+`TextStore` and embedded namespaces embed text locally and search dense,
+lexical or hybrid legs. On Apple silicon (macOS 13.0 or later) the arm64
+prebuild runs MLX and includes its `mlx.metallib` beside the addon; keep both
+files together when repackaging. On Intel macOS the x64 prebuild runs both
+towers of the default model on the CPU in fp32 from the same FP16 bundle, so
+a store written on one Mac opens on the other. The CPU runtime runs BERT
+towers only. Windows builds throw a typed `VolantisError` with code
+`ZE_ERR_UNSUPPORTED` and the message `text API is available on macOS only`.
 
 Electron apps must `asarUnpack` both `mlx.metallib` and `volantis_db.node`,
 because MLX loads the metallib from the directory of the native binary.
@@ -814,7 +817,7 @@ and releases unused MLX cache buffers. A cold reopen starts a new runtime, and
 the first write that needs the document tower pays its loading cost for paired models.
 A text-enabled build and the resolved model are required. The fourth argument
 can set the process-wide ceiling for reusable MLX buffers on the first embedded
-open. Embedded namespaces and TextStore share the [first-opener rules](#textstore-macos-arm64).
+open. Embedded namespaces and TextStore share the [first-opener rules](#textstore-macos).
 
 The same fourth argument takes `modelCacheDir` and `offline`, with the meaning of
 `TextStore.openModel` `cacheDir` and `offline`. An explicit folder wins over
