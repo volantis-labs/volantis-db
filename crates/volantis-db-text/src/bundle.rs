@@ -13,8 +13,13 @@ use volantis_db::epoch::{ComputeUnits, EmbeddingRuntime, EmbeddingTower, Normali
 const MAGIC: &[u8; 8] = b"ZEMB0001";
 /// Layout 3 stores f64 token scores and a length-prefixed charsmap per tower.
 /// Pre-launch layouts 1 and 2 are unsupported and must be baked again.
+/// Tokenizer flag bit 2 (WF-986) selects source-exact XLM-R Unigram input;
+/// readers without it refuse the unknown bit.
 const LAYOUT_VERSION: u32 = 3;
 const DIGEST_BYTES: usize = 16;
+const TOKENIZER_LOWERCASE: u8 = 1;
+const TOKENIZER_STRIP_ACCENTS: u8 = 2;
+const TOKENIZER_METASPACE_UNIGRAM: u8 = 4;
 
 /// Typed `.zem` load failure.
 #[derive(Debug)]
@@ -479,12 +484,28 @@ impl Bundle {
             .encode_batch(&inputs, self.query.embedding.max_tokens as usize)
     }
 
-    /// Tokenizes already formed document chunks with the ingest tokenizer and
-    /// document limit. Chunk formation remains the responsibility of ingestion.
+    /// Applies the document prompt once to one raw chunk. Only a two-tower
+    /// bundle has a document prompt; a symmetric bundle's single persisted
+    /// prefix is its query prompt and documents stay verbatim.
+    pub(crate) fn document_input(&self, text: &str) -> String {
+        if self.is_symmetric() {
+            text.to_owned()
+        } else {
+            format!("{}{text}", self.document.embedding.prompt_prefix)
+        }
+    }
+
+    /// Tokenizes already formed raw document chunks with the document prompt,
+    /// ingest tokenizer and document limit. Chunk formation remains the
+    /// responsibility of ingestion.
     #[doc(hidden)]
     pub fn tokenize_document_chunks(&self, texts: &[String]) -> Result<TokenBatch, RuntimeError> {
+        let inputs = texts
+            .iter()
+            .map(|text| self.document_input(text))
+            .collect::<Vec<_>>();
         self.tokenizer(TowerRole::Document)
-            .encode_batch(texts, self.document.embedding.max_tokens as usize)
+            .encode_batch(&inputs, self.document.embedding.max_tokens as usize)
     }
 }
 
@@ -696,7 +717,7 @@ fn parse_tokenizer(cursor: &mut Cursor<'_>) -> Result<ModelTokenizer, BundleErro
         }
     };
     let flags = cursor.u8()?;
-    if flags & !0b11 != 0 {
+    if flags & !(TOKENIZER_LOWERCASE | TOKENIZER_STRIP_ACCENTS | TOKENIZER_METASPACE_UNIGRAM) != 0 {
         return Err(BundleError::Unsupported {
             field: "tokenizer flags",
             id: u64::from(flags),
@@ -724,10 +745,17 @@ fn parse_tokenizer(cursor: &mut Cursor<'_>) -> Result<ModelTokenizer, BundleErro
         unk,
         cls,
         sep,
-        flags & 1 != 0,
-        flags & 2 != 0,
+        flags & TOKENIZER_LOWERCASE != 0,
+        flags & TOKENIZER_STRIP_ACCENTS != 0,
     )
     .and_then(|tokenizer| tokenizer.with_precompiled(charsmap))
+    .and_then(|tokenizer| {
+        if flags & TOKENIZER_METASPACE_UNIGRAM == 0 {
+            Ok(tokenizer)
+        } else {
+            tokenizer.with_source_metaspace()
+        }
+    })
     .map_err(|detail| BundleError::Format(detail.to_owned()))
 }
 

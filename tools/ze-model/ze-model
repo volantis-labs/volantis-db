@@ -130,10 +130,11 @@ def load_tower(
     role_name: str,
     confirmed_prefix: str,
     precision: str = "fp32",
+    check_prompt: bool = True,
 ) -> Tower:
     config = json_file(root / "config.json")
     declared_prefix = declared_query_prefix(root) if confirmed_prefix else ""
-    if declared_prefix != confirmed_prefix:
+    if check_prompt and declared_prefix != confirmed_prefix:
         raise ValueError(
             f"confirmed prefix {confirmed_prefix!r} differs from checkpoint "
             f"declaration {declared_prefix!r}"
@@ -265,12 +266,86 @@ def wordpiece_flags(tokenizer: dict) -> int:
     return int(lower) | (int(lower if strip is None else strip) << 1)
 
 
+# Tokenizer flag bit 2: source-exact XLM-R Unigram input. The evaluator applies
+# special-token matching, the charsmap, ASCII-space collapse, then Metaspace
+# (replace " ", prepend "▁" to every segment, split before each "▁").
+METASPACE_UNIGRAM = 4
+XLMR_SPECIALS = ["<s>", "<pad>", "</s>", "<unk>", "<mask>"]
+METASPACE_FORMS = [
+    {"type": "Metaspace", "replacement": "\u2581", "prepend_scheme": "always", "split": True},
+    # tokenizers 0.19 reads this legacy form as prepend_scheme=always, split=true.
+    {"type": "Metaspace", "replacement": "\u2581", "add_prefix_space": True},
+]
+
+
+def metaspace_unigram(tokenizer: dict, config: dict) -> tuple[int, list, bytes]:
+    """Validate the complete single-sequence BERT + XLM-R Unigram contract.
+
+    Saved encode options are not used: the bundle records each tower's limit.
+    Decoding and paired-sequence templates are never executed.
+    """
+    normalizer = tokenizer.get("normalizer") or {}
+    steps = normalizer.get("normalizers") or [{}, {}]
+    if (normalizer.get("type") != "Sequence" or len(steps) != 2
+            or set(steps[0]) != {"type", "precompiled_charsmap"}
+            or steps[0].get("type") != "Precompiled"
+            or steps[1] != {"type": "Replace", "pattern": {"Regex": " {2,}"}, "content": " "}):
+        raise ValueError("BERT Unigram requires the normalizer "
+                         "Sequence[Precompiled, Replace(' {2,}', ' ')]")
+    charsmap = base64.b64decode(steps[0]["precompiled_charsmap"], validate=True)
+    if len(charsmap) < 8:
+        raise ValueError("Precompiled normalizer must carry a charsmap")
+    if tokenizer.get("pre_tokenizer") not in METASPACE_FORMS:
+        raise ValueError("BERT Unigram requires Metaspace('\u2581', prepend always, split)")
+    model = tokenizer["model"]
+    if (set(model) - {"type", "unk_id", "vocab", "byte_fallback"}
+            or model.get("byte_fallback", False) is not False):
+        raise ValueError("bundle requires a plain Unigram model without byte fallback")
+    entries = [(str(token), float(score)) for token, score in model["vocab"]]
+    vocab = {token: index for index, (token, _) in enumerate(entries)}
+    if len(vocab) != len(entries) or any(token not in vocab for token in XLMR_SPECIALS):
+        raise ValueError("Unigram vocabulary must be unique and hold the XLM-R special tokens")
+    expected_added = [{"id": vocab[token], "content": token, "single_word": False,
+                       "lstrip": False, "rstrip": False, "normalized": False, "special": True}
+                      for token in XLMR_SPECIALS]
+    added = tokenizer.get("added_tokens", [])
+    if sorted(added, key=lambda token: token["id"]) != expected_added:
+        raise ValueError("bundle cannot represent this added token matching")
+    post = tokenizer.get("post_processor") or {}
+    single = [{"SpecialToken": {"id": "<s>", "type_id": 0}},
+              {"Sequence": {"id": "A", "type_id": 0}},
+              {"SpecialToken": {"id": "</s>", "type_id": 0}}]
+    specials = {token: {"id": token, "ids": [vocab[token]], "tokens": [token]}
+                for token in ["<s>", "</s>"]}
+    if (post.get("type") != "TemplateProcessing" or post.get("single") != single
+            or post.get("special_tokens") != specials):
+        raise ValueError("bundle requires a single <s>/sequence/</s> template with type ID zero")
+    for option in ["truncation", "padding"]:
+        if (tokenizer.get(option) or {}).get("direction", "Right") != "Right":
+            raise ValueError("bundle requires right padding and right truncation")
+    if config.get("do_lower_case") or config.get("strip_accents"):
+        raise ValueError("tokenizer_config.json contradicts the Unigram normalizer")
+    if any(config.get(key, "right") != "right" for key in ["padding_side", "truncation_side"]):
+        raise ValueError("bundle requires right padding and right truncation")
+    # A tokenizer_config.json mask_token dict (e5: lstrip=true) does not change
+    # the loaded fast tokenizer; tokenizer.json added_tokens are authoritative.
+    # The WF-986 parity check compares this loader with the raw source tokenizer.
+    by_id = {item["id"]: item for item in added}
+    for configured_id, token in config.get("added_tokens_decoder", {}).items():
+        if {"id": int(configured_id), **token} != by_id.get(int(configured_id)):
+            raise ValueError("tokenizer_config.json contradicts the added token matching")
+    return METASPACE_UNIGRAM, entries, charsmap
+
+
 def encode_tokenizer(root: Path, architecture: int) -> bytes:
     tokenizer = json_file(root / "tokenizer.json")
     config = json_file(root / "tokenizer_config.json")
     charsmap = b""
     model = tokenizer["model"]
-    if architecture == 1:
+    if architecture == 1 and model.get("type") == "Unigram":
+        kind = 2
+        flags, entries, charsmap = metaspace_unigram(tokenizer, config)
+    elif architecture == 1:
         kind = 1
         flags = wordpiece_flags(tokenizer)
         if ("do_lower_case" in config and config["do_lower_case"] is not bool(flags & 1)
@@ -320,6 +395,14 @@ def encode_tokenizer(root: Path, architecture: int) -> bytes:
             return vocab_ids[value]
         raise ValueError(f"tokenizer has no {name}: {value!r}")
 
+    if flags & METASPACE_UNIGRAM:
+        selected = [token_id(name, fallback) for name, fallback in
+                    [("pad_token", "<pad>"), ("unk_token", "<unk>"),
+                     ("cls_token", "<s>"), ("sep_token", "</s>")]]
+        if selected != [vocab_ids[token] for token in ["<pad>", "<unk>", "<s>", "</s>"]]:
+            raise ValueError("tokenizer_config.json contradicts the XLM-R special tokens")
+        if model.get("unk_id") != vocab_ids["<unk>"]:
+            raise ValueError("Unigram unk_id must name <unk>")
     output = bytearray([kind, flags, 0, 0])
     for name, fallback in [("pad_token", "[PAD]" if kind == 1 else "<pad>"),
                            ("unk_token", "[UNK]" if kind == 1 else "<unk>"),
@@ -348,7 +431,172 @@ def tensor_descriptor(tensor: Tensor, offset: int) -> bytes:
     return bytes(output)
 
 
+# Exact owner-approved pairs (WF-986). A manifest that names either tower of a
+# listed pair must match every field; generic pairs get the structural checks.
+RELEASE_PAIRS = {
+    ("v98-8-r1", "intfloat/multilingual-e5-small"): {
+        "dimension": 384,
+        "query": {
+            "prefix": "query: ", "max_tokens": 96, "layers": 8, "pieces": 98_304, "rows": 98_304,
+            "weights_sha256": "37e3a9507801e63e515a3d4d56897b3d86b05212f8b9d33bfe7c9c68a435eaec",
+            "tokenizer_sha256": "c206f3d926756214f88ca52ce7d934c946bdaea2949c8d3c17d806e15b39a82c",
+        },
+        "document": {
+            "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+            "prefix": "passage: ", "max_tokens": 512, "layers": 12,
+            "pieces": 250_002, "rows": 250_037,
+            "weights_sha256": "1a55775f53449dac10a2bcbc312469fac40b96d53198c407081a831f81c98477",
+            "tokenizer_sha256": "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
+        },
+    },
+}
+# Role, persisted role ID, Sentence-Transformers prompt name.
+PAIR_ROLES = (("document", 0, "passage"), ("query", 1, "query"))
+POOLING_MODES = ("pooling_mode_cls_token", "pooling_mode_max_tokens",
+                 "pooling_mode_mean_sqrt_len_tokens", "pooling_mode_weightedmean_tokens",
+                 "pooling_mode_lasttoken")
+
+
+def file_sha256(path: Path) -> str:
+    with path.open("rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+def pair_source(root: Path, record: dict, dimension: int, prompt: str) -> dict:
+    """Check one PAIR.json tower folder before its weights are read."""
+    for key, name in [("weights_sha256", "model.safetensors"), ("tokenizer_sha256", "tokenizer.json")]:
+        if key in record and file_sha256(root / name) != record[key]:
+            raise ValueError(f"{root.name}/{name} sha256 differs from PAIR.json {key}")
+    config = json_file(root / "config.json")
+    if config.get("model_type") != "bert":
+        raise ValueError(f"{root.name}: pair towers must be bert, got {config.get('model_type')!r}")
+    if config.get("hidden_size") != dimension:
+        raise ValueError(f"{root.name}: hidden_size {config.get('hidden_size')} differs from "
+                         f"PAIR.json dimension {dimension}")
+    if not 2 <= record["max_tokens"] <= int(config["max_position_embeddings"]):
+        raise ValueError(f"{root.name}: max_tokens {record['max_tokens']} exceeds "
+                         f"max_position_embeddings {config['max_position_embeddings']}")
+    pooling = json_file(root / "1_Pooling" / "config.json")
+    if (pooling.get("pooling_mode_mean_tokens") is not True
+            or any(pooling.get(mode) for mode in POOLING_MODES)
+            or pooling.get("include_prompt", True) is not True
+            or pooling.get("word_embedding_dimension", dimension) != dimension):
+        raise ValueError(f"{root.name}: pair towers require mean pooling including the prompt")
+    modules = [module.get("type", "") for module in json_file(root / "modules.json")]
+    if (not modules or not modules[-1].endswith(".Normalize")
+            or any(module.endswith(".Dense") for module in modules)
+            or (root / "2_Dense").exists()):
+        raise ValueError(f"{root.name}: pair towers require a final Normalize (L2) and no Dense head")
+    sentence = root / "sentence_bert_config.json"
+    if sentence.is_file():
+        values = json_file(sentence)
+        if values.get("max_seq_length", record["max_tokens"]) != record["max_tokens"]:
+            raise ValueError(f"{root.name}: sentence_bert_config max_seq_length differs from "
+                             "PAIR.json max_tokens")
+        if values.get("do_lower_case"):
+            raise ValueError(f"{root.name}: sentence_bert_config lower-cases input")
+    declared = root / "config_sentence_transformers.json"
+    prompts = json_file(declared).get("prompts", {}) if declared.is_file() else {}
+    if prompt in prompts and prompts[prompt] != record["prefix"]:
+        raise ValueError(f"{root.name}: PAIR.json prefix {record['prefix']!r} differs from the "
+                         f"declared {prompt!r} prompt {prompts[prompt]!r}")
+    return config
+
+
+def pair_tensors(tower: Tower, pieces: int, max_tokens: int) -> dict:
+    """Check the loaded checkpoint against its config and tokenizer."""
+    shapes = {tensor.name.split("/", 1)[1]: tensor.shape for tensor in tower.tensors}
+    hidden = int(tower.config["hidden_size"])
+    rows, width = shapes.get("embeddings.word_embeddings.weight", (0, 0))
+    positions = shapes.get("embeddings.position_embeddings.weight", (0, 0))[0]
+    layers = {int(name.split(".")[2]) for name in shapes if name.startswith("encoder.layer.")}
+    if width != hidden or pieces > rows:
+        raise ValueError(f"{tower.model_id}: {pieces} tokenizer pieces need at most {rows} "
+                         f"embedding rows of width {hidden}")
+    if positions != int(tower.config["max_position_embeddings"]) or max_tokens > positions:
+        raise ValueError(f"{tower.model_id}: position embeddings do not cover max_tokens")
+    if layers != set(range(int(tower.config["num_hidden_layers"]))):
+        raise ValueError(f"{tower.model_id}: checkpoint layers differ from num_hidden_layers")
+    return {"layers": len(layers), "pieces": pieces, "rows": rows}
+
+
+def load_pair(args: argparse.Namespace) -> tuple[tuple[Tower, ...], bytes, dict[int, int]]:
+    """Read both towers, prefixes and limits from one offline PAIR.json."""
+    for flag, value in [("--document", args.document), ("--document-id", args.document_id),
+                        ("--query", args.query), ("--query-id", args.query_id),
+                        ("--query-prefix", args.query_prefix),
+                        ("--alignment-digest", args.alignment_digest)]:
+        if value is not None and value != "":
+            raise ValueError(f"{flag} conflicts with --pair; PAIR.json supplies it")
+    manifest = Path(args.pair).resolve()
+    raw = manifest.read_bytes()
+    pair = json.loads(raw)
+    dimension = pair.get("dimension")
+    if type(dimension) is not int or dimension <= 0:
+        raise ValueError("PAIR.json dimension must be a positive integer")
+    if pair.get("normalization") != "L2":
+        raise ValueError("PAIR.json normalization must be L2")
+    if pair.get("similarity") != "dot_product":
+        raise ValueError("PAIR.json similarity must be dot_product")
+    names = tuple(str((pair.get(role) or {}).get("name")) for role in ("query", "document"))
+    contract = RELEASE_PAIRS.get(names)
+    if contract is None and any(name in key for key in RELEASE_PAIRS for name in names):
+        raise ValueError(f"release pair contract: {names} must name both towers of one pair")
+    if contract is not None and contract["dimension"] != dimension:
+        raise ValueError(f"release pair contract: dimension {dimension} != {contract['dimension']}")
+    towers, limits = [], {}
+    for role, number, prompt in PAIR_ROLES:
+        record = pair.get(role)
+        if (not isinstance(record, dict) or not isinstance(record.get("name"), str)
+                or not record["name"] or not isinstance(record.get("path"), str)
+                or not isinstance(record.get("prefix"), str)
+                or type(record.get("max_tokens")) is not int):
+            raise ValueError(f"PAIR.json {role} needs name, path, prefix and integer max_tokens")
+        if record.get("pooling") != "mean then L2":
+            raise ValueError(f"PAIR.json {role} pooling must be 'mean then L2'")
+        root = (manifest.parent / record["path"]).resolve()
+        if manifest.parent not in root.parents or not root.is_dir():
+            raise ValueError(f"PAIR.json {role} path must name a folder inside the pack")
+        flag = f"--{role}-max-tokens"
+        override = getattr(args, f"{role}_max_tokens")
+        if override is not None and override != record["max_tokens"]:
+            raise ValueError(f"{flag} {override} conflicts with PAIR.json max_tokens "
+                             f"{record['max_tokens']}")
+        if contract is not None:
+            expected = contract[role]
+            observed = {key: record.get(key) for key in ["prefix", "max_tokens", "weights_sha256"]}
+            if role == "document":
+                observed["revision"] = record.get("revision")
+            for key, value in observed.items():
+                if value != expected[key]:
+                    raise ValueError(f"release pair contract: {role} {key} {value!r} != {expected[key]!r}")
+            if file_sha256(root / "tokenizer.json") != expected["tokenizer_sha256"]:
+                raise ValueError(f"release pair contract: {role} tokenizer.json sha256 differs")
+        pair_source(root, record, dimension, prompt)
+        pieces = len(json_file(root / "tokenizer.json")["model"]["vocab"])
+        precision = (args.document_precision if number == 0
+                     else args.query_mlx_precision or args.document_precision)
+        tower = load_tower(root, record["name"], number, role, record["prefix"], precision,
+                           check_prompt=False)
+        shape = pair_tensors(tower, pieces, record["max_tokens"])
+        if contract is not None:
+            for key, value in shape.items():
+                if value != contract[role][key]:
+                    raise ValueError(f"release pair contract: {role} {key} {value} != {contract[role][key]}")
+        towers.append(tower)
+        limits[number] = record["max_tokens"]
+    # The alignment identity is SHA-256 of the exact manifest bytes, as release uses.
+    return tuple(towers), hashlib.sha256(raw).digest(), limits
+
+
 def bake(args: argparse.Namespace) -> None:
+    if getattr(args, "pair", None):
+        towers, alignment, limits = load_pair(args)
+        return write_bundle(args, towers, alignment, limits)
+    for flag, value in [("--document", args.document), ("--document-id", args.document_id),
+                        ("--query-prefix", args.query_prefix)]:
+        if value is None:
+            raise ValueError(f"{flag} is required without --pair")
     if args.query_max_tokens is not None and not args.query:
         raise ValueError("--query-max-tokens requires --query")
     document_root = Path(args.document).resolve()
@@ -372,12 +620,16 @@ def bake(args: argparse.Namespace) -> None:
         alignment = b""
     if len(towers) == 2 and not alignment:
         raise ValueError("a two-tower bundle requires --alignment-digest")
+    write_bundle(args, towers, alignment, {1: args.query_max_tokens, 0: args.document_max_tokens})
+
+
+def write_bundle(args: argparse.Namespace, towers: tuple[Tower, ...], alignment: bytes,
+                 limits: dict[int, int | None]) -> None:
     tensors = tuple(tensor for tower in towers for tensor in tower.tensors)
 
     prefix = bytearray(MAGIC + u32(VERSION) + u32(0) + bytes([len(towers)]) + b"\x00" * 7)
     for tower in towers:
-        maximum = args.query_max_tokens if tower.role == 1 else args.document_max_tokens
-        prefix += encode_tower(tower, maximum)
+        prefix += encode_tower(tower, limits[tower.role])
     for tower in towers:
         prefix += encode_tokenizer(tower.root, tower.architecture)
     prefix += struct.pack("<d", args.alpha)
@@ -760,13 +1012,15 @@ def parser() -> argparse.ArgumentParser:
     fetch.add_argument("model")
     bake_parser = commands.add_parser(
         "bake", description="Bake an immutable model bundle.",
-        epilog="Release pair: ze-model bake --document $PACK/document --document-id arctic-m-v2 "
+        epilog="Pair manifest: ze-model bake --pair $PACK/PAIR.json --output pair.zem. "
+               "Explicit towers: ze-model bake --document $PACK/document --document-id arctic-m-v2 "
                "--query $PACK/query --query-id clean71-v1 --query-prefix 'query: ' "
                "--alignment-digest $ALIGNMENT_DIGEST --query-max-tokens 96 "
                "--document-max-tokens 8192 --output release.zem",
     )
-    bake_parser.add_argument("--document", required=True)
-    bake_parser.add_argument("--document-id", required=True)
+    bake_parser.add_argument("--pair", help="offline PAIR.json: towers, names, prefixes and limits")
+    bake_parser.add_argument("--document")
+    bake_parser.add_argument("--document-id")
     bake_parser.add_argument("--document-precision", choices=("fp32", "fp16"), default="fp32")
     bake_parser.add_argument("--query-mlx-precision", choices=("fp32", "fp16"),
                              help="MLX query weights (default: document precision)")
@@ -774,7 +1028,7 @@ def parser() -> argparse.ArgumentParser:
     bake_parser.add_argument("--query-id")
     bake_parser.add_argument("--query-max-tokens", type=int)
     bake_parser.add_argument("--document-max-tokens", type=int)
-    bake_parser.add_argument("--query-prefix", required=True)
+    bake_parser.add_argument("--query-prefix")
     bake_parser.add_argument("--alignment-digest", default="")
     bake_parser.add_argument("--alpha", type=float, default=0.5)
     bake_parser.add_argument("--output", required=True)

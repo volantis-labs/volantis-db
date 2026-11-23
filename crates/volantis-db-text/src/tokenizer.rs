@@ -27,6 +27,8 @@ pub(crate) struct ModelTokenizer {
     sep: u32,
     lowercase: bool,
     strip_accents: bool,
+    /// Source-exact XLM-R input (persisted tokenizer flag bit 2).
+    metaspace: bool,
     special_tokens: Vec<(String, u32)>,
 }
 
@@ -36,9 +38,10 @@ impl ModelTokenizer {
     }
 
     pub(crate) const fn evaluation_revision(&self) -> &'static str {
-        match self.kind {
-            TokenizerKind::WordPiece => ";ze-text-wordpiece=2",
-            TokenizerKind::Unigram => ";ze-text-unigram=2",
+        match (self.kind, self.metaspace) {
+            (TokenizerKind::WordPiece, _) => ";ze-text-wordpiece=2",
+            (TokenizerKind::Unigram, false) => ";ze-text-unigram=2",
+            (TokenizerKind::Unigram, true) => ";ze-text-unigram-metaspace=1",
         }
     }
 
@@ -96,6 +99,7 @@ impl ModelTokenizer {
             sep,
             lowercase,
             strip_accents,
+            metaspace: false,
             special_tokens,
         })
     }
@@ -142,6 +146,21 @@ impl ModelTokenizer {
         Ok(self)
     }
 
+    /// Selects the source-exact XLM-R input profile: Python whitespace strip of
+    /// the prompted input, special-token matching, the charsmap, ASCII-space
+    /// collapse, then Metaspace splitting.
+    pub(crate) fn with_source_metaspace(mut self) -> Result<Self, &'static str> {
+        if self.kind != TokenizerKind::Unigram
+            || self.precompiled.is_none()
+            || self.lowercase
+            || self.strip_accents
+        {
+            return Err("Metaspace Unigram input requires a charsmap and no case or accent flags");
+        }
+        self.metaspace = true;
+        Ok(self)
+    }
+
     pub(crate) fn encode_batch(
         &self,
         texts: &[String],
@@ -160,6 +179,13 @@ impl ModelTokenizer {
     }
 
     pub(crate) fn encode_row(&self, text: &str, max_tokens: usize) -> Vec<u32> {
+        // The source pipeline (Sentence-Transformers) strips each prompted
+        // input with Python `str.strip` before its tokenizer runs.
+        let text = if self.metaspace {
+            text.trim_matches(is_python_space)
+        } else {
+            text
+        };
         let body_limit = max_tokens.saturating_sub(2);
         let mut tokens = match self.kind {
             TokenizerKind::WordPiece => self.model_input(text),
@@ -204,7 +230,13 @@ impl ModelTokenizer {
 
     fn normalize(&self, text: &str) -> String {
         if let Some(precompiled) = &self.precompiled {
-            return precompiled.normalize(text);
+            let normalized = precompiled.normalize(text);
+            // Source Replace(" {2,}", " ") runs after the charsmap.
+            return if self.metaspace {
+                collapse_ascii_spaces(&normalized)
+            } else {
+                normalized
+            };
         }
         if self.kind == TokenizerKind::WordPiece {
             let mut cleaned = String::with_capacity(text.len());
@@ -345,6 +377,9 @@ impl ModelTokenizer {
     }
 
     fn unigram(&self, text: &str) -> Vec<u32> {
+        if self.metaspace {
+            return self.metaspace_unigram(text);
+        }
         if self.precompiled.is_none() {
             let sentence = text
                 .split_whitespace()
@@ -356,6 +391,33 @@ impl ModelTokenizer {
             .flat_map(|word| word.strip_prefix('▁').unwrap_or(word).split('▁'))
             .flat_map(|piece| self.unigram_word(&format!("▁{piece}")))
             .collect()
+    }
+
+    /// Source Metaspace on one normalized segment: each " " becomes "▁", a
+    /// non-empty segment gets one leading "▁", and every "▁" starts a piece.
+    /// A trailing space therefore keeps its own "▁" piece.
+    fn metaspace_unigram(&self, text: &str) -> Vec<u32> {
+        if text.is_empty() {
+            return Vec::new();
+        }
+        let replaced = text.replace(' ', "▁");
+        let sentence = if replaced.starts_with('▁') {
+            replaced
+        } else {
+            format!("▁{replaced}")
+        };
+        let mut output = Vec::new();
+        let mut start = 0;
+        for (offset, _) in sentence.match_indices('▁').skip(1) {
+            if let Some(piece) = sentence.get(start..offset) {
+                output.extend(self.unigram_word(piece));
+            }
+            start = offset;
+        }
+        if let Some(piece) = sentence.get(start..) {
+            output.extend(self.unigram_word(piece));
+        }
+        output
     }
 
     fn unigram_word(&self, sentence: &str) -> Vec<u32> {
@@ -488,6 +550,24 @@ impl Precompiled {
         }
         result
     }
+}
+
+/// Python `str.isspace`: Unicode `White_Space` plus U+001C..U+001F.
+fn is_python_space(character: char) -> bool {
+    character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+}
+
+fn collapse_ascii_spaces(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut previous_space = false;
+    for character in text.chars() {
+        let space = character == ' ';
+        if !(space && previous_space) {
+            output.push(character);
+        }
+        previous_space = space;
+    }
+    output
 }
 
 fn basic_tokens(text: &str) -> Vec<&str> {

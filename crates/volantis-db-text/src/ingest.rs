@@ -587,11 +587,7 @@ impl TextStore {
         let mut embed_batches = 0_usize;
         let mut seals = 0_usize;
         for job in jobs {
-            let tokenized = tokenize_job(
-                self.bundle.tokenizer(TowerRole::Document),
-                job,
-                self.bundle.document_tower().embedding.max_tokens as usize,
-            )?;
+            let tokenized = tokenize_job(&self.bundle, job)?;
             let TokenizedJob {
                 ordinal: _,
                 chunks: job_chunks,
@@ -687,11 +683,10 @@ impl TextStore {
         for worker in 0..worker_count {
             let queue = Arc::clone(&queue);
             let sender = sender.clone();
-            let tokenizer = self.bundle.tokenizer(TowerRole::Document).clone();
+            let bundle = Arc::clone(&self.bundle);
             let control = control.clone();
             let in_flight = Arc::clone(&in_flight);
             let peak = Arc::clone(&peak_in_flight);
-            let max_tokens = self.bundle.document_tower().embedding.max_tokens as usize;
             let handle = std::thread::Builder::new()
                 .name(format!("ze-text-tok-{worker}"))
                 .spawn(move || {
@@ -713,7 +708,7 @@ impl TextStore {
                         if control.fire(TextFaultSite::ChannelClosedEarly) {
                             break;
                         }
-                        let result = tokenize_job(&tokenizer, job, max_tokens);
+                        let result = tokenize_job(&bundle, job);
                         let Some(current) =
                             acquire_buffer_slot(&in_flight, options.channel_capacity, &control)
                         else {
@@ -1600,17 +1595,15 @@ fn chunks_for_text(document: &TextDocument, policy: ChunkPolicy) -> Result<Vec<S
     Ok(chunks)
 }
 
-fn tokenize_job(
-    tokenizer: &crate::tokenizer::ModelTokenizer,
-    job: TokenJob,
-    max_tokens: usize,
-) -> Result<TokenizedJob, TextError> {
+/// Serial and controlled ingest share this input construction: raw chunk
+/// text keeps its stored form, and the bundle applies the document prompt once.
+fn tokenize_job(bundle: &Bundle, job: TokenJob) -> Result<TokenizedJob, TextError> {
     let texts = job
         .chunks
         .iter()
         .map(|chunk| chunk.text.clone())
         .collect::<Vec<_>>();
-    let tokens = tokenizer.encode_batch(&texts, max_tokens)?;
+    let tokens = bundle.tokenize_document_chunks(&texts)?;
     let token_count = tokens.token_ids.len();
     Ok(TokenizedJob {
         ordinal: job.ordinal,
@@ -2624,5 +2617,113 @@ mod lazy_document_tests {
         let bundle = Arc::new(Bundle::open(path).expect("real bundle"));
         assert!(!bundle.is_symmetric(), "release pair required");
         assert_lazy_bits(bundle);
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/fixtures/wf986/reference.rs"]
+#[allow(dead_code, clippy::excessive_precision, clippy::unreadable_literal)]
+mod wf986_reference;
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::indexing_slicing)]
+mod document_prefix_tests {
+    use super::*;
+    use volantis_db::lifecycle::DocumentFields;
+    use volantis_db::lifecycle::embedded::NamespaceEmbedder;
+
+    fn assert_close(actual: &[f32], expected: &[f32], context: &str) {
+        assert_eq!(actual.len(), expected.len(), "{context}");
+        for (a, e) in actual.iter().zip(expected) {
+            assert!(
+                (a - e).abs() < 2.0e-5,
+                "{context}: {actual:?} != {expected:?}"
+            );
+        }
+    }
+
+    /// WF-986: a two-tower document prompt is applied exactly once to each raw
+    /// chunk on every ingest path, and stored text and ranges stay raw.
+    #[test]
+    fn document_prefix_once() {
+        let root = tempfile::tempdir().expect("root");
+        let model = root.path().join("pair.zem");
+        std::fs::write(&model, include_bytes!("../tests/fixtures/wf986/pair.zem"))
+            .expect("fixture bundle");
+        let (_, raw, _) = wf986_reference::DOCUMENT_CASES[0];
+        // Independent float64 reference of "passage: " + raw.
+        let expected = &wf986_reference::DOCUMENT_VECTORS[0];
+        for controlled in [false, true] {
+            let store = TextStore::open(
+                root.path().join(format!("store-{controlled}")),
+                &model,
+                TextOpenOptions::default(),
+            )
+            .expect("store");
+            let documents = [TextDocument::new(7, 1, raw)];
+            if controlled {
+                store.ingest_text(&documents, IngestOptions::default())
+            } else {
+                store.ingest_text_serialized(&documents, IngestOptions::default())
+            }
+            .expect("ingest");
+            let stored = store
+                .store
+                .get_documents(
+                    &[encode_chunk_id(7, 0).expect("chunk id")],
+                    DocumentFields::ALL,
+                )
+                .expect("read chunk")[0]
+                .clone()
+                .expect("stored chunk");
+            assert_eq!(stored.text.as_deref(), Some(raw), "raw stored text");
+            assert_close(
+                stored.vector.as_deref().expect("vector"),
+                expected,
+                if controlled { "controlled" } else { "serial" },
+            );
+            store.close().expect("close store");
+        }
+
+        let namespace = NamespaceModel::open_bundle(&model).expect("namespace model");
+        let chunks = namespace.documents(&[raw]).expect("namespace chunks");
+        assert_eq!(chunks[0].len(), 1);
+        assert_eq!(chunks[0][0].bytes, 0..raw.len());
+        assert_close(&chunks[0][0].vector, expected, "namespace");
+
+        // The raw body fits the window; only the prompt forces a second chunk.
+        let bundle = Arc::new(Bundle::open(&model).expect("bundle"));
+        let tokenizer = bundle.tokenizer(TowerRole::Document);
+        let tower = &bundle.document_tower().embedding;
+        let limit = tower.max_tokens as usize;
+        let body = "Fake tulip Fake tulip Fake tulip Fake tulip Fake tulip Fake tulip Fake tulip";
+        assert!(tokenizer.encode_row(body, limit + 1).len() <= limit);
+        let prompted = format!("{}{body}", tower.prompt_prefix);
+        assert!(tokenizer.encode_row(&prompted, limit + 1).len() > limit);
+        let split = namespace
+            .documents(&[body])
+            .expect("split chunks")
+            .remove(0);
+        assert!(split.len() >= 2, "the prompt must force another chunk");
+        let mut runtime =
+            MlxRuntime::load(Arc::clone(&bundle), TowerRole::Document).expect("document tower");
+        let mut next = 0;
+        let mut rebuilt = String::new();
+        for chunk in &split {
+            assert_eq!(chunk.bytes.start, next, "contiguous ranges");
+            next = chunk.bytes.end;
+            let text = &body[chunk.bytes.clone()];
+            rebuilt.push_str(text);
+            // The same chunk through the bundle entry point, prompted once.
+            let tokens = bundle
+                .tokenize_document_chunks(&[text.to_owned()])
+                .expect("chunk tokens");
+            assert!(tokens.tokens_per_row <= limit);
+            let mut batch = runtime.embed_batch(&tokens).expect("chunk vector");
+            normalize_batch(&mut batch, tower).expect("normalize");
+            assert_close(&chunk.vector, batch.values(), "namespace boundary chunk");
+        }
+        assert_eq!(rebuilt, body, "ranges reconstruct the raw body");
+        assert_eq!(next, body.len());
     }
 }

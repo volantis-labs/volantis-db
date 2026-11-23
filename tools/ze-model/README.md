@@ -48,3 +48,52 @@ bytes may vary through metadata map serialization order, conversion dates, and
 analytics data. Absolute build paths are excluded from model metadata. The
 manifest and SHA256SUMS are always regenerated from the actual output bytes;
 they change when compiled bytes change.
+
+## Offline bake (WF-986)
+
+`bake` has two offline forms. Neither form downloads anything.
+
+1. Pair manifest. `--pair` reads `PAIR.json` and resolves both tower folders
+   relative to it. Each tower's name, prompt prefix and token limit come from its
+   own record. The alignment digest is SHA-256 of the exact `PAIR.json` bytes.
+
+   ```sh
+   PACK=/path/to/zeppelin-embed-v98-8-r1-e5-small
+   "$PYTHON" tools/ze-model/ze-model bake --pair "$PACK/PAIR.json" \
+     --document-precision fp32 --query-mlx-precision fp32 --output pair-fp32.zem
+   ```
+
+   Do not use `--document`, `--document-id`, `--query`, `--query-id`,
+   `--query-prefix` or `--alignment-digest` with `--pair`. A limit flag is
+   accepted only when it is equal to the `PAIR.json` value.
+
+2. Explicit towers. This is the earlier form; it is unchanged.
+
+   ```sh
+   "$PYTHON" tools/ze-model/ze-model bake --document "$PACK/document" \
+     --document-id arctic-m-v2 --query "$PACK/query" --query-id clean71-v1 \
+     --query-prefix 'query: ' --alignment-digest "$ALIGNMENT_DIGEST" \
+     --query-max-tokens 96 --document-max-tokens 8192 --output release.zem
+   ```
+
+Before it writes, `--pair` checks the manifest: `normalization` is `L2`,
+`similarity` is `dot_product`, and each tower has `pooling` "mean then L2".
+It checks the declared SHA-256 values, and each tower is BERT with a hidden width
+equal to `dimension`. Each tower must have mean pooling that includes the prompt,
+a final Normalize module and no Dense head. The limit must not be more than the
+position embeddings. The checkpoint layers must agree with `num_hidden_layers`.
+The tokenizer pieces must fit the embedding rows. A manifest that names a tower
+of an approved pair (`RELEASE_PAIRS`) must match that pair exactly: names,
+revision, prefixes, limits, layers, pieces, rows and file hashes.
+
+A BERT tower can use an XLM-R Unigram tokenizer only in the exact source form:
+normalizer Sequence[Precompiled, Replace(" {2,}", " ")], Metaspace("▁") that
+prepends and splits, and a single `<s>`/sequence/`</s>` template. The five
+added tokens must be non-normalized and must not strip. The bundle records this
+with tokenizer flag bit 2. Readers before WF-986 refuse that bit.
+
+The pair test is `python3 -m unittest discover -s tools/ze-model -p test_e5_pair.py`.
+It bakes the invented pack from
+`crates/volantis-db-text/tests/fixtures/wf986/generate.py` and compares the
+result with the committed `pair.zem`. `e5-pair-tokenizer-goldens.py` writes the
+real-pack token oracle `crates/volantis-db-text/tests/goldens/e5_pair.rs`.
