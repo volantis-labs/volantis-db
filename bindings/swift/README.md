@@ -233,13 +233,52 @@ invalid path or a URL that does not refer to the local filesystem throws
 
 Graph methods use the same `ZeppelinStore` handle: `enableGraph`, `graphApply`,
 `graphQuery`, `cypher`, `getNodes`, `getRelationships`, and `graphResources`.
-Call `enableGraph()` explicitly before graph queries. `GraphNodeID` is an alias for `DocumentID`. A document node created with
+Call `enableGraph()` before graph queries on a store created with ordinary
+`open(at:options:)`. `GraphNodeID` is an alias for `DocumentID`. A document node created with
 `GraphNodeImage(id:timestamp:attributes:metadata:)` uses the appended V2 ABI;
 create requires a caller ID, and put uses its existing node ID.
 Text on a graph node is searchable with a lexical query or Cypher `ze.text_search`
 as soon as the write returns, including when the store assigns the node ID.
 A later graph put replaces the indexed text, and deleting the node removes it.
 Vector and hybrid queries use document vectors.
+
+To create a graph-enabled store with immutable relationship rules, use the
+creation-only `open(at:relationshipTypes:maxResidentBytes:readerDrainTimeoutMilliseconds:)`
+overload with a new path.
+
+```swift
+let store = try await ZeppelinStore.open(at: path, relationshipTypes: [
+    GraphRelationshipType(type: "DEPENDS_ON", onDelete: .cascade),
+    GraphRelationshipType(type: "REFERENCES", onDelete: .restrict),
+])
+
+try await store.graphSetMaintenancePolicy(GraphMaintenancePolicy(autoReclaim: false))
+var report = try await store.graphMaintain()
+while !report.cycleComplete {
+    report = try await store.graphMaintain()
+}
+print(report.generation, report.removedBytes)
+```
+
+Rules apply to incoming edges from child to parent. `.restrict` refuses deletion
+while a surviving child references the parent. `.cascade` deletes dependent
+children transitively in the same mutation. The rules apply to batch mutations
+and Cypher deletion. The creation overload accepts up to 16,384 unique rules
+and 8 MiB of encoded declarations. Its resident-byte limit is 1 byte through
+256 MiB and defaults to 256 MiB. The reader drain timeout defaults to 5,000 ms.
+Use ordinary `open(at:options:)` to reopen the store. Its rules persist across
+reopens.
+
+`graphSetMaintenancePolicy(_:)` configures the current writer. The default
+policy enables automatic maintenance with a 64 MiB threshold. The threshold
+must be at least 1 MiB. Apply a custom policy again after reopening.
+`graphMaintain(interruption:)` runs one bounded step and returns the last
+published generation, step counters, and `cycleComplete`. Pass
+`.cancellation(token)` or `.deadlineNanoseconds(ns)` to interrupt the step.
+Both maintenance methods require a writer and can throw `ZeppelinError.busy`
+when another writer operation is in progress. On a core-only build, the
+creation overload and both maintenance methods throw
+`ZeppelinError.graphUnsupportedBuild`.
 
 For local graph builds, link one full archive:
 

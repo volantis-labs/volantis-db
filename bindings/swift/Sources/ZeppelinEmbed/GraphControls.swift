@@ -17,11 +17,17 @@ public final class GraphCancellationToken: @unchecked Sendable {
   // No public free: requests retain this token until native completion.
   deinit { _ = ze_cancel_token_free(value) }
 }
+#endif
+
 public enum GraphInterruption: Sendable {
   case none
+  #if ZE_GRAPH
   case cancellation(GraphCancellationToken)
+  #endif
   case deadlineNanoseconds(UInt64)
 }
+
+#if ZE_GRAPH
 public struct GraphCompileLimits: Sendable {
   public var textBytes: UInt32 = 65536, tokens: UInt32 = 8192, astNodes: UInt32 = 4096,
     depth: UInt32 = 64
