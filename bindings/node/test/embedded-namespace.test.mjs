@@ -1,3 +1,5 @@
+import {spawnSync} from "node:child_process";
+import {fileURLToPath} from "node:url";
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
@@ -175,4 +177,29 @@ test('shared namespace model survives live batches and writer close',
     else process.env.ZE_MODEL_CACHE = originalCache;
     rmSync(root, {recursive: true, force: true});
   }
+});
+
+const nativeMetal = process.platform === 'darwin' && process.arch === 'arm64';
+
+function runCacheCase(mode, envValue) {
+  const env = {...process.env, ZE_MODEL_OFFLINE: '1'};
+  if (envValue === undefined) delete env.ZE_MLX_CACHE_LIMIT_BYTES;
+  else env.ZE_MLX_CACHE_LIMIT_BYTES = envValue;
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL('./fixtures/namespace-cache.mjs', import.meta.url)), mode],
+    {env, encoding: 'utf8'});
+  assert.equal(result.status, 0, result.stderr);
+}
+
+test('embedded namespace open sets the process MLX cache limit', {skip: !nativeMetal}, () => {
+  runCacheCase('namespace-first', '8192');
+  runCacheCase('text-first', '8192');
+  runCacheCase('implicit');
+  runCacheCase('implicit', '8192');
+  runCacheCase('invalid-env', 'invalid');
+  runCacheCase('namespace-first', 'invalid');
+});
+
+test('namespace open validates the optional MLX byte count', {skip: !nativeMetal}, () => {
+  runCacheCase('validation');
+  runCacheCase('race');
 });

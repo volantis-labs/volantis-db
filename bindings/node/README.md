@@ -806,14 +806,16 @@ Each namespace keeps its own rows and generations. A snapshot retains the model
 after its writer closes. Closing the final namespace model owner stops its worker
 and releases unused MLX cache buffers. A cold reopen starts a new runtime, and
 the first write that needs the document tower pays its loading cost for paired models.
-A text-enabled build and the resolved model are required.
+A text-enabled build and the resolved model are required. The fourth argument
+can set the process-wide ceiling for reusable MLX buffers on the first embedded
+open. Embedded namespaces and TextStore share the [first-opener rules](#textstore-macos-arm64).
 
 ```js
 const spec = {
   embeddedModel: modelRef,
   attributes: [{ id: 1, name: 'meeting', type: 'id128', nullable: false }]
 };
-const notes = await openNamespaceAsync(root, 'notes', spec, options);
+const notes = await openNamespaceAsync(root, 'notes', spec, {mlxCacheLimitBytes: 536870912n});
 const meeting = { id: 1, type: 'id128', value: meetingId };
 await notes.upsertAsync([{ id: noteId, revision: 1n, text: transcript, attributes: [meeting] }]);
 const hits = await notes.queryEmbeddedAsync({

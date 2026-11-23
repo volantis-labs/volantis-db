@@ -501,6 +501,7 @@ fn every_phase_two_struct_has_the_frozen_size_and_field_offsets() {
     });
     assert_layout!(ZeChunkRank, 32, 8, {chunk:0,byte_start:8,byte_end:16,score:24});
     assert_layout!(ZeEmbeddedNamespaceSpec,104,8,{spec:0,model:48});
+    assert_layout!(ZeEmbeddedNamespaceSpecV2,112,8,{embedded:0,mlx_cache_limit_bytes:104});
     assert_layout!(ZeNeighbourSource,24,8,{doc_id:0,has_chunk:16,chunk:20});
     assert_layout!(ZeNeighbourRequest,96,8,{abi_size:0,abi_reserved:4,sources:8,source_count:16,constraints:24,eligible_ids:32,eligible_count:40,k:48,threshold:56,include_source:64,has_threshold:68,has_eligible:72,reserved:76,cancel_token:80,deadline_ns:88});
     assert_layout!(ZeNeighbourHit,40,8,{source_index:0,doc_id:8,chunk:24,score:32});

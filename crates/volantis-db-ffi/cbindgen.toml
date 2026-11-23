@@ -16,7 +16,7 @@ tab_width = 4
 line_length = 80
 
 [export]
-include = ["ZeEmbeddedNamespaceSpec"]
+include = ["ZeEmbeddedNamespaceSpec", "ZeEmbeddedNamespaceSpecV2"]
 
 [export.rename]
 "ZeHandle" = "ze_handle"

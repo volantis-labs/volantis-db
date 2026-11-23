@@ -509,6 +509,39 @@ mod tests {
     }
 
     #[test]
+    fn namespace_model_checks_explicit_limit_on_shared_open() {
+        // This policy survives every owner. Isolate the first configuration
+        // from other tests in the same Rust test binary.
+        if std::env::var_os("ZE599_MODEL_CHILD").is_none() {
+            let status = std::process::Command::new(std::env::current_exe().expect("test binary"))
+                .arg("namespace_model_checks_explicit_limit_on_shared_open")
+                .env("ZE599_MODEL_CHILD", "1")
+                .status()
+                .expect("isolated policy test");
+            assert!(status.success());
+            return;
+        }
+        let root = tempfile::tempdir().expect("root");
+        let pin = fixture::pinned_fixture_for(
+            root.path(),
+            "fixture/tiny",
+            "0123456789abcdef0123456789abcdef01234567",
+        );
+        let mut options = offline(root.path());
+        options.text = options.text.with_mlx_cache_limit_bytes(0);
+        let _owner = NamespaceModel::open_model(&pin, &options).expect("first explicit");
+        NamespaceModel::open_model(&pin, &offline(root.path())).expect("implicit peer");
+        options.text = options.text.with_mlx_cache_limit_bytes(8192);
+        assert!(matches!(
+            NamespaceModel::open_model(&pin, &options),
+            Err(TextError::Runtime(RuntimeError::CacheLimitConflict {
+                configured: 0,
+                requested: 8192
+            }))
+        ));
+    }
+
+    #[test]
     fn namespace_session_pin_and_policy() {
         let root = tempfile::tempdir().expect("root");
         let pin = pinned_fixture(root.path());

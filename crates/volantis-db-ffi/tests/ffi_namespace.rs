@@ -630,3 +630,55 @@ fn namespace_tokenizer_profiles_persist_without_embedding_epoch() {
         }
     }
 }
+
+#[test]
+fn embedded_cache_spec_checks_size_before_reading_limit() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().as_os_str().as_encoded_bytes();
+    let open = |spec: &ZeNamespaceSpec| {
+        let req = ZeNamespaceOpenRequest {
+            root: path.as_ptr(),
+            root_len: path.len(),
+            name: b"toy-a".as_ptr(),
+            name_len: 5,
+            spec,
+            open: open_settings(),
+            ..common::sized_zeroed()
+        };
+        let mut handle = 0;
+        let code = ze_namespace_open(&req, &mut handle);
+        assert_eq!(handle, 0);
+        code
+    };
+    // The allocation itself ends at the V1 boundary.
+    let mut short: ZeEmbeddedNamespaceSpec = common::sized_zeroed();
+    short.spec.has_vector_space = 3;
+    assert_eq!(open(&short.spec), ZeErrorCode::ZeErrInvalidArgument);
+    let mut full: ZeEmbeddedNamespaceSpecV2 = common::sized_zeroed();
+    full.embedded.spec.has_vector_space = 3;
+    full.embedded.spec.abi_reserved = 1;
+    assert_eq!(open(&full.embedded.spec), ZeErrorCode::ZeErrInvalidArgument);
+    full.embedded.spec.abi_reserved = 0;
+    full.embedded.spec.has_vector_space = 4;
+    assert_eq!(open(&full.embedded.spec), ZeErrorCode::ZeErrInvalidArgument);
+    #[cfg(not(feature = "text"))]
+    {
+        let rev = b"0123456789abcdef0123456789abcdef01234567";
+        let sha = b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        full.embedded.model = ZeTextModelRef {
+            repo: b"fixture/tiny".as_ptr(),
+            repo_len: 12,
+            revision: rev.as_ptr(),
+            revision_len: rev.len(),
+            manifest_sha256: sha.as_ptr(),
+            manifest_sha256_len: sha.len(),
+            ..common::sized_zeroed()
+        };
+        full.embedded.spec.has_vector_space = 3;
+        assert_eq!(open(&full.embedded.spec), ZeErrorCode::ZeErrUnsupported);
+        let mut legacy = full.embedded;
+        legacy.spec.has_vector_space = 2;
+        legacy.spec.abi_size = size_of::<ZeEmbeddedNamespaceSpec>() as u32;
+        assert_eq!(open(&legacy.spec), ZeErrorCode::ZeErrUnsupported);
+    }
+}

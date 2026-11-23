@@ -50,7 +50,14 @@ with the release FP16 default model peaked at about 7.3 GB process footprint
 cap with `TextOpenOptions::with_mlx_cache_limit_bytes` or
 `ZE_MLX_CACHE_LIMIT_BYTES` (bytes), set before the first text open. Invalid
 values are errors. Later opens can omit the limit or repeat it. A conflicting
-explicit limit returns `RuntimeError::CacheLimitConflict`.
+explicit limit returns `RuntimeError::CacheLimitConflict`. Embedded namespaces
+share this ceiling for reusable MLX buffers, including after all handles close.
+
+```rust
+let mut options = ModelOpenOptions::default();
+options.text = options.text.with_mlx_cache_limit_bytes(536_870_912);
+let model = NamespaceModel::open_model(&pins, &options)?;
+```
 
 `ModelOpenOptions.progress` receives synchronous byte counts on the calling
 thread. Intermediate reports require both at least 64 KiB and at least 100 ms

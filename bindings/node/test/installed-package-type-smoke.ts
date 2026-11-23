@@ -7,6 +7,7 @@ import {
   Store,
   idToUuid,
   openNamespace,
+  openNamespaceAsync,
   uuidToId,
   verify,
   type CountGroup,
@@ -121,3 +122,11 @@ const defaultModelRepo: string = TextStore.defaultModel.repo;
 void defaultModelRepo;
 // @ts-expect-error Pins must be supplied together.
 void TextStore.openModel({path: '/tmp/partial-text-model', repo: 'owner/model'});
+
+const embeddedSpec = {embeddedModel: {repo: 'fixture/tiny', revision: '0'.repeat(40), manifestSha256: '0'.repeat(64)}};
+void openNamespace('/tmp/root', 'notes', embeddedSpec, {mlxCacheLimitBytes: 0n});
+void openNamespaceAsync('/tmp/root', 'notes', embeddedSpec, {mlxCacheLimitBytes: 536870912n});
+// @ts-expect-error The byte count is an unsigned bigint.
+void openNamespace('/tmp/root', 'notes', embeddedSpec, {mlxCacheLimitBytes: 0});
+// @ts-expect-error The byte count is an unsigned bigint.
+void openNamespaceAsync('/tmp/root', 'notes', embeddedSpec, {mlxCacheLimitBytes: 0});

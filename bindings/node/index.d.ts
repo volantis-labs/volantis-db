@@ -947,14 +947,16 @@ export declare function openNamespace(
   root: string,
   name: string,
   spec: NamespaceSpec,
-  options?: OpenOptions,
+  /** mlxCacheLimitBytes applies to embeddedModel namespaces only. */
+  options?: OpenOptions & Pick<TextOpenOptions, 'mlxCacheLimitBytes'>,
 ): Store;
 /** Off-thread namespace open, with the same options and migrations. */
 export declare function openNamespaceAsync(
   root: string,
   name: string,
   spec: NamespaceSpec,
-  options?: OpenOptions,
+  /** mlxCacheLimitBytes applies to embeddedModel namespaces only. */
+  options?: OpenOptions & Pick<TextOpenOptions, 'mlxCacheLimitBytes'>,
 ): Promise<Store>;
 
 export declare function listNamespaces(root: string): string[];

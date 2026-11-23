@@ -208,7 +208,8 @@ pub struct ZeNamespaceSpec {
     pub attributes: *const ZeAttributeDefinition,
     /// Number of attribute definitions.
     pub attribute_count: usize,
-    /// Zero for records, one for vectors, two for a ZeEmbeddedNamespaceSpec prefix.
+    /// Zero for records, one for vectors, two for ZeEmbeddedNamespaceSpec,
+    /// or three for ZeEmbeddedNamespaceSpecV2.
     pub has_vector_space: u32,
     /// Vector dimensions, or zero or one for a record-only namespace.
     pub dimensions: u32,
@@ -2134,6 +2135,16 @@ pub struct ZeEmbeddedNamespaceSpec {
     pub spec: ZeNamespaceSpec,
     /// Immutable model pins, resolved with the standard model cache policy.
     pub model: ZeTextModelRef,
+}
+
+/// Embedded namespace with an explicit process-wide MLX buffer cache limit.
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct ZeEmbeddedNamespaceSpecV2 {
+    /// Prefix with abi_size = sizeof(ZeEmbeddedNamespaceSpecV2), has_vector_space = 3.
+    pub embedded: ZeEmbeddedNamespaceSpec,
+    /// Reusable buffer ceiling in bytes. Zero disables caching.
+    pub mlx_cache_limit_bytes: u64,
 }
 
 /// Text query against a model-bound Store namespace.

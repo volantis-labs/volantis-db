@@ -182,3 +182,87 @@ fn indeterminate_commit_leaves_outputs_untouched_and_fences_writes() {
         .unwrap();
     assert!(status.success());
 }
+
+#[cfg(feature = "text")]
+#[test]
+fn embedded_cache_spec_keeps_batch_rows_model_bound() {
+    use common::namespace_cache::*;
+    isolated(
+        "embedded_cache_spec_keeps_batch_rows_model_bound",
+        false,
+        |root, mut spec| {
+            let name = b"toy-a";
+            let (code, handle) = open(root, name, &spec.embedded.spec);
+            assert_eq!(code, ZeErrorCode::ZeOk);
+            let mut legacy = spec.embedded;
+            legacy.spec.has_vector_space = 2;
+            legacy.spec.abi_size = size_of::<ZeEmbeddedNamespaceSpec>() as u32;
+            let (code, peer) = open(root, b"toy-b", &legacy.spec);
+            assert_eq!(code, ZeErrorCode::ZeOk);
+            let handles = [handle, peer];
+            let mutate = |id, spec: &ZeNamespaceSpec| {
+                let doc = row(id);
+                let mut participant: ZeNamespaceMutation = common::sized_zeroed();
+                participant.name = name.as_ptr();
+                participant.name_len = name.len();
+                participant.spec = spec;
+                participant.upserts = common::sized_zeroed();
+                let condition = ZeRevisionCondition {
+                    kind: ZE_REVISION_CONDITION_NONE,
+                    reserved: 0,
+                    revision: 0,
+                };
+                participant.upserts.conditions = &condition;
+                participant.upserts.condition_count = 1;
+                participant.upserts.batch = ZeUpsertRequest {
+                    documents: &doc,
+                    document_count: 1,
+                    ..common::sized_zeroed()
+                };
+                let participants = [
+                    participant,
+                    ZeNamespaceMutation {
+                        name: b"toy-b".as_ptr(),
+                        name_len: 5,
+                        spec: &legacy.spec,
+                        ..participant
+                    },
+                ];
+                let mut generations = [u64::MAX; 2];
+                let request = ZeNamespaceBatchLiveRequest {
+                    batch: ZeNamespaceBatchRequest {
+                        root: root.as_ptr(),
+                        root_len: root.len(),
+                        participants: participants.as_ptr(),
+                        participant_count: participants.len(),
+                        generations: generations.as_mut_ptr(),
+                        ..common::sized_zeroed()
+                    },
+                    handles: handles.as_ptr(),
+                    ..common::sized_zeroed()
+                };
+                ze_namespace_batch_live(&request)
+            };
+            assert_eq!(mutate(42, &spec.embedded.spec), ZeErrorCode::ZeOk);
+            spec.mlx_cache_limit_bytes = 0;
+            assert_eq!(
+                mutate(43, &spec.embedded.spec),
+                ZeErrorCode::ZeErrMlxCacheLimitConflict
+            );
+            for (id, missing) in [(42, 0), (43, 1)] {
+                let id = ZeDocId { high: 0, low: id };
+                let req = ZeGetRequest {
+                    ids: &id,
+                    id_count: 1,
+                    ..common::sized_zeroed()
+                };
+                let mut result: ZeGetResult = common::sized_zeroed();
+                assert_eq!(ze_get(handle, &req, &mut result), ZeErrorCode::ZeOk);
+                assert_eq!(result.missing_count, missing);
+                assert_eq!(ze_get_result_free(&mut result), ZeErrorCode::ZeOk);
+            }
+            assert_eq!(ze_close(peer), ZeErrorCode::ZeOk);
+            assert_eq!(ze_close(handle), ZeErrorCode::ZeOk);
+        },
+    );
+}

@@ -634,7 +634,8 @@ typedef struct ZeNamespaceSpec {
      */
     size_t attribute_count;
     /*
-     Zero for records, one for vectors, two for a ZeEmbeddedNamespaceSpec prefix.
+     Zero for records, one for vectors, two for ZeEmbeddedNamespaceSpec,
+     or three for ZeEmbeddedNamespaceSpecV2.
      */
     uint32_t has_vector_space;
     /*
@@ -4004,6 +4005,20 @@ typedef struct ZeEmbeddedNamespaceSpec {
      */
     struct ZeTextModelRef model;
 } ZeEmbeddedNamespaceSpec;
+
+/*
+ Embedded namespace with an explicit process-wide MLX buffer cache limit.
+ */
+typedef struct ZeEmbeddedNamespaceSpecV2 {
+    /*
+     Prefix with abi_size = sizeof(ZeEmbeddedNamespaceSpecV2), has_vector_space = 3.
+     */
+    struct ZeEmbeddedNamespaceSpec embedded;
+    /*
+     Reusable buffer ceiling in bytes. Zero disables caching.
+     */
+    uint64_t mlx_cache_limit_bytes;
+} ZeEmbeddedNamespaceSpecV2;
 
 #ifdef __cplusplus
 extern "C" {

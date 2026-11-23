@@ -268,3 +268,6 @@ pub mod graph;
 // ZE-505: real text fixtures are compiled only for text-enabled tests.
 #[cfg(feature = "text")]
 pub mod text;
+
+#[cfg(feature = "text")]
+pub mod namespace_cache;

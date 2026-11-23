@@ -568,9 +568,20 @@ fn namespace_options(
     options: OpenOptions,
 ) -> Result<(OpenOptions, Schema, StoreEpoch), FfiError> {
     let spec = marshal::read_struct(pointer)?;
-    // The base layout uses a boolean flag. Only the extended layout defines tag 2.
-    if spec.has_vector_space == 2 && spec.abi_size as usize >= size_of::<ZeEmbeddedNamespaceSpec>()
+    // Preserve the legacy diagnostic for tag 2 on a base-only declaration.
+    if spec.has_vector_space == 3
+        || (spec.has_vector_space == 2
+            && spec.abi_size as usize >= size_of::<ZeEmbeddedNamespaceSpec>())
     {
+        let (embedded, cache_limit) = if spec.has_vector_space == 3 {
+            let v2 = marshal::read_struct(pointer.cast::<ZeEmbeddedNamespaceSpecV2>())?;
+            (v2.embedded, Some(v2.mlx_cache_limit_bytes))
+        } else {
+            (
+                marshal::read_struct(pointer.cast::<ZeEmbeddedNamespaceSpec>())?,
+                None,
+            )
+        };
         let normalization = parse_normalization(spec.normalization)?;
         if !spec.epoch.is_null() || spec.dimensions != 0 || normalization != Normalization::None {
             return Err(FfiError::invalid(
@@ -578,14 +589,16 @@ fn namespace_options(
             ));
         }
         #[cfg(not(feature = "text"))]
-        return Err(FfiError::new(
-            ZeErrorCode::ZeErrUnsupported,
-            "embedded namespaces require a text-enabled build",
-        ));
+        {
+            let _ = (embedded, cache_limit);
+            return Err(FfiError::new(
+                ZeErrorCode::ZeErrUnsupported,
+                "embedded namespaces require a text-enabled build",
+            ));
+        }
         #[cfg(feature = "text")]
         {
-            let extended = marshal::read_struct(pointer.cast::<ZeEmbeddedNamespaceSpec>())?;
-            let model = marshal::read_struct(&extended.model)?;
+            let model = marshal::read_struct(&embedded.model)?;
             let reference = volantis_db_text::ModelRef {
                 repo: marshal::utf8_without_nul(model.repo, model.repo_len)?.into(),
                 revision: marshal::utf8_without_nul(model.revision, model.revision_len)?.into(),
@@ -600,9 +613,15 @@ fn namespace_options(
                 ..spec
             })?;
             let tokenizer = parse_tokenizer_profile(profile.unwrap_or(0))?;
-            let model =
-                volantis_db_text::NamespaceModel::open_model(&reference, &Default::default())
-                    .map_err(FfiError::text)?;
+            let mut model_options = volantis_db_text::ModelOpenOptions::default();
+            if let Some(limit) = cache_limit {
+                model_options.text = model_options.text.with_mlx_cache_limit_bytes(
+                    usize::try_from(limit)
+                        .map_err(|_| FfiError::invalid("MLX cache limit exceeds usize"))?,
+                );
+            }
+            let model = volantis_db_text::NamespaceModel::open_model(&reference, &model_options)
+                .map_err(FfiError::text)?;
             let options = options
                 .with_tokenizer(tokenizer)
                 .with_embedder(std::sync::Arc::new(model))
@@ -1875,7 +1894,7 @@ fn decode_namespace_mutations(
         } else {
             decode_upsert_documents(
                 spec.has_vector_space == 0,
-                spec.has_vector_space == 2,
+                matches!(spec.has_vector_space, 2 | 3),
                 &schema,
                 upsert,
             )?

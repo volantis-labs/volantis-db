@@ -1321,7 +1321,30 @@ fn probe_schema_column(context: &MatrixContext) -> ProbeResult {
     ))
 }
 
-fn probe_namespace_open(_: &MatrixContext) -> ProbeResult {
+fn probe_namespace_open(context: &MatrixContext) -> ProbeResult {
+    let root = context.store.path.as_os_str().as_encoded_bytes();
+    let mut short: ZeEmbeddedNamespaceSpec = common::sized_zeroed();
+    short.spec.has_vector_space = 3;
+    let request = ZeNamespaceOpenRequest {
+        root: root.as_ptr(),
+        root_len: root.len(),
+        name: b"toy-a".as_ptr(),
+        name_len: 5,
+        spec: &short.spec,
+        open: ZeOpenRequest {
+            commit_tier: 1,
+            max_resident_bytes: u64::MAX,
+            max_temp_bytes: u64::MAX,
+            ..common::sized_zeroed()
+        },
+        ..common::sized_zeroed()
+    };
+    let mut handle = 0;
+    assert_eq!(
+        ze_namespace_open(&request, &mut handle),
+        ZeErrorCode::ZeErrInvalidArgument
+    );
+    assert_eq!(handle, 0);
     ProbeResult::Status(ze_namespace_open(std::ptr::null(), std::ptr::null_mut()))
 }
 

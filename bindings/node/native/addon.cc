@@ -1293,7 +1293,7 @@ bool ParseOpenRequest(napi_env env, napi_value options, const std::string &path,
 }
 
 struct NamespaceSpecStorage {
-  ZeEmbeddedNamespaceSpec declaration{};
+  ZeEmbeddedNamespaceSpecV2 declaration{};
   std::string repo, revision, sha;
 };
 
@@ -1374,7 +1374,7 @@ bool ParseNamespaceSpec(napi_env env, napi_value value,
     native.nullable = nullable ? 1 : 0;
   }
 
-  auto *spec = &storage->declaration.spec;
+  auto *spec = &storage->declaration.embedded.spec;
   *spec = ZeNamespaceSpec{};
   spec->abi_size = sizeof(*spec);
   spec->attributes = attributes->data();
@@ -1405,9 +1405,9 @@ bool ParseNamespaceSpec(napi_env env, napi_value value,
         !read_pin("revision", storage->revision) ||
         !read_pin("manifestSha256", storage->sha))
       return false;
-    spec->abi_size = sizeof(storage->declaration);
+    spec->abi_size = sizeof(storage->declaration.embedded);
     spec->has_vector_space = 2;
-    auto &model = storage->declaration.model;
+    auto &model = storage->declaration.embedded.model;
     model.abi_size = sizeof(model);
     model.repo = reinterpret_cast<const uint8_t *>(storage->repo.data());
     model.repo_len = storage->repo.size();
@@ -1453,6 +1453,36 @@ bool ParseNamespaceSpec(napi_env env, napi_value value,
       return false;
     }
   }
+  return true;
+}
+
+bool ParseNamespaceOpenSpec(napi_env env, napi_value spec, napi_value options,
+                            NamespaceSpecStorage *storage,
+                            std::vector<ZeAttributeDefinition> *attributes,
+                            std::vector<std::string> *names) {
+  if (!ParseNamespaceSpec(env, spec, storage, attributes, names))
+    return false;
+  napi_value limit;
+  bool present;
+  if (!GetNamed(env, options, "mlxCacheLimitBytes", &limit, &present))
+    return false;
+  if (!present)
+    return true;
+  napi_valuetype type;
+  if (!NapiOk(env, napi_typeof(env, limit, &type), "inspect MLX cache limit"))
+    return false;
+  if (type == napi_undefined)
+    return true;
+  auto &declaration = storage->declaration;
+  if (declaration.embedded.spec.has_vector_space != 2) {
+    napi_throw_type_error(env, "ERR_INVALID_ARG_VALUE",
+                          "mlxCacheLimitBytes requires embeddedModel");
+    return false;
+  }
+  if (!GetUint64(env, limit, "mlxCacheLimitBytes", &declaration.mlx_cache_limit_bytes))
+    return false;
+  declaration.embedded.spec.has_vector_space = 3;
+  declaration.embedded.spec.abi_size = sizeof(declaration);
   return true;
 }
 
@@ -1597,7 +1627,7 @@ napi_value ConstructStore(napi_env env, napi_callback_info info) {
       NamespaceSpecStorage spec{};
       std::vector<ZeAttributeDefinition> attributes;
       std::vector<std::string> attribute_names;
-      if (!ParseNamespaceSpec(env, args[3], &spec, &attributes,
+      if (!ParseNamespaceOpenSpec(env, args[3], args[1], &spec, &attributes,
                               &attribute_names)) {
         return nullptr;
       }
@@ -1608,7 +1638,7 @@ napi_value ConstructStore(napi_env env, napi_callback_info info) {
       namespace_request.name = reinterpret_cast<const uint8_t *>(name.data());
       namespace_request.name_len = name.size();
       namespace_request.open = request;
-      namespace_request.spec = &spec.declaration.spec;
+      namespace_request.spec = &spec.declaration.embedded.spec;
       std::string profile = "textDefault";
       bool has_profile = false;
       if (!GetOptionalString(env, args[3], "tokenizerProfile", &profile,
@@ -1683,7 +1713,7 @@ napi_value OpenAsync(napi_env env, napi_callback_info info) {
     if (argc == 4) {
       data->namespaced = true;
       if (!GetUtf8(env, args[2], "name", &data->name) ||
-          !ParseNamespaceSpec(env, args[3], &data->spec, &data->attributes,
+          !ParseNamespaceOpenSpec(env, args[3], args[1], &data->spec, &data->attributes,
                               &data->attribute_names))
         return nullptr;
       auto &ns = data->ns;
@@ -1693,7 +1723,7 @@ napi_value OpenAsync(napi_env env, napi_callback_info info) {
       ns.name = reinterpret_cast<const uint8_t *>(data->name.data());
       ns.name_len = data->name.size();
       ns.open = data->request;
-      ns.spec = &data->spec.declaration.spec;
+      ns.spec = &data->spec.declaration.embedded.spec;
       std::string profile = "textDefault";
       bool present = false;
       const char *profiles[] = {"textDefault", "code", "voice"};
@@ -2282,7 +2312,7 @@ napi_value NamespaceOperationCall(napi_env env, napi_callback_info info,
       }
       native.name = reinterpret_cast<const uint8_t *>(owned.name.data());
       native.name_len = owned.name.size();
-      native.spec = &owned.spec.declaration.spec;
+      native.spec = &owned.spec.declaration.embedded.spec;
       if (!GetNamed(env, value, "upserts", &field, &present))
         return nullptr;
       if (!present &&
