@@ -44,6 +44,12 @@ pooling, dimensions, target languages, grouped retrieval, release status),
 It lists every task that loses more than 0.05 nDCG@10 against e5 as the query
 tower. A missing source is an error before anything is baked.
 
+The current default, `volantis-labs/volantis-db-v98-e5-small` at revision
+`5909e5a5985f1c727766f7b50a713cfbe043256c`, is the output of the command above
+(manifest SHA-256
+`bc60376c0cddb821120a70aa17bc9f3c553726843dccfbefbc5664beda8fb941`). The
+upload is the release folder as is:
+`huggingface-cli upload volantis-labs/<repo> "$RELEASE" . --repo-type model`.
 The earlier default (`volantis-labs/volantis-db-clean71-arctic-m-v2` at revision
 `5833eb696dbc41def2421a7fb97d58f92db94fab`) was made by the ZE-498 form of this
 command, with fixed 96/8192 limits and a Core ML query model.

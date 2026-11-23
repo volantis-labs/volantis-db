@@ -448,7 +448,7 @@ ZE_ENABLE_GRAPH=1 swift build
 
 MLX keeps a process-global buffer cache, capped at 4 GiB by default during text
 ingest. On an Apple M3 Max with 128 GiB, a full FiQA ingest (57,638 documents)
-with the release FP16 default model peaked at about 7.3 GB process footprint
+with the earlier FP16 clean71/Arctic default peaked at about 7.3 GB process footprint
 (about 112 GB before the cap), with max RSS about 4.8 GB (ZE-528). Pass `mlxCacheLimitBytes` as a `UInt64` to either
 `TextStore.open` overload.
 The first explicit limit overrides `ZE_MLX_CACHE_LIMIT_BYTES` at initialization.
@@ -479,8 +479,9 @@ try await store.close()
 To download a pinned model, use
 `TextStore.open(at:model:cacheDirectory:offline:options:progress:)` with a
 `TextModel(repo:revision:manifestSHA256:)`. Omit `model` to use `TextModel.default`:
-`volantis-labs/volantis-db-clean71-arctic-m-v2` at
-`5833eb696dbc41def2421a7fb97d58f92db94fab`. The revision is a 40-hex commit and
+`volantis-labs/volantis-db-v98-e5-small` at
+`5909e5a5985f1c727766f7b50a713cfbe043256c`: the v98-8-r1 query tower and the `intfloat/multilingual-e5-small` document tower, 384 dimensions, FP16 MLX only, 347,613,712 bytes, about 348 MB. Dutch queries lose quality (Belebele nld nDCG@10 0.764 against 0.929). Stores embedded with the earlier clean71/Arctic default do not open under this default.
+The revision is a 40-hex commit and
 the manifest pin is a 64-hex SHA-256. The call runs on a detached task, like
 `VolantisStore`. The optional `@Sendable` progress closure receives
 `completedBytes` and `totalBytes` on that task's thread; total is zero while
@@ -495,7 +496,7 @@ the verified cache. `cacheDirectory` overrides `ZE_MODEL_CACHE` and the default
 prohibits networking; an offline miss throws `VolantisError.notFound`.
 `ZE_MODEL_ENDPOINT` overrides the download endpoint.
 `TextStore.open(at: storeURL, bundle: bundleURL)` opens a preinstalled bundle.
-See the [model card](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/5833eb696dbc41def2421a7fb97d58f92db94fab/README.md)
+See the [model card](https://huggingface.co/volantis-labs/volantis-db-v98-e5-small/blob/5909e5a5985f1c727766f7b50a713cfbe043256c/README.md)
 and [root text API guide](../../README.md#text-api-macos-apple-silicon) for model
 limits, download size, and measured performance.
 

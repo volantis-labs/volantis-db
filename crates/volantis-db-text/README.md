@@ -34,8 +34,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`ModelRef::default_model()` uses the [published model card](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/5833eb696dbc41def2421a7fb97d58f92db94fab/README.md)
-at revision `5833eb696dbc41def2421a7fb97d58f92db94fab`.
+`ModelRef::default_model()` uses `volantis-labs/volantis-db-v98-e5-small`
+([model card](https://huggingface.co/volantis-labs/volantis-db-v98-e5-small/blob/5909e5a5985f1c727766f7b50a713cfbe043256c/README.md))
+at revision `5909e5a5985f1c727766f7b50a713cfbe043256c`: query tower v98-8-r1
+(`query: `, 96 tokens) and document tower `intfloat/multilingual-e5-small`
+(`passage: `, 512 tokens), 384 dimensions, FP16 on MLX only, a
+347,613,712-byte download. Dutch queries lose quality (Belebele nld nDCG@10
+0.764 against 0.929); see the root README for the languages. Stores embedded
+with the earlier clean71/Arctic default do not open under this default.
 The first open downloads and verifies the pinned model; subsequent opens reuse
 the verified cache. Set `ModelOpenOptions.cache_dir` to override `ZE_MODEL_CACHE`
 and the default `~/Library/Caches/volantis-db/models`. Set `offline: true`
@@ -45,7 +51,7 @@ or `ZE_MODEL_OFFLINE=1` to prohibit networking; a cache miss returns
 
 MLX keeps a process-global buffer cache, capped at 4 GiB by default during text
 ingest. On an Apple M3 Max with 128 GiB, a full FiQA ingest (57,638 documents)
-with the release FP16 default model peaked at about 7.3 GB process footprint
+with the earlier FP16 clean71/Arctic default peaked at about 7.3 GB process footprint
 (about 112 GB before the cap), with max RSS about 4.8 GB (ZE-528). Override the
 cap with `TextOpenOptions::with_mlx_cache_limit_bytes` or
 `ZE_MLX_CACHE_LIMIT_BYTES` (bytes), set before the first text open. Invalid
@@ -92,7 +98,9 @@ The dedicated real-model job runs
 `release_tokenizer::release_tokenizer_ids_match_hf_0_19_1_for_both_towers`.
 It downloads through `resolve_model` from HF, caches `ZE_MODEL_CACHE` keyed on
 `DEFAULT_MODEL_REVISION`, and verifies cache hits. Locally the resolver uses
-`ZE_MODEL_CACHE` or `~/Library/Caches/volantis-db/models`.
+`ZE_MODEL_CACHE` or `~/Library/Caches/volantis-db/models`. The tokenizer test
+compares both towers with `tests/goldens/e5_pair.rs` (SentenceTransformer 3.0.1
+and HF tokenizers 0.19.1 on each `tokenizer.json`, prefixes included).
 
 Only the following ignored tests require the local release gate. Run from the
 repository root outside the sandbox with the named fixtures and native
@@ -105,7 +113,8 @@ models; substituting the published FP16 default would invalidate the assertions.
 | LEAF/Arctic parity and placement | `ZE_TEXT_TEST_BUNDLE_DIR`: original LEAF v1.5 pair and Arctic v2 symmetric bundles; LEAF `.mlmodelc` beside them or `ZE_COREML_QUERY_MODEL` | `cargo test --locked -p volantis-db-text --test arch --test placement -- --ignored` |
 | clean71 FP32 parity | `ZE_CLEAN71_PACK`, ze-model Python dependencies | `cargo test --locked -p volantis-db-text --test arctic_query -- --ignored` |
 | clean71 CoreML plan and parity | `ZE_CLEAN71_COREML_MODEL`, `ZE497_PACK`, `ZE497_COREML`, `ZE497_PYTHON` | `cargo test --locked -p volantis-db-text --test clean71_coreml -- --ignored` |
-| Release smoke and FP16 document parity | HF cache or `ZE498_RELEASE`; `ZE498_PACK`, `ZE498_PYTHON`; `ZE_QUERY_COREML` unset | `cargo test --locked -p volantis-db-text --test release -- --ignored` |
+| Release smoke (MLX, all legs) and FP16 e5 pair layout | HF cache or `WF987_RELEASE` (a `ze-model release` folder) | `cargo test --locked -p volantis-db-text --test release -- --ignored` |
+| e5 pair tokens and FP16 parity against the pack fp32 goldens (cosine >= 0.999 per row) | `E5_PACK`, `E5_BUNDLE` (the release `.zem`), `E5_PRECISION=fp16` | `cargo test --locked -p volantis-db-text --test e5_pair pack_ -- --ignored` |
 | 30,001-document maintenance | Unsandboxed MLX runtime | `cargo test --locked -p volantis-db-text --test text_api -- --ignored` |
 
 `model_cache::measure_large_cache_open` is an ignored manual benchmark, not a

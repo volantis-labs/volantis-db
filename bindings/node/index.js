@@ -898,9 +898,9 @@ function requireText() {
 }
 
 const DEFAULT_MODEL = Object.freeze({
-  repo: 'volantis-labs/volantis-db-clean71-arctic-m-v2',
-  revision: '5833eb696dbc41def2421a7fb97d58f92db94fab',
-  manifestSha256: '7fafd7a3a086544f5ef5b25265ac4404b8fbeb9289cbe3e1e6d2b36622b263b3',
+  repo: 'volantis-labs/volantis-db-v98-e5-small',
+  revision: '5909e5a5985f1c727766f7b50a713cfbe043256c',
+  manifestSha256: 'bc60376c0cddb821120a70aa17bc9f3c553726843dccfbefbc5664beda8fb941',
 });
 
 class TextStore {

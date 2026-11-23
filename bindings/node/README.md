@@ -703,7 +703,7 @@ because MLX loads the metallib from the directory of the native binary.
 
 MLX keeps a process-global buffer cache, capped at 4 GiB by default during text
 ingest. On an Apple M3 Max with 128 GiB, a full FiQA ingest (57,638 documents)
-with the release FP16 default model peaked at about 7.3 GB process footprint
+with the earlier FP16 clean71/Arctic default peaked at about 7.3 GB process footprint
 (about 112 GB before the cap), with max RSS about 4.8 GB (ZE-528). Pass `mlxCacheLimitBytes` as an unsigned bigint in
 `TextStore.openModel({path, mlxCacheLimitBytes})` or in the third argument to
 `TextStore.open(path, bundlePath, {mlxCacheLimitBytes})` and `openAsync`.
@@ -779,8 +779,12 @@ To download and cache a model, use the asynchronous `TextStore.openModel` with
 `{path, repo, revision, manifestSha256, cacheDir?, offline?, onProgress?}`.
 `revision` must be a pinned 40-hex commit and `manifestSha256` the manifest's
 64-hex SHA-256. Omit all three pins (`TextStore.openModel({path})`) to use
-`TextStore.defaultModel`: `volantis-labs/volantis-db-clean71-arctic-m-v2` at
-`5833eb696dbc41def2421a7fb97d58f92db94fab`. A partial set of pins is an error. `onProgress({done, total})` receives
+`TextStore.defaultModel`: `volantis-labs/volantis-db-v98-e5-small` at
+`5909e5a5985f1c727766f7b50a713cfbe043256c` (the v98-8-r1 query tower and the
+`intfloat/multilingual-e5-small` document tower, 384 dimensions, FP16 MLX only,
+347,613,712 bytes, about 348 MB). Dutch queries lose quality (Belebele nld
+nDCG@10 0.764 against 0.929). Stores embedded with the earlier clean71/Arctic
+default do not open under this default. A partial set of pins is an error. `onProgress({done, total})` receives
 bigint byte counts on the JS thread. Intermediate reports require both at least
 64 KiB and at least 100 ms since the last report; each verified file also reports
 completion. `(0n, 0n)` means fetching the manifest.
@@ -790,16 +794,18 @@ the verified cache. `cacheDir` overrides `ZE_MODEL_CACHE` and the default
 `~/Library/Caches/volantis-db/models`. `offline: true` or `ZE_MODEL_OFFLINE=1`
 prohibits networking; a cache miss throws `ZE_ERR_NOT_FOUND`. `ZE_MODEL_ENDPOINT`
 overrides the download endpoint. `TextStore.openAsync(path, bundlePath)` opens a
-preinstalled bundle. See the [model card](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/5833eb696dbc41def2421a7fb97d58f92db94fab/README.md)
+preinstalled bundle. See the [model card](https://huggingface.co/volantis-labs/volantis-db-v98-e5-small/blob/5909e5a5985f1c727766f7b50a713cfbe043256c/README.md)
 and [root text API guide](../../README.md#text-api-macos-apple-silicon) for model
 limits, download size, and measured performance.
 
 ### Embedded namespaces
 
 `openNamespace` and `openNamespaceAsync` accept an `embeddedModel` with
-`repo`, `revision` and `manifestSha256`. Use the same pinned spec when reopening
+`repo`, `revision` and `manifestSha256`. `TextStore.defaultModel` is a valid
+`embeddedModel`: the e5 pair, 384 dimensions. Use the same pinned spec when reopening
 the namespace or naming it in a namespace batch. The model supplies the vector
-dimensions. A multi-row upsert batches new and changed text across rows and
+dimensions. A namespace embedded with the earlier default keeps those pins; open it
+with them, or rebuild it to use the new default. A multi-row upsert batches new and changed text across rows and
 chunks before committing. Rows eligible for same-text vector reuse skip inference.
 Overlapping opens with the same model pins and query backend share one runtime.
 Each namespace keeps its own rows and generations. A snapshot retains the model
@@ -830,6 +836,7 @@ namespaceBatch(root, [
 ```
 
 ```js
+const modelRef = TextStore.defaultModel;
 const spec = {
   embeddedModel: modelRef,
   attributes: [{ id: 1, name: 'meeting', type: 'id128', nullable: false }]

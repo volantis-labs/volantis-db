@@ -307,7 +307,7 @@ No separate MLX install or shader-library path is needed.
 
 MLX keeps a process-global buffer cache, capped at 4 GiB by default during text
 ingest. On an Apple M3 Max with 128 GiB, a full FiQA ingest (57,638 documents)
-with the release FP16 default model peaked at about 7.3 GB process footprint
+with the earlier FP16 clean71/Arctic default peaked at about 7.3 GB process footprint
 (about 112 GB before the cap), with max RSS about 4.8 GB (ZE-528). Pass `mlx_cache_limit_bytes` as an unsigned integer keyword
 argument to `open_text` or `open_model`.
 The first explicit limit overrides `ZE_MLX_CACHE_LIMIT_BYTES` at initialization.
@@ -331,8 +331,9 @@ To download and verify a model from Hugging Face, call
 `ze.open_model("text-store", repo=repo, revision=commit_sha,
 manifest_sha256=manifest_sha256, cache_dir=None, offline=False, progress=None)`.
 Omit all three pins (`ze.open_model("text-store")`) to use
-`ze.DEFAULT_MODEL_REF`: `volantis-labs/volantis-db-clean71-arctic-m-v2` at
-`5833eb696dbc41def2421a7fb97d58f92db94fab`. Explicit pins must be supplied together;
+`ze.DEFAULT_MODEL_REF`: `volantis-labs/volantis-db-v98-e5-small` at
+`5909e5a5985f1c727766f7b50a713cfbe043256c`: the v98-8-r1 query tower and the `intfloat/multilingual-e5-small` document tower, 384 dimensions, FP16 MLX only, 347,613,712 bytes, about 348 MB. Dutch queries lose quality (Belebele nld nDCG@10 0.764 against 0.929). Stores embedded with the earlier clean71/Arctic default do not open under this default.
+Explicit pins must be supplied together;
 a partial set is an error.
 The native resolver honors `ZE_MODEL_CACHE`, `ZE_MODEL_OFFLINE`, and
 `ZE_MODEL_ENDPOINT`. The first open downloads and verifies the pinned model;
@@ -345,7 +346,7 @@ manifest. Callbacks must not reenter model resolution; callback exceptions
 propagate after resolution.
 `offline=True` (or `ZE_MODEL_OFFLINE=1`) prohibits network access and raises
 `ze.NotFound` on a cache miss. `ze.open_text("text-store", "model.zem")` opens a
-preinstalled bundle. See the [model card](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/5833eb696dbc41def2421a7fb97d58f92db94fab/README.md)
+preinstalled bundle. See the [model card](https://huggingface.co/volantis-labs/volantis-db-v98-e5-small/blob/5909e5a5985f1c727766f7b50a713cfbe043256c/README.md)
 and [root text API guide](../../README.md#text-api-macos-apple-silicon) for model
 limits, download size, and measured performance.
 

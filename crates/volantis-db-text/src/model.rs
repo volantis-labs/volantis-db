@@ -3,12 +3,12 @@
 use std::path::PathBuf;
 
 /// Published default model repository.
-pub const DEFAULT_MODEL_REPO: &str = "volantis-labs/volantis-db-clean71-arctic-m-v2";
+pub const DEFAULT_MODEL_REPO: &str = "volantis-labs/volantis-db-v98-e5-small";
 /// Immutable commit of the published default model.
-pub const DEFAULT_MODEL_REVISION: &str = "5833eb696dbc41def2421a7fb97d58f92db94fab";
+pub const DEFAULT_MODEL_REVISION: &str = "5909e5a5985f1c727766f7b50a713cfbe043256c";
 /// SHA-256 of the default model's exact manifest bytes.
 pub const DEFAULT_MODEL_MANIFEST_SHA256: &str =
-    "7fafd7a3a086544f5ef5b25265ac4404b8fbeb9289cbe3e1e6d2b36622b263b3";
+    "bc60376c0cddb821120a70aa17bc9f3c553726843dccfbefbc5664beda8fb941";
 
 /// Immutable model identity. No moving branch names or tags are accepted.
 #[derive(Clone, Debug)]

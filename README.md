@@ -117,18 +117,33 @@ retrieves it with dense (vector), lexical (BM25), or hybrid search. It is
 available only on macOS Apple Silicon. Python wheels and the Node arm64 addon
 require macOS 13.0 or newer; the Swift package and full C SDK require macOS 14.
 
-The default is [volantis-labs/volantis-db-clean71-arctic-m-v2 (model card)](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/5833eb696dbc41def2421a7fb97d58f92db94fab/README.md),
-pinned to revision `5833eb696dbc41def2421a7fb97d58f92db94fab`. Its clean71
-query tower has 71M parameters (71,201,280, from the model pack's `PAIR.json`),
-accepts 96 model tokens, and uses INT8 weight-only CoreML on the Apple Neural
-Engine, with FP16 MLX query weights available when CoreML is
-absent or explicitly disabled with `ZE_QUERY_COREML=off`. A discovered CoreML
-model that fails to load returns an error. The document tower is
-`Snowflake/snowflake-arctic-embed-m-v2.0`, FP16 on MLX, with an 8192-model-token
-limit. Long-document chunking is controlled by each binding's ingest options.
+The default is [volantis-labs/volantis-db-v98-e5-small (model card)](https://huggingface.co/volantis-labs/volantis-db-v98-e5-small/blob/5909e5a5985f1c727766f7b50a713cfbe043256c/README.md),
+pinned to revision `5909e5a5985f1c727766f7b50a713cfbe043256c`. It is a
+two-tower pair. Both towers run FP16 on MLX on Apple silicon; there is no
+CoreML query model (WF-987).
 
-The qualified model payload is **832,765,584 bytes** (about 833 MB), plus the
-small manifest. The first model open downloads the pinned files from Hugging
+| Tower | Model | Parameters | Prefix | Max model tokens |
+| --- | --- | ---: | --- | ---: |
+| Query | v98-8-r1 (8-layer BERT, 98,304-piece vocabulary) | 52,142,592 | `query: ` | 96 |
+| Document | `intfloat/multilingual-e5-small` @614241f6, unchanged | 117,505,920 | `passage: ` | 512 |
+
+Both towers use mean pooling and L2 normalization and give 384-dimension
+vectors; the score is the dot product. The token limits include the prefix
+and both special tokens. Long-document chunking is controlled by each
+binding's ingest options.
+
+Target languages: en, es, fr, de, pt, it, ru, zh, ja, ko, hi, ar, id, vi.
+Quality drops outside them. **Dutch queries lose quality:** Belebele nld
+nDCG@10 is 0.764, against 0.929 with e5 as the query tower. English, German
+and French are within 1-2% of that ceiling. Bengali, Telugu, Thai, Persian,
+Swahili, Finnish and Yoruba lose more; the model card lists every task.
+
+The model payload is **347,613,712 bytes** (about 348 MB), plus the small
+manifest. Stores embedded with the earlier default
+(`volantis-labs/volantis-db-clean71-arctic-m-v2`) do not open under the new
+default, because the embedding epoch differs; rebuild them or open them with
+the old pin.
+The first model open downloads the pinned files from Hugging
 Face, verifies their sizes and SHA-256 hashes, and atomically installs them in
 the cache. Later opens verify the manifest and compare file metadata with the
 verification marker, rehashing payloads when that marker no longer matches.
@@ -147,7 +162,8 @@ resolution; Node delivers events on the JS thread.
 
 Measured on a **MacBook Pro, Apple M3 Max, 128 GiB, macOS 27.0** (ZE-503):
 current-main FiQA FP16 graph store, with CoreML query embedding for dense and
-hybrid text queries.
+hybrid text queries. These latency and memory numbers were measured with the
+earlier clean71/Arctic default and are not yet measured again for the e5 pair.
 
 | Warm query | p50 ms | p95 ms |
 | --- | ---: | ---: |
@@ -162,7 +178,7 @@ Both measurements used a warm OS file cache (ZE-503).
 
 MLX keeps a process-global buffer cache, capped at 4 GiB by default during text
 ingest. On an Apple M3 Max with 128 GiB, a full FiQA ingest (57,638 documents)
-with the release FP16 default model peaked at about 7.3 GB process footprint
+with the earlier FP16 clean71/Arctic default peaked at about 7.3 GB process footprint
 (about 112 GB before the cap), with max RSS about 4.8 GB. At the first text open, an explicit byte limit overrides
 `ZE_MLX_CACHE_LIMIT_BYTES`. Zero disables the buffer cache. Node accepts
 `mlxCacheLimitBytes` as a bigint on `openModel` or in the third argument to
@@ -172,7 +188,7 @@ Later opens can omit the limit or repeat it. A different explicit limit returns
 `ZE_ERR_MLX_CACHE_LIMIT_CONFLICT`, even after the first store closes.
 
 **Recommended limit for an 8 GB Apple silicon Mac: 512 MiB.** Ingesting
-5,000 chunks of 200 tokens with the release model peaked at a 2.96 GiB
+5,000 chunks of 200 tokens with the earlier clean71/Arctic default peaked at a 2.96 GiB
 footprint and 2.00 GiB RSS at 69-71 chunks/s with a 256 or 512 MiB limit;
 1 GiB raised the peak to 3.38 GiB and was slower (63 chunks/s). At rest
 after ingest RSS is about 1.6 GiB, and the document tower is released only

@@ -1,6 +1,6 @@
 #!/bin/sh
 # ZE-554. Run from the repository root on an 8 GB Apple silicon Mac after
-# TextStore.openModel has cached the pinned release model and CoreML artifact.
+# TextStore.openModel has cached the pinned release model (MLX only, WF-987).
 # Each process ingests the same one-chunk documents into a new store, then
 # measures idle memory with the store open and memory after one hybrid query.
 set -eu
@@ -10,10 +10,10 @@ sysctl hw.model hw.memsize machdep.cpu.brand_string > "$run/hardware.txt"
 sw_vers >> "$run/hardware.txt"
 git rev-parse HEAD >> "$run/hardware.txt"
 test "$(sysctl -n hw.memsize)" = 8589934592
-model_dir="${ZE_MODEL_CACHE:-$HOME/Library/Caches/volantis-db/models}/volantis-labs%2Fvolantis-db-clean71-arctic-m-v2/5833eb696dbc41def2421a7fb97d58f92db94fab"
-bundle="$model_dir/volantis-db-clean71-v1-arctic-m-v2.zem"
+model_dir="${ZE_MODEL_CACHE:-$HOME/Library/Caches/volantis-db/models}/volantis-labs%2Fvolantis-db-v98-e5-small/5909e5a5985f1c727766f7b50a713cfbe043256c"
+bundle="$model_dir/volantis-db-v98-8-r1-e5-small.zem"
 test -f "$bundle"
-test -d "${bundle%.zem}.mlmodelc"
+test ! -e "${bundle%.zem}.mlmodelc"
 unset ZE_QUERY_COREML
 mkdir -p "$run/chunks/qrels"
 python3 - "$run/chunks" <<'PY'

@@ -1,18 +1,13 @@
 #![allow(clippy::expect_used)]
 
-use std::io::{Cursor, Read};
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::Arc;
+use std::path::PathBuf;
 use tempfile::tempdir;
 use volantis_db_text::bundle::{Bundle, TensorDtype};
-use volantis_db_text::runtime::ModelRuntime;
-use volantis_db_text::runtime::mlx::MlxRuntime;
-use volantis_db_text::tower::{TokenBatch, TowerRole};
 use volantis_db_text::{IngestOptions, Legs, QueryOptions, TextDocument, TextStore};
 
+/// The published default bundle, or the one `.zem` in `WF987_RELEASE`.
 fn release_bundle() -> PathBuf {
-    let Some(directory) = std::env::var_os("ZE498_RELEASE").map(PathBuf::from) else {
+    let Some(directory) = std::env::var_os("WF987_RELEASE").map(PathBuf::from) else {
         return volantis_db_text::resolve_model(
             &volantis_db_text::ModelRef::default_model(),
             &Default::default(),
@@ -32,11 +27,11 @@ fn release_bundle() -> PathBuf {
 }
 
 #[test]
-#[ignore = "requires cached HF model (or ZE498_RELEASE) and native MLX/CoreML; ZE_QUERY_COREML must be unset"]
+#[ignore = "requires cached HF model (or WF987_RELEASE) and native MLX"]
 fn release_opens_ingests_three_documents_and_queries_all_legs() {
-    assert!(std::env::var_os("ZE_QUERY_COREML").is_none());
     let bundle = release_bundle();
-    assert!(bundle.with_extension("mlmodelc").is_dir());
+    // WF-987 ships MLX only: no Core ML query companion beside the bundle.
+    assert!(!bundle.with_extension("mlmodelc").exists());
     let scratch = tempdir().expect("scratch store");
     let store = TextStore::open(scratch.path(), &bundle, Default::default()).expect("release open");
     let report = store
@@ -54,88 +49,40 @@ fn release_opens_ingests_three_documents_and_queries_all_legs() {
         let result = store
             .query_text_with_diagnostics("bronze zeppelin", QueryOptions::new(3).with_legs(legs))
             .expect("release query");
-        assert!(!result.hits.is_empty(), "{legs:?}");
+        assert_eq!(
+            result.hits.first().map(|hit| hit.doc_id),
+            Some(1),
+            "{legs:?}"
+        );
         if legs != Legs::Lexical {
             assert_eq!(
                 result.backend.expect("dense query backend").runtime.name,
-                "coreml-cpu-ane"
+                "mlx-c"
             );
         }
     }
     store.close().expect("close store");
 }
 
-fn word(input: &mut Cursor<Vec<u8>>) -> [u8; 4] {
-    let mut bytes = [0; 4];
-    input.read_exact(&mut bytes).expect("golden input word");
-    bytes
-}
-
 #[test]
-#[ignore = "requires cached HF model (or ZE498_RELEASE), ZE498_PACK, ZE498_PYTHON and native MLX"]
-fn fp16_release_document_tower_matches_pack_fp32_goldens() {
-    let bundle = Arc::new(Bundle::open(release_bundle()).expect("release bundle"));
-    assert_eq!(
-        bundle
-            .tensor("document/embeddings.word_embeddings.weight")
-            .expect("word weights")
-            .dtype,
-        TensorDtype::F16
-    );
-    let python = std::env::var_os("ZE498_PYTHON").expect("set ZE498_PYTHON");
-    let pack = std::env::var_os("ZE498_PACK").expect("set ZE498_PACK");
-    let helper = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tools/ze-model/document-parity-inputs.py");
-    let output = Command::new(python)
-        .arg(helper)
-        .arg(pack)
-        .output()
-        .expect("pack goldens");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let mut input = Cursor::new(output.stdout);
-    let rows = u32::from_le_bytes(word(&mut input));
-    assert!(rows > 0);
-    let mut runtime =
-        MlxRuntime::load(bundle, TowerRole::Document).expect("load FP16 document weights");
-    let mut min_cosine = 1.0_f64;
-    let mut max_abs = 0.0_f32;
-    for _ in 0..rows {
-        let count = u32::from_le_bytes(word(&mut input)) as usize;
-        let ids = (0..count)
-            .map(|_| i32::from_le_bytes(word(&mut input)))
-            .collect();
-        let expected: Vec<_> = (0..768)
-            .map(|_| f32::from_le_bytes(word(&mut input)))
-            .collect();
-        let tokens = TokenBatch::new(ids, vec![1.; count], 1, count).expect("golden tokens");
-        let actual = runtime
-            .embed_batch(&tokens)
-            .expect("FP16 document inference");
-        assert_eq!(actual.values().len(), 768);
-        assert!(actual.values().iter().all(|v| v.is_finite()));
-        let dot: f64 = actual
-            .values()
-            .iter()
-            .zip(&expected)
-            .map(|(a, b)| f64::from(*a) * f64::from(*b))
-            .sum();
-        let norm = |v: &[f32]| v.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
-        let actual_norm = norm(actual.values());
-        assert!(actual_norm.is_finite() && actual_norm > 0.0);
-        let cosine = dot / (actual_norm * norm(&expected));
-        min_cosine = min_cosine.min(cosine);
-        // Runtime output is raw; pack goldens are L2-normalized.
-        for (a, b) in actual.values().iter().zip(&expected) {
-            let normalized = (f64::from(*a) / actual_norm) as f32;
-            max_abs = max_abs.max((normalized - b).abs());
-        }
+#[ignore = "requires cached HF model (or WF987_RELEASE); no MLX"]
+fn release_bundle_is_the_fp16_e5_pair() {
+    let bundle = Bundle::open(release_bundle()).expect("release bundle");
+    assert!(!bundle.is_symmetric());
+    for (role, tower, prefix, limit) in [
+        ("query", bundle.query_tower(), "query: ", 96),
+        ("document", bundle.document_tower(), "passage: ", 512),
+    ] {
+        assert_eq!(tower.embedding.prompt_prefix, prefix, "{role}");
+        assert_eq!(tower.embedding.max_tokens, limit, "{role}");
+        assert_eq!(tower.embedding.dims, 384, "{role}");
+        assert_eq!(
+            bundle
+                .tensor(&format!("{role}/embeddings.word_embeddings.weight"))
+                .expect("word weights")
+                .dtype,
+            TensorDtype::F16,
+            "{role}"
+        );
     }
-    assert_eq!(input.position() as usize, input.get_ref().len());
-    println!("ZE-498 FP16 document rows={rows} min_cosine={min_cosine:.9} max_abs={max_abs:.9}");
-    assert!(min_cosine >= 0.999, "min_cosine={min_cosine}");
-    assert!(max_abs <= 0.005, "max_abs={max_abs}");
 }
