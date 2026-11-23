@@ -66,4 +66,4 @@ name = "ffi_graph_full"
 required-features = ["graph-cypher"]
 
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dev-dependencies]
-volantis-db-text = { path = "../volantis-db-text", features = ["test-support"] }
+volantis-db-text = { path = "../volantis-db-text", version = "=0.1.0", features = ["test-support"] }
