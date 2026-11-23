@@ -1028,7 +1028,7 @@ public actor ZeppelinStore {
             request.embedding.query = tower(epoch.embedding.query, base: 5)
             request.embedding.alignment_digest = bytesPointer(10)
             request.embedding.alignment_digest_len = fields[10].count
-            request.tokenizer_profile = 0
+            request.tokenizer_profile = epoch.tokenizerProfile.rawValue
             return try withUnsafePointer(to: &request, body)
         }
     }

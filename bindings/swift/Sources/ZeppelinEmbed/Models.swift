@@ -157,9 +157,11 @@ public struct EmbeddingEpoch: Sendable {
 
 public struct Epoch: Sendable {
     public var embedding: EmbeddingEpoch
+    public var tokenizerProfile: TokenizerProfile
 
-    public init(embedding: EmbeddingEpoch) {
+    public init(embedding: EmbeddingEpoch, tokenizerProfile: TokenizerProfile = .textDefault) {
         self.embedding = embedding
+        self.tokenizerProfile = tokenizerProfile
     }
 }
 

@@ -184,6 +184,54 @@ Pass a `ZeppelinCancellationToken` with `merge(cancellationToken:)` to request
 cooperative cancellation. A cancelled call throws `ZeppelinError.cancelled`.
 Batches published before cancellation remain committed.
 
+### Namespace tokenizers, batches, and cascades
+
+Set `NamespaceSpec.tokenizerProfile` when opening a namespace. The default is
+`.textDefault`. Use `.code` to preserve stopwords and skip stemming, or
+`.voice` to match transcript number words such as “twenty five” with “25”.
+These profiles work on record-only and vector namespaces in core builds.
+Reopen with the same profile or receive `ZeppelinError.epochMismatch`. A
+custom vector `Epoch` must declare the same tokenizer profile as its spec.
+
+```swift
+let spec = NamespaceSpec(attributes: [], vectorSpace: nil, tokenizerProfile: .voice)
+let notes = try await ZeppelinStore.openNamespace(root: root, name: "notes", spec: spec)
+```
+
+`ZeppelinStore.namespaceBatch(root:participants:)` commits changes to 2–128
+existing namespaces of one root in a single durable transaction. Supply the
+exact spec for each unique namespace and close its writer and any open snapshot
+views first. Each `NamespaceMutation` accepts `NamespaceUpsert` documents with
+optional `.exactly(revision)` or `.absent` conditions, explicit document IDs
+to delete, and a structured `deleteWhere` filter. Conditions see the original
+state. The engine applies upserts, explicit deletes, and filter deletes in
+that order. Generations are returned in participant order.
+
+`ZeppelinStore.namespaceBatchLive(root:participants:)` takes the same mutations
+paired with their open, writable `ZeppelinStore` actors using
+`LiveNamespaceMutation(store:mutation:)`. The actors remain usable after
+success. An I/O failure during commit can leave the outcome indeterminate.
+Reopen participating stores before retrying. Readers opened before a
+closed-writer batch keep their old snapshots. New opens see the shared decision.
+
+`ZeppelinStore.declareCascade(root:participants:declaration:)` durably registers
+a rule between existing namespaces. Pass their exact specs as 1–128
+`CascadeParticipant` values. A
+`CascadeDeclaration(parentIndex:childIndex:attributeID:)` identifies the
+participants by zero-based index and the child's `.id128` attribute. Set the
+child's attribute to `.id128(parentID)` on upsert. Declaring the same rule twice
+is idempotent. A cycle throws `ZeppelinError.cascadeCycle`.
+
+`ZeppelinStore.deleteCascade(root:participants:)` atomically deletes the explicit
+IDs and their transitive dependants. Supply 1–128 `CascadeDeleteParticipant`
+values including every reachable namespace, with an empty delete list where
+there are no explicit IDs. Omitting a reachable namespace throws
+`ZeppelinError.io` before publication. The returned
+generations follow participant order. Close writers and snapshot views for
+both cascade calls. Rules take effect when calling `deleteCascade`. Keep the
+root intact and treat deletions as logical because old stores and abandoned
+preparations can retain deleted bytes.
+
 ### Prepare lexical queries after open
 
 Use `try await store.warmLexical()` before exact or `lastAsPrefix` queries.

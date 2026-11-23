@@ -166,7 +166,7 @@ extension ZeppelinStore {
         }
     }
 
-    private static func withUpsertRequest<Result>(
+    nonisolated static func withUpsertRequest<Result>(
         _ documents: [IngestDocument],
         _ body: (inout ZeUpsertRequest) throws -> Result
     ) rethrows -> Result {
