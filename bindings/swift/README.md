@@ -203,6 +203,32 @@ let report = try await store.deleteWhere(.eq(1, .string("expired")))
 print(report.deleted, report.generation)
 ```
 
+### Verify a store
+
+Use `ZeppelinStore.verify(at:)` with a local file URL for the store directory.
+For a namespace, pass its directory under the root. Verification is read-only,
+requires no open handle, and can run after an unclean shutdown. It checks
+the manifest, referenced segments, WAL replay, and any pending purge intent.
+The graph-enabled build also checks graph objects and inventory. A concurrent
+writer can cause verification to report a write in progress.
+
+```swift
+let report = try await ZeppelinStore.verify(at: root.appendingPathComponent("notes"))
+for finding in report.findings {
+    print(finding.kind, finding.file, finding.offset as Any, finding.detail)
+}
+```
+
+`VerifyReport` includes the manifest `generation` (zero if unavailable),
+`segmentsChecked`, and `walRecordsChecked`. Its `ok` property is true when
+`findings` is empty. Each `VerifyFinding` has a typed `VerifyFindingKind`, a
+relative file name, an optional byte offset, and decoder detail.
+
+If the walk cannot start, the call throws `ZeppelinError`. A missing directory
+throws `.notFound`, a non-directory or unlistable path throws `.io`, and an
+invalid path or a URL that does not refer to the local filesystem throws
+`.invalidArgument`.
+
 ### Graph
 
 Graph methods use the same `ZeppelinStore` handle: `enableGraph`, `graphApply`,
