@@ -6834,3 +6834,96 @@ pub extern "C" fn ze_neighbour_result_free(result: *mut ZeNeighbourResult) -> Ze
         )
     })
 }
+
+#[cfg(all(test, feature = "text", target_os = "macos", target_arch = "aarch64"))]
+#[test]
+#[allow(clippy::expect_used)]
+fn namespace_session_live_participants() {
+    mod fixture {
+        include!("../../volantis-db-text/tests/common/namespace_fixture.rs");
+    }
+    const CHILD: &str = "ZE598_FFI_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let cache = tempfile::tempdir().expect("offline cache");
+        let status = std::process::Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "--exact",
+                "namespace_session_live_participants",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("ZE_MODEL_OFFLINE", "1")
+            .env("ZE_MODEL_CACHE", cache.path())
+            .status()
+            .expect("isolated decoder test");
+        assert!(status.success());
+        return;
+    }
+    let pin = fixture::pinned_fixture(Path::new(
+        &std::env::var_os("ZE_MODEL_CACHE").expect("cache"),
+    ));
+    // SAFETY: these C input records contain only integers and nullable raw pointers.
+    let mut spec: ZeEmbeddedNamespaceSpec = unsafe { std::mem::zeroed() };
+    spec.spec.abi_size = size_of::<ZeEmbeddedNamespaceSpec>() as u32;
+    spec.spec.has_vector_space = 2;
+    spec.model = ZeTextModelRef {
+        abi_size: size_of::<ZeTextModelRef>() as u32,
+        abi_reserved: 0,
+        repo: pin.repo.as_ptr(),
+        repo_len: pin.repo.len(),
+        revision: pin.revision.as_ptr(),
+        revision_len: pin.revision.len(),
+        manifest_sha256: pin.manifest_sha256.as_ptr(),
+        manifest_sha256_len: pin.manifest_sha256.len(),
+    };
+    let directory = tempfile::tempdir().expect("root");
+    let root = directory.path().as_os_str().as_encoded_bytes();
+    let names = ["fake_notes", "fake_segments"];
+    let handles = names.map(|name| {
+        // SAFETY: all-zero scalar options and null pointers are representable.
+        let mut request: ZeNamespaceOpenRequest = unsafe { std::mem::zeroed() };
+        request.abi_size = size_of::<ZeNamespaceOpenRequest>() as u32;
+        request.root = root.as_ptr();
+        request.root_len = root.len();
+        request.name = name.as_ptr();
+        request.name_len = name.len();
+        request.spec = &spec.spec;
+        request.open.abi_size = size_of::<ZeOpenRequest>() as u32;
+        request.open.max_resident_bytes = 268435456;
+        request.open.max_temp_bytes = 268435456;
+        let mut handle = 0;
+        assert_eq!(ze_namespace_open(&request, &mut handle), ZeErrorCode::ZeOk);
+        handle
+    });
+    let participants = names.map(|name| {
+        // SAFETY: zero-initialized pointers with zero counts are empty mutation arrays.
+        let mut mutation: ZeNamespaceMutation = unsafe { std::mem::zeroed() };
+        mutation.abi_size = size_of::<ZeNamespaceMutation>() as u32;
+        mutation.name = name.as_ptr();
+        mutation.name_len = name.len();
+        mutation.spec = &spec.spec;
+        mutation.upserts.abi_size = size_of::<ZeConditionalUpsertRequest>() as u32;
+        mutation.upserts.batch.abi_size = size_of::<ZeUpsertRequest>() as u32;
+        mutation
+    });
+    let mut generations = [0; 2];
+    let request = ZeNamespaceBatchLiveRequest {
+        abi_size: size_of::<ZeNamespaceBatchLiveRequest>() as u32,
+        abi_reserved: 0,
+        handles: handles.as_ptr(),
+        batch: ZeNamespaceBatchRequest {
+            abi_size: size_of::<ZeNamespaceBatchRequest>() as u32,
+            abi_reserved: 0,
+            root: root.as_ptr(),
+            root_len: root.len(),
+            participants: participants.as_ptr(),
+            participant_count: 2,
+            generations: generations.as_mut_ptr(),
+        },
+    };
+    assert_eq!(ze_namespace_batch_live(&request), ZeErrorCode::ZeOk);
+    assert_eq!(volantis_db_text::NamespaceModel::worker_starts(), 1);
+    for handle in handles {
+        assert_eq!(ze_close(handle), ZeErrorCode::ZeOk);
+    }
+}

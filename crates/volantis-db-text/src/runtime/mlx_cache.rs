@@ -64,6 +64,12 @@ fn set_limit(limit: usize) -> Result<usize, RuntimeError> {
     Ok(old)
 }
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static CLEAR_CALLS: std::cell::Cell<usize> = const {std::cell::Cell::new(0)};
+    pub(crate) static FAIL_CLEAR: std::cell::Cell<bool> = const {std::cell::Cell::new(false)};
+}
+
 pub(crate) fn clear() -> Result<(), RuntimeError> {
     match APPLIED.get() {
         None => return Ok(()),
@@ -75,6 +81,15 @@ pub(crate) fn clear() -> Result<(), RuntimeError> {
         .map_err(|_| RuntimeError::Mlx("MLX call mutex is poisoned".to_owned()))?;
     // SAFETY: this argument-free MLX call is serialized with runtime operations.
     let status = unsafe { mlx_clear_cache() };
+    #[cfg(test)]
+    let status = {
+        CLEAR_CALLS.with(|n| n.set(n.get() + 1));
+        if FAIL_CLEAR.with(|f| f.replace(false)) {
+            -598
+        } else {
+            status
+        }
+    };
     if status != 0 {
         return Err(RuntimeError::MlxCache {
             operation: "mlx_clear_cache",

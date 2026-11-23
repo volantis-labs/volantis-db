@@ -1243,6 +1243,7 @@ dependencies = [
  "unicode-segmentation",
  "unicode_categories",
  "volantis-db",
+ "volantis-db-text",
  "xxhash-rust",
 ]
 

@@ -2037,6 +2037,22 @@ struct RuntimeClient {
     closed: Arc<AtomicBool>,
 }
 
+// Scope worker-exit observation to workers spawned by the test thread.
+#[cfg(test)]
+thread_local! {
+    static OBSERVE_WORKER_EXIT: std::cell::RefCell<Option<Arc<AtomicUsize>>> = const {std::cell::RefCell::new(None)};
+}
+#[cfg(test)]
+struct ObservedWorkerExit(Option<Arc<AtomicUsize>>);
+#[cfg(test)]
+impl Drop for ObservedWorkerExit {
+    fn drop(&mut self) {
+        if let Some(exits) = &self.0 {
+            exits.fetch_add(1, Ordering::Release);
+        }
+    }
+}
+
 impl RuntimeClient {
     fn start(
         bundle: Arc<Bundle>,
@@ -2058,9 +2074,14 @@ impl RuntimeClient {
         #[cfg(test)]
         let worker_observer = observer.clone();
         let worker_loads = Arc::clone(&document_loads);
+        #[cfg(test)]
+        let exit = ObservedWorkerExit(OBSERVE_WORKER_EXIT.take());
         let thread = std::thread::Builder::new()
             .name("ze-text-embed".to_owned())
             .spawn(move || {
+                // Declared first so runtime tensors drop before the exit observation.
+                #[cfg(test)]
+                let _exit = exit;
                 let runtimes = (|| -> Result<RuntimeSet, TextError> {
                     if bundle.is_symmetric() && query_coreml.is_none() {
                         let document = MlxRuntime::load(Arc::clone(&bundle), TowerRole::Document)?;
@@ -2118,10 +2139,23 @@ impl RuntimeClient {
                 stage: "embed start",
                 detail: error.to_string(),
             })?;
-        let query_backend = init_receiver.recv().map_err(|_| TextError::Pipeline {
-            stage: "embed initialization",
-            detail: "thread closed before reporting initialization".to_owned(),
-        })??;
+        let initialization = init_receiver
+            .recv()
+            .map_err(|_| TextError::Pipeline {
+                stage: "embed initialization",
+                detail: "thread closed before reporting initialization".to_owned(),
+            })
+            .and_then(|result| result);
+        let query_backend = match initialization {
+            Ok(backend) => backend,
+            Err(error) => {
+                thread.join().map_err(|_| TextError::Pipeline {
+                    stage: "embed initialization",
+                    detail: "thread panicked".into(),
+                })?;
+                return Err(error);
+            }
+        };
         Ok(Self {
             #[cfg(test)]
             observer,

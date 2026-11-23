@@ -2693,7 +2693,7 @@ pub struct OpenMigrations {
 
 /// One explicitly closeable embedded-store handle.
 pub struct Store {
-    embedder: Option<Arc<dyn embedded::NamespaceEmbedder>>,
+    embedder: Mutex<Option<Arc<dyn embedded::NamespaceEmbedder>>>,
     open_migrations: OpenMigrations,
     pub(crate) private_preparation: Option<namespace_batch::PrivatePreparation>,
     pub(crate) directory: PathBuf,
@@ -3530,7 +3530,7 @@ impl Store {
             text_materialization_work: materialize::TestMaterializationWork::default(),
             epoch_alias: crate::epoch::EpochAliasCell::new(persisted_epoch.or(declared_epoch)),
             epoch: options.epoch.or_else(|| snapshot.embedded_epoch.clone()),
-            embedder: options.embedder.map(|model| model.0),
+            embedder: Mutex::new(options.embedder.map(|model| model.0)),
             tokenizer,
             schema,
             lexical_index_cache: LexicalIndexCache::new(),

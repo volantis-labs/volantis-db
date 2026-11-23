@@ -2,8 +2,7 @@
 
 use super::*;
 
-#[path = "../tests/common/mod.rs"]
-mod fixture;
+use super::lazy_document_fixtures as fixture;
 
 fn fake_store(
     directory: &Path,
@@ -54,6 +53,7 @@ fn fake_store(
         bundle,
         analyzer,
         runtime: RuntimeClient {
+            observer: Default::default(),
             document_loads: Arc::new(AtomicUsize::new(0)),
             #[cfg(target_os = "macos")]
             compute_plan: None,

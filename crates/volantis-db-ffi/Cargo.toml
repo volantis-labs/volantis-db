@@ -64,3 +64,6 @@ required-features = ["graph-cypher"]
 [[test]]
 name = "ffi_graph_full"
 required-features = ["graph-cypher"]
+
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dev-dependencies]
+volantis-db-text = { path = "../volantis-db-text", features = ["test-support"] }

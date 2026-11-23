@@ -11,6 +11,10 @@ use std::ops::Range;
 /// The two model towers registered for this namespace. Document byte offsets
 /// index the original UTF-8 input, before tokenization or normalization.
 pub trait NamespaceEmbedder: Send + Sync {
+    /// Releases an owner and reports final runtime cleanup errors.
+    fn release(self: Arc<Self>) -> Result<(), EmbedderError> {
+        Ok(())
+    }
     /// Complete interpretation of both towers, including model/artifact pins.
     fn epoch(&self) -> EmbeddingEpoch;
     /// Chunk and embed the complete source revision.
@@ -286,9 +290,28 @@ impl Store {
             .is_some_and(|e| e.embedding.alignment_digest.starts_with(EPOCH_TAG))
     }
 
+    fn admit_embedder(&self) -> Result<Arc<dyn NamespaceEmbedder>, StoreError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| StoreError::Synchronization { component: "state" })?;
+        match *state {
+            StoreState::Closed => Err(StoreError::Closed),
+            StoreState::Closing => Err(StoreError::Closing),
+            StoreState::Open => self
+                .embedder
+                .lock()
+                .map_err(|_| StoreError::Synchronization {
+                    component: "namespace embedder",
+                })?
+                .clone()
+                .ok_or(StoreError::MissingEmbedder),
+        }
+    }
+
     /// Evaluates text using the registered query tower.
     pub fn embed_query(&self, text: &str) -> Result<Vec<f32>, StoreError> {
-        let model = self.embedder.as_ref().ok_or(StoreError::MissingEmbedder)?;
+        let model = self.admit_embedder()?;
         let vector = model.query(text).map_err(StoreError::Embedding)?;
         check_vector(&vector, self.embedded_dims()?)?;
         Ok(vector)
@@ -325,7 +348,7 @@ impl Store {
         if !self.is_embedded() || documents.is_empty() {
             return Ok(None);
         }
-        let model = self.embedder.as_ref().ok_or(StoreError::MissingEmbedder)?;
+        let model = self.admit_embedder()?;
         let epoch = self
             .epoch
             .as_ref()

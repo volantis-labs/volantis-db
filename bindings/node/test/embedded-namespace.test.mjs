@@ -98,3 +98,81 @@ test('stored chunk neighbours expose single and cancellable batch calls', async 
     rmSync(root, {recursive: true, force: true});
   }
 });
+
+test('shared namespace model survives live batches and writer close',
+  {skip: process.platform !== 'darwin' || process.arch !== 'arm64'}, () => {
+  const {namespaceBatchLive} = createRequire(import.meta.url)('..');
+  const root = mkdtempSync(join(tmpdir(), 'ze598-'));
+  const originalCache = process.env.ZE_MODEL_CACHE;
+  const writers = [];
+  let view;
+  try {
+    process.env.ZE_MODEL_CACHE = join(root, 'cache');
+    const bytes = readFileSync(new URL('../../../crates/volantis-db-text/tests/fixtures/ze115/gte.zem', import.meta.url));
+    const sha = data => createHash('sha256').update(data).digest('hex');
+    const manifest = Buffer.from(JSON.stringify({
+      format: 1, name: 'tiny', bundle: 'tiny.zem', query_coreml: null,
+      files: [{path: 'tiny.zem', size: bytes.length, sha256: sha(bytes)}],
+    }));
+    const [spec, other] = ['1', '2'].map(digit => {
+      const revision = digit.repeat(40);
+      const entry = join(process.env.ZE_MODEL_CACHE, 'fixture%2Ffake-ze598', revision);
+      mkdirSync(entry, {recursive: true});
+      writeFileSync(join(entry, 'volantis-model.json'), manifest);
+      writeFileSync(join(entry, 'tiny.zem'), bytes);
+      return {embeddedModel: {repo: 'fixture/fake-ze598', revision, manifestSha256: sha(manifest)}};
+    });
+
+    const ids = [59801n, 59802n];
+    const texts = ['fixture copper kite', 'fixture violet spool'];
+    const changes = ['fake_notes', 'fake_segments'].map((name, index) => {
+      const store = openNamespace(root, name, spec, options);
+      writers.push(store);
+      return {store, name, spec, upserts: [{id: ids[index], revision: 1n, text: texts[index]}]};
+    });
+    const generations = namespaceBatchLive(root, changes);
+    function checkRows() {
+      for (const [index, writer] of writers.entries()) {
+        const rows = writer.get(ids);
+        assert.equal(rows.generation, generations[index]);
+        assert.deepEqual(rows.documents.filter(Boolean).map(doc => doc.id), [ids[index]]);
+        assert.equal(rows.documents[index].revision, 1n);
+      }
+    }
+    checkRows();
+    const rejected = changes.map((change, index) => ({
+      ...change, spec: index === 1 ? other : spec,
+      upserts: [{id: ids[index], revision: 2n, text: 'changed'}],
+    }));
+    assert.throws(() => namespaceBatchLive(root, rejected), {code: 'ZE_ERR_EPOCH_MISMATCH'});
+    checkRows();
+
+    const originalBackend = process.env.ZE_QUERY_COREML;
+    const invalidBackend = join(root, 'invalid.mlmodelc');
+    mkdirSync(invalidBackend);
+    try {
+      process.env.ZE_QUERY_COREML = invalidBackend;
+      assert.throws(() => openNamespace(root, 'backend_check', spec, options));
+    } finally {
+      if (originalBackend === undefined) delete process.env.ZE_QUERY_COREML;
+      else process.env.ZE_QUERY_COREML = originalBackend;
+    }
+
+    view = writers[1].openSnapshot();
+    writers.pop().close();
+    writers[0].upsert([{id: 59803n, text: 'fresh copper'}]);
+    assert.equal(view.queryEmbedded({text: 'spool', leg: 'dense', k: 1})[0].id, ids[1]);
+    view.close();
+    view = undefined;
+    writers.pop().close();
+
+    writers.push(openNamespace(root, 'fake_notes', spec, options));
+    assert.equal(writers[0].get([59803n]).documents[0].id, 59803n);
+  } finally {
+    view?.close();
+    for (const writer of writers) writer.close();
+    if (originalCache === undefined) delete process.env.ZE_MODEL_CACHE;
+    else process.env.ZE_MODEL_CACHE = originalCache;
+    rmSync(root, {recursive: true, force: true});
+  }
+});

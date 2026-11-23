@@ -199,9 +199,14 @@ pub struct Bundle {
     query_verified: AtomicBool,
 }
 
+#[cfg(test)]
+thread_local! {pub(crate) static BUNDLE_OPENS: std::cell::Cell<usize> = const {std::cell::Cell::new(0)};}
+
 impl Bundle {
     /// Opens one `.zem` file, validating its trailer digest and metadata.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, BundleError> {
+        #[cfg(test)]
+        BUNDLE_OPENS.with(|n| n.set(n.get() + 1));
         let path = path.as_ref();
         let mapping = Arc::new(MappedFile::open(path)?);
         let bytes = mapping.bytes();

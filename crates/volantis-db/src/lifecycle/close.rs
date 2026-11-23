@@ -319,6 +319,18 @@ impl Store {
                 .take(),
         );
 
+        let embedder = self
+            .embedder
+            .lock()
+            .map(|mut model| model.take())
+            .map_err(|_| StoreError::Synchronization {
+                component: "namespace embedder",
+            });
+        let embedder_result = embedder.and_then(|owner| {
+            owner.map_or(Ok(()), |model| {
+                model.release().map_err(StoreError::Embedding)
+            })
+        });
         let mut state = self
             .state
             .lock()
@@ -336,6 +348,7 @@ impl Store {
             .and(query_pool_result)
             .and(lexical_worker_result)
             .and(lexical_cache_result)
+            .and(embedder_result)
     }
 
     /// Runs close ordering during `Drop` without propagating failures or

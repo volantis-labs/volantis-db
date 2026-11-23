@@ -801,6 +801,11 @@ limits, download size, and measured performance.
 the namespace or naming it in a namespace batch. The model supplies the vector
 dimensions. A multi-row upsert batches new and changed text across rows and
 chunks before committing. Rows eligible for same-text vector reuse skip inference.
+Overlapping opens with the same model pins and query backend share one runtime.
+Each namespace keeps its own rows and generations. A snapshot retains the model
+after its writer closes. Closing the final namespace model owner stops its worker
+and releases unused MLX cache buffers. A cold reopen starts a new runtime, and
+the first write that needs the document tower pays its loading cost for paired models.
 A text-enabled build and the resolved model are required.
 
 ```js
