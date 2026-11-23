@@ -213,7 +213,8 @@ bool GetOptionalBool(napi_env env, napi_value object, const char *name,
   return NapiOk(env, napi_get_value_bool(env, value, output), "read boolean");
 }
 
-bool GetUint64(napi_env env, napi_value value, const char *name, uint64_t *output) {
+bool GetUint64(napi_env env, napi_value value, const char *name,
+               uint64_t *output) {
   napi_valuetype type;
   bool lossless = false;
   if (!NapiOk(env, napi_typeof(env, value, &type), "inspect bigint") ||
@@ -1484,9 +1485,10 @@ bool ParseNamespaceSpec(napi_env env, napi_value value,
 bool ParseNamespaceModelPolicy(napi_env env, napi_value object,
                                NamespaceSpecStorage *storage) {
   bool has_dir = false, has_offline = false, offline = false;
-  if (!GetOptionalString(env, object, "modelCacheDir", &storage->model_cache_dir,
-                         &has_dir) ||
-      !NapiOk(env, napi_has_named_property(env, object, "offline", &has_offline),
+  if (!GetOptionalString(env, object, "modelCacheDir",
+                         &storage->model_cache_dir, &has_dir) ||
+      !NapiOk(env,
+              napi_has_named_property(env, object, "offline", &has_offline),
               "inspect property") ||
       !GetOptionalBool(env, object, "offline", false, &offline))
     return false;
@@ -1697,7 +1699,7 @@ napi_value ConstructStore(napi_env env, napi_callback_info info) {
       std::vector<ZeAttributeDefinition> attributes;
       std::vector<std::string> attribute_names;
       if (!ParseNamespaceOpenSpec(env, args[3], args[1], &spec, &attributes,
-                              &attribute_names)) {
+                                  &attribute_names)) {
         return nullptr;
       }
       ZeNamespaceOpenRequest namespace_request{};
@@ -1782,8 +1784,8 @@ napi_value OpenAsync(napi_env env, napi_callback_info info) {
     if (argc == 4) {
       data->namespaced = true;
       if (!GetUtf8(env, args[2], "name", &data->name) ||
-          !ParseNamespaceOpenSpec(env, args[3], args[1], &data->spec, &data->attributes,
-                              &data->attribute_names))
+          !ParseNamespaceOpenSpec(env, args[3], args[1], &data->spec,
+                                  &data->attributes, &data->attribute_names))
         return nullptr;
       auto &ns = data->ns;
       ns.abi_size = sizeof(ns);
@@ -4130,7 +4132,8 @@ napi_value MaintainStore(napi_env env, napi_callback_info info) {
     size_t argc = 2;
     napi_value args[2];
     napi_value receiver;
-    if (!NapiOk(env, napi_get_cb_info(env, info, &argc, args, &receiver, nullptr),
+    if (!NapiOk(env,
+                napi_get_cb_info(env, info, &argc, args, &receiver, nullptr),
                 "read maintain arguments"))
       return nullptr;
     NativeStore *store = UnwrapStore(env, receiver);
@@ -4165,7 +4168,8 @@ napi_value MaintainStore(napi_env env, napi_callback_info info) {
           };
           if (!NapiOk(env, napi_create_object(env, &result),
                       "create maintenance report") ||
-              !NapiOk(env, napi_create_int32(env, report->status, &report_status),
+              !NapiOk(env,
+                      napi_create_int32(env, report->status, &report_status),
                       "create maintenance status") ||
               !SetNamed(env, result, "status", report_status) ||
               !set_counter("graphsBuilt", report->graphs_built) ||
@@ -4687,7 +4691,8 @@ bool CreateSnippet(napi_env env, const ZeQuerySnippet &snippet,
 
 template <bool Async>
 napi_value NeighbourBatch(napi_env env, napi_value receiver, ze_handle handle,
-                          napi_value options, std::shared_ptr<void> filter_owner,
+                          napi_value options,
+                          std::shared_ptr<void> filter_owner,
                           const ZeQueryRequestV2 &eligibility,
                           const ZeQueryFilter &constraints) {
   struct Batch {
@@ -4708,11 +4713,15 @@ napi_value NeighbourBatch(napi_env env, napi_value receiver, ze_handle handle,
   napi_value sources;
   if (!GetOptionalUint32(env, options, "k", 0, &k) ||
       !GetOptionalBool(env, options, "includeSource", false, &include_source) ||
-      !GetOptionalDouble(env, options, "threshold", &request.threshold, &has_threshold) ||
+      !GetOptionalDouble(env, options, "threshold", &request.threshold,
+                         &has_threshold) ||
       !GetOptionalUint64(env, options, "deadlineNs", 0, &request.deadline_ns) ||
-      !GetOptionalUint64(env, options, "cancelToken", 0, &request.cancel_token) ||
-      !NapiOk(env, napi_get_named_property(env, options, "sources", &sources), "read sources") ||
-      !NapiOk(env, napi_get_array_length(env, sources, &count), "read source count"))
+      !GetOptionalUint64(env, options, "cancelToken", 0,
+                         &request.cancel_token) ||
+      !NapiOk(env, napi_get_named_property(env, options, "sources", &sources),
+              "read sources") ||
+      !NapiOk(env, napi_get_array_length(env, sources, &count),
+              "read source count"))
     return nullptr;
   request.k = k;
   request.include_source = include_source;
@@ -4723,7 +4732,8 @@ napi_value NeighbourBatch(napi_env env, napi_value receiver, ze_handle handle,
     bool has_chunk;
     auto &source = batch->sources[i];
     if (!NapiOk(env, napi_get_element(env, sources, i, &item), "read source") ||
-        !NapiOk(env, napi_get_named_property(env, item, "id", &id), "read source id") ||
+        !NapiOk(env, napi_get_named_property(env, item, "id", &id),
+                "read source id") ||
         !GetDocId(env, id, &source.doc_id) ||
         !GetNamed(env, item, "chunk", &chunk, &has_chunk) ||
         (has_chunk && !GetRequiredUint32(env, item, "chunk", &source.chunk)))
@@ -4735,32 +4745,42 @@ napi_value NeighbourBatch(napi_env env, napi_value receiver, ze_handle handle,
   return RunNative<Async>(
       env, receiver, handle,
       [handle, request, batch, filter_owner]() {
-        (void)filter_owner; // Owns the constraints and eligible ids on the worker.
+        (void)filter_owner; // Owns the constraints and eligible ids on the
+                            // worker.
         return ze_nearest_chunks(handle, &request, &batch->result);
       },
-      [env, handle, batch, count](ze_error_code status, const std::string &message) -> napi_value {
+      [env, handle, batch, count](ze_error_code status,
+                                  const std::string &message) -> napi_value {
         if (status != ZE_OK)
           return ThrowWorkerError(env, status, message);
         napi_value groups;
-        if (!NapiOk(env, napi_create_array_with_length(env, count, &groups), "neighbour groups"))
+        if (!NapiOk(env, napi_create_array_with_length(env, count, &groups),
+                    "neighbour groups"))
           return nullptr;
         size_t index = 0;
         for (uint32_t source = 0; source < count; ++source) {
           napi_value group;
           if (!NapiOk(env, napi_create_array(env, &group), "neighbour list") ||
-              !NapiOk(env, napi_set_element(env, groups, source, group), "set list"))
+              !NapiOk(env, napi_set_element(env, groups, source, group),
+                      "set list"))
             return nullptr;
           uint32_t rank = 0;
-          while (index < batch->result.hit_count && batch->result.hits[index].source_index == source) {
+          while (index < batch->result.hit_count &&
+                 batch->result.hits[index].source_index == source) {
             const auto &row = batch->result.hits[index++];
             napi_value hit, id, chunk, score;
-            if (!NapiOk(env, napi_create_object(env, &hit), "create neighbour") ||
+            if (!NapiOk(env, napi_create_object(env, &hit),
+                        "create neighbour") ||
                 !CreateUint128(env, row.doc_id, &id) ||
-                !NapiOk(env, napi_create_double(env, row.chunk, &chunk), "chunk") ||
-                !NapiOk(env, napi_create_double(env, row.score, &score), "score") ||
-                !SetNamed(env, hit, "id", id) || !SetNamed(env, hit, "chunk", chunk) ||
+                !NapiOk(env, napi_create_double(env, row.chunk, &chunk),
+                        "chunk") ||
+                !NapiOk(env, napi_create_double(env, row.score, &score),
+                        "score") ||
+                !SetNamed(env, hit, "id", id) ||
+                !SetNamed(env, hit, "chunk", chunk) ||
                 !SetNamed(env, hit, "score", score) ||
-                !NapiOk(env, napi_set_element(env, group, rank++, hit), "set neighbour"))
+                !NapiOk(env, napi_set_element(env, group, rank++, hit),
+                        "set neighbour"))
               return nullptr;
           }
         }
@@ -4942,9 +4962,9 @@ napi_value Query(napi_env env, napi_callback_info info) {
             (void)data; // Retains query and filter bytes through worker
                         // completion.
             if constexpr (Report)
-              return ze_query_embedded_report(
-                  handle, &q, result->ranks.data(), result->states.data(), q.k,
-                  &result->docs, &result->report);
+              return ze_query_embedded_report(handle, &q, result->ranks.data(),
+                                              result->states.data(), q.k,
+                                              &result->docs, &result->report);
             return ze_query_embedded(handle, &q, result->ranks.data(), q.k,
                                      &result->docs);
           },
@@ -4990,11 +5010,10 @@ napi_value Query(napi_env env, napi_callback_info info) {
                 return nullptr;
               if constexpr (Report) {
                 napi_value state;
-                const char *name =
-                    result->states[i] == 1 ? "pending" : "ready";
+                const char *name = result->states[i] == 1 ? "pending" : "ready";
                 if (!NapiOk(env,
-                            napi_create_string_utf8(env, name,
-                                                    NAPI_AUTO_LENGTH, &state),
+                            napi_create_string_utf8(env, name, NAPI_AUTO_LENGTH,
+                                                    &state),
                             "hit state") ||
                     !SetNamed(env, hit, "state", state))
                   return nullptr;
@@ -5591,14 +5610,16 @@ napi_value Initialize(napi_env env, napi_value exports) {
        napi_default, nullptr},
       {"search", nullptr, Search, nullptr, nullptr, nullptr, napi_default,
        nullptr},
-      {"nearestChunksBatch", nullptr, Query<false, false, true>, nullptr, nullptr, nullptr, napi_default, nullptr},
-      {"nearestChunksBatchAsync", nullptr, Query<true, false, true>, nullptr, nullptr, nullptr, napi_default, nullptr},
+      {"nearestChunksBatch", nullptr, Query<false, false, true>, nullptr,
+       nullptr, nullptr, napi_default, nullptr},
+      {"nearestChunksBatchAsync", nullptr, Query<true, false, true>, nullptr,
+       nullptr, nullptr, napi_default, nullptr},
       {"queryEmbedded", nullptr, Query<false, true>, nullptr, nullptr, nullptr,
        napi_default, nullptr},
       {"queryEmbeddedAsync", nullptr, Query<true, true>, nullptr, nullptr,
        nullptr, napi_default, nullptr},
-      {"queryEmbeddedReport", nullptr, Query<false, true, false, true>,
-       nullptr, nullptr, nullptr, napi_default, nullptr},
+      {"queryEmbeddedReport", nullptr, Query<false, true, false, true>, nullptr,
+       nullptr, nullptr, napi_default, nullptr},
       {"queryEmbeddedReportAsync", nullptr, Query<true, true, false, true>,
        nullptr, nullptr, nullptr, napi_default, nullptr},
       {"pauseEmbedding", nullptr, ControlEmbedding<false>, nullptr, nullptr,
