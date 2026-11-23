@@ -78,9 +78,9 @@ jobs:
         run: swift test --scratch-path target/swift-text-ci --jobs 3 --filter 'TextStoreTests|RequiredAPITests'
 
   # WF-990: MLX and Core ML are compiled only for macOS arm64. These jobs prove
-  # that Intel macOS and Windows build text without them and refuse model
-  # opens with ZE_ERR_UNSUPPORTED until the CPU runtime (WF-991). Not yet run:
-  # the repository has no GitHub Actions history.
+  # that Intel macOS and Windows build text without them. Intel macOS runs the
+  # models on the pure-Rust fp32 CPU runtime (WF-991). Windows has no text
+  # runtime: model opens return ZE_ERR_UNSUPPORTED.
   text-x64-macos:
     name: Text on the CPU runtime on Intel macOS (x86_64)
     runs-on: macos-15-intel
@@ -122,7 +122,7 @@ jobs:
           ! cargo tree --locked -p volantis-db-ffi --features text -e normal,build | grep -E 'mlx-(rs|sys)'
       - run: cargo build --locked -p volantis-db-text -p volantis-db-ffi --features text
       - run: cargo clippy --locked -p volantis-db-text -p volantis-db-ffi --all-targets --features text -- -D warnings
-      - name: Run the text tests on the fp32 CPU runtime
+      - name: Run the text tests (model opens are unsupported on Windows)
         run: |
           cargo test --locked -p volantis-db-text
           cargo test --locked -p volantis-db-ffi --features text --test ffi_namespace
