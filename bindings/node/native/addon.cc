@@ -1293,8 +1293,11 @@ bool ParseOpenRequest(napi_env env, napi_value options, const std::string &path,
 }
 
 struct NamespaceSpecStorage {
-  ZeEmbeddedNamespaceSpecV3 declaration{};
+  ZeEmbeddedNamespaceSpecV4 declaration{};
   std::string repo, revision, sha, model_cache_dir;
+  // embeddingSchedule: 0 immediate, 1 background, 2 paused.
+  bool has_schedule = false;
+  uint32_t schedule = 0;
 };
 
 bool ParseNamespaceSpec(napi_env env, napi_value value,
@@ -1374,7 +1377,7 @@ bool ParseNamespaceSpec(napi_env env, napi_value value,
     native.nullable = nullable ? 1 : 0;
   }
 
-  auto *spec = &storage->declaration.v2.embedded.spec;
+  auto *spec = &storage->declaration.v3.v2.embedded.spec;
   *spec = ZeNamespaceSpec{};
   spec->abi_size = sizeof(*spec);
   spec->attributes = attributes->data();
@@ -1387,6 +1390,26 @@ bool ParseNamespaceSpec(napi_env env, napi_value value,
   bool has_model;
   if (!GetNamed(env, value, "embeddedModel", &embedded, &has_model))
     return false;
+  std::string schedule;
+  if (!GetOptionalString(env, value, "embeddingSchedule", &schedule,
+                         &storage->has_schedule))
+    return false;
+  if (storage->has_schedule) {
+    const char *schedules[] = {"immediate", "background", "paused"};
+    if (!has_model) {
+      napi_throw_type_error(env, "ERR_INVALID_ARG_VALUE",
+                            "embeddingSchedule requires embeddedModel");
+      return false;
+    }
+    int32_t parsed = 0;
+    if (!ParseEnum(schedule, schedules, 3, &parsed)) {
+      napi_throw_range_error(
+          env, "ERR_OUT_OF_RANGE",
+          "embeddingSchedule must be immediate, background or paused");
+      return false;
+    }
+    storage->schedule = static_cast<uint32_t>(parsed);
+  }
   if (has_model) {
     if (present) {
       napi_throw_type_error(env, "ERR_INVALID_ARG_VALUE",
@@ -1405,9 +1428,9 @@ bool ParseNamespaceSpec(napi_env env, napi_value value,
         !read_pin("revision", storage->revision) ||
         !read_pin("manifestSha256", storage->sha))
       return false;
-    spec->abi_size = sizeof(storage->declaration.v2.embedded);
+    spec->abi_size = sizeof(storage->declaration.v3.v2.embedded);
     spec->has_vector_space = 2;
-    auto &model = storage->declaration.v2.embedded.model;
+    auto &model = storage->declaration.v3.v2.embedded.model;
     model.abi_size = sizeof(model);
     model.repo = reinterpret_cast<const uint8_t *>(storage->repo.data());
     model.repo_len = storage->repo.size();
@@ -1469,7 +1492,7 @@ bool ParseNamespaceModelPolicy(napi_env env, napi_value object,
     return false;
   if (!has_dir && !has_offline)
     return true;
-  auto &declaration = storage->declaration;
+  auto &declaration = storage->declaration.v3;
   auto &spec = declaration.v2.embedded.spec;
   if (spec.has_vector_space != 2 && spec.has_vector_space != 3) {
     napi_throw_type_error(env, "ERR_INVALID_ARG_VALUE",
@@ -1482,6 +1505,21 @@ bool ParseNamespaceModelPolicy(napi_env env, napi_value object,
   declaration.offline = offline ? 1 : 0;
   declaration.has_mlx_cache_limit = spec.has_vector_space == 3 ? 1 : 0;
   spec.has_vector_space = 4;
+  spec.abi_size = sizeof(declaration);
+  return true;
+}
+
+// Selects tag 5 when the spec names an embeddingSchedule. Tags 2 and 3
+// become the standard tag-4 policy first, keeping an explicit MLX limit.
+bool ApplyEmbeddingSchedule(NamespaceSpecStorage *storage) {
+  if (!storage->has_schedule)
+    return true;
+  auto &declaration = storage->declaration;
+  auto &spec = declaration.v3.v2.embedded.spec;
+  if (spec.has_vector_space == 2 || spec.has_vector_space == 3)
+    declaration.v3.has_mlx_cache_limit = spec.has_vector_space == 3 ? 1 : 0;
+  declaration.document_schedule = storage->schedule;
+  spec.has_vector_space = 5;
   spec.abi_size = sizeof(declaration);
   return true;
 }
@@ -1501,7 +1539,7 @@ bool ParseNamespaceOpenSpec(napi_env env, napi_value spec, napi_value options,
       !NapiOk(env, napi_typeof(env, limit, &type), "inspect MLX cache limit"))
     return false;
   if (type != napi_undefined) {
-    auto &declaration = storage->declaration.v2;
+    auto &declaration = storage->declaration.v3.v2;
     if (declaration.embedded.spec.has_vector_space != 2) {
       napi_throw_type_error(env, "ERR_INVALID_ARG_VALUE",
                             "mlxCacheLimitBytes requires embeddedModel");
@@ -1513,7 +1551,8 @@ bool ParseNamespaceOpenSpec(napi_env env, napi_value spec, napi_value options,
     declaration.embedded.spec.has_vector_space = 3;
     declaration.embedded.spec.abi_size = sizeof(declaration);
   }
-  return ParseNamespaceModelPolicy(env, options, storage);
+  return ParseNamespaceModelPolicy(env, options, storage) &&
+         ApplyEmbeddingSchedule(storage);
 }
 
 NativeStore *UnwrapStore(napi_env env, napi_value receiver) {
@@ -1668,7 +1707,7 @@ napi_value ConstructStore(napi_env env, napi_callback_info info) {
       namespace_request.name = reinterpret_cast<const uint8_t *>(name.data());
       namespace_request.name_len = name.size();
       namespace_request.open = request;
-      namespace_request.spec = &spec.declaration.v2.embedded.spec;
+      namespace_request.spec = &spec.declaration.v3.v2.embedded.spec;
       std::string profile = "textDefault";
       bool has_profile = false;
       if (!GetOptionalString(env, args[3], "tokenizerProfile", &profile,
@@ -1753,7 +1792,7 @@ napi_value OpenAsync(napi_env env, napi_callback_info info) {
       ns.name = reinterpret_cast<const uint8_t *>(data->name.data());
       ns.name_len = data->name.size();
       ns.open = data->request;
-      ns.spec = &data->spec.declaration.v2.embedded.spec;
+      ns.spec = &data->spec.declaration.v3.v2.embedded.spec;
       std::string profile = "textDefault";
       bool present = false;
       const char *profiles[] = {"textDefault", "code", "voice"};
@@ -2335,6 +2374,7 @@ napi_value NamespaceOperationCall(napi_env env, napi_callback_info info,
            operation == NamespaceOperation::LiveBatch) &&
           !ParseNamespaceModelPolicy(env, value, &owned.spec))
         return nullptr;
+      ApplyEmbeddingSchedule(&owned.spec);
       std::string profile = "textDefault";
       if (!GetOptionalString(env, spec, "tokenizerProfile", &profile, &present))
         return nullptr;
@@ -2346,7 +2386,7 @@ napi_value NamespaceOperationCall(napi_env env, napi_callback_info info,
       }
       native.name = reinterpret_cast<const uint8_t *>(owned.name.data());
       native.name_len = owned.name.size();
-      native.spec = &owned.spec.declaration.v2.embedded.spec;
+      native.spec = &owned.spec.declaration.v3.v2.embedded.spec;
       if (!GetNamed(env, value, "upserts", &field, &present))
         return nullptr;
       if (!present &&
@@ -3900,6 +3940,87 @@ napi_value WarmLexical(napi_env env, napi_callback_info info) {
   });
 }
 
+// Pause or resume background embedding (WF-985). Pause stops admission of
+// new batches; resume restarts it and retries a failed batch.
+template <bool Resume>
+napi_value ControlEmbedding(napi_env env, napi_callback_info info) {
+  return Guard(env, [&]() -> napi_value {
+    size_t argc = 0;
+    napi_value receiver;
+    if (!NapiOk(env,
+                napi_get_cb_info(env, info, &argc, nullptr, &receiver, nullptr),
+                "read embedding receiver"))
+      return nullptr;
+    NativeStore *store = UnwrapStore(env, receiver);
+    if (store == nullptr)
+      return nullptr;
+    const auto handle = store->handle;
+    return RunNative<false>(
+        env, receiver, handle,
+        [handle]() {
+          return Resume ? ze_namespace_embedding_resume(handle)
+                        : ze_namespace_embedding_pause(handle);
+        },
+        [env](ze_error_code status, const std::string &message) -> napi_value {
+          if (status != ZE_OK)
+            return ThrowWorkerError(env, status, message);
+          napi_value result;
+          if (!NapiOk(env, napi_get_undefined(env, &result), "undefined"))
+            return nullptr;
+          return result;
+        });
+  });
+}
+
+// Reads background embedding state; pending reads the store once.
+napi_value EmbeddingStatus(napi_env env, napi_callback_info info) {
+  return Guard(env, [&]() -> napi_value {
+    size_t argc = 0;
+    napi_value receiver;
+    if (!NapiOk(env,
+                napi_get_cb_info(env, info, &argc, nullptr, &receiver, nullptr),
+                "read embedding receiver"))
+      return nullptr;
+    NativeStore *store = UnwrapStore(env, receiver);
+    if (store == nullptr)
+      return nullptr;
+    auto status = std::make_shared<ZeEmbeddingStatus>();
+    status->abi_size = sizeof(*status);
+    const auto handle = store->handle;
+    return RunNative<false>(
+        env, receiver, handle,
+        [handle, status]() {
+          return ze_namespace_embedding_status(handle, status.get());
+        },
+        [env, status](ze_error_code code,
+                      const std::string &message) -> napi_value {
+          if (code != ZE_OK)
+            return ThrowWorkerError(env, code, message);
+          napi_value result, pending, last_error;
+          if (!NapiOk(env, napi_create_object(env, &result), "status") ||
+              !NapiOk(env,
+                      napi_create_bigint_uint64(env, status->pending, &pending),
+                      "pending") ||
+              !SetNamed(env, result, "pending", pending) ||
+              !NapiOk(env,
+                      napi_create_uint32(env, status->last_error, &last_error),
+                      "lastErrorCode") ||
+              !SetNamed(env, result, "lastErrorCode", last_error))
+            return nullptr;
+          auto flag = [&](const char *key, uint32_t value) {
+            napi_value v;
+            return NapiOk(env, napi_get_boolean(env, value != 0, &v), key) &&
+                   SetNamed(env, result, key, v);
+          };
+          if (!flag("paused", status->paused) ||
+              !flag("inFlight", status->in_flight) ||
+              !flag("running", status->running))
+            return nullptr;
+          return result;
+        });
+  });
+}
+
 // Seals the active segment into an immutable segment and absorbs the WAL
 // prefix it covers, so reopening the store no longer replays those writes.
 // An empty active segment is a no-op that returns the current generation.
@@ -4664,7 +4785,8 @@ napi_value NeighbourBatch(napi_env env, napi_value receiver, ze_handle handle,
  * neither depends on a JavaScript object surviving the call. Every other field
  * is a scalar read straight into the request.
  */
-template <bool Async = false, bool Embedded = false, bool Neighbours = false>
+template <bool Async = false, bool Embedded = false, bool Neighbours = false,
+          bool Report = false>
 napi_value Query(napi_env env, napi_callback_info info) {
   return Guard(env, [&]() -> napi_value {
     size_t argc = 1;
@@ -4803,18 +4925,26 @@ napi_value Query(napi_env env, napi_callback_info info) {
       q.k = k;
       struct Result {
         ZeGetResult docs{};
+        ZeEmbeddedReport report{};
         std::vector<ZeChunkRank> ranks;
+        std::vector<uint32_t> states;
         ResultOwner<ZeGetResult, ze_get_result_free> owner{&docs};
       };
       auto result = std::make_shared<Result>();
       result->ranks.resize(k);
+      result->states.resize(k);
       result->docs.abi_size = sizeof(result->docs);
+      result->report.abi_size = sizeof(result->report);
       auto handle = store->handle;
       return RunNative<Async>(
           env, receiver, handle,
           [q, handle, result, data]() {
             (void)data; // Retains query and filter bytes through worker
                         // completion.
+            if constexpr (Report)
+              return ze_query_embedded_report(
+                  handle, &q, result->ranks.data(), result->states.data(), q.k,
+                  &result->docs, &result->report);
             return ze_query_embedded(handle, &q, result->ranks.data(), q.k,
                                      &result->docs);
           },
@@ -4858,6 +4988,34 @@ napi_value Query(napi_env env, napi_callback_info info) {
                   !NapiOk(env, napi_set_element(env, array, i, hit),
                           "chunk hit"))
                 return nullptr;
+              if constexpr (Report) {
+                napi_value state;
+                const char *name =
+                    result->states[i] == 1 ? "pending" : "ready";
+                if (!NapiOk(env,
+                            napi_create_string_utf8(env, name,
+                                                    NAPI_AUTO_LENGTH, &state),
+                            "hit state") ||
+                    !SetNamed(env, hit, "state", state))
+                  return nullptr;
+              }
+            }
+            if constexpr (Report) {
+              napi_value report, generation, pending;
+              if (!NapiOk(env, napi_create_object(env, &report), "report") ||
+                  !SetNamed(env, report, "hits", array) ||
+                  !NapiOk(env,
+                          napi_create_bigint_uint64(env, docs.generation,
+                                                    &generation),
+                          "generation") ||
+                  !SetNamed(env, report, "generation", generation) ||
+                  !NapiOk(env,
+                          napi_create_bigint_uint64(
+                              env, result->report.pending_rows, &pending),
+                          "pendingRows") ||
+                  !SetNamed(env, report, "pendingRows", pending))
+                return nullptr;
+              return report;
             }
             return array;
           });
@@ -5439,6 +5597,16 @@ napi_value Initialize(napi_env env, napi_value exports) {
        napi_default, nullptr},
       {"queryEmbeddedAsync", nullptr, Query<true, true>, nullptr, nullptr,
        nullptr, napi_default, nullptr},
+      {"queryEmbeddedReport", nullptr, Query<false, true, false, true>,
+       nullptr, nullptr, nullptr, napi_default, nullptr},
+      {"queryEmbeddedReportAsync", nullptr, Query<true, true, false, true>,
+       nullptr, nullptr, nullptr, napi_default, nullptr},
+      {"pauseEmbedding", nullptr, ControlEmbedding<false>, nullptr, nullptr,
+       nullptr, napi_default, nullptr},
+      {"resumeEmbedding", nullptr, ControlEmbedding<true>, nullptr, nullptr,
+       nullptr, napi_default, nullptr},
+      {"embeddingStatus", nullptr, EmbeddingStatus, nullptr, nullptr, nullptr,
+       napi_default, nullptr},
       {"queryAsync", nullptr, Query<true>, nullptr, nullptr, nullptr,
        napi_default, nullptr},
       {"query", nullptr, Query<false>, nullptr, nullptr, nullptr, napi_default,

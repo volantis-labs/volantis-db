@@ -45,6 +45,8 @@ pub enum FormatFamily {
     NativeGraphRoot = 18,
     /// Required complete native graph WAL envelopes.
     NativeGraphWal = 19,
+    /// Sealed map from compact vector ordinal to document row (WF-985).
+    VectorPresence = 20,
 }
 
 impl FormatFamily {
@@ -74,7 +76,8 @@ impl FormatFamily {
             | Self::StoredText
             | Self::NativeGraphObject
             | Self::NativeGraphRoot
-            | Self::NativeGraphWal => 1,
+            | Self::NativeGraphWal
+            | Self::VectorPresence => 1,
         }
     }
 }
@@ -145,18 +148,21 @@ impl std::error::Error for RegistryError {}
 /// Static registry for every persisted family and quantization identifier.
 pub struct FormatRegistry;
 
-const FAMILIES: [FamilySpec; 19] = [
+const FAMILIES: [FamilySpec; 20] = [
     FamilySpec {
         family: FormatFamily::Frame,
         current_version: 1,
         minimum_accepted_version: 1,
         maximum_accepted_version: 1,
     },
+    // Version 2 (WF-985) adds the VectorPresence region: rows without a
+    // vector. Writers emit version 1 unless a row has no vector, so a store
+    // without such rows stays readable by older builds.
     FamilySpec {
         family: FormatFamily::Segment,
         current_version: 1,
         minimum_accepted_version: 1,
-        maximum_accepted_version: 1,
+        maximum_accepted_version: 2,
     },
     FamilySpec {
         family: FormatFamily::VectorCodes,
@@ -256,6 +262,12 @@ const FAMILIES: [FamilySpec; 19] = [
     },
     FamilySpec {
         family: FormatFamily::NativeGraphWal,
+        current_version: 1,
+        minimum_accepted_version: 1,
+        maximum_accepted_version: 1,
+    },
+    FamilySpec {
+        family: FormatFamily::VectorPresence,
         current_version: 1,
         minimum_accepted_version: 1,
         maximum_accepted_version: 1,

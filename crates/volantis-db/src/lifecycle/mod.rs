@@ -1483,6 +1483,7 @@ pub enum StoreState {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenOptions {
     embedder: Option<embedded::RegisteredModel>,
+    document_schedule: embedded::DocumentSchedule,
     inspection: bool,
     access_mode: AccessMode,
     durability_mode: DurabilityMode,
@@ -1512,6 +1513,7 @@ impl OpenOptions {
     pub const fn new() -> Self {
         Self {
             embedder: None,
+            document_schedule: embedded::DocumentSchedule::Immediate,
             inspection: false,
             access_mode: AccessMode::ReadWrite,
             durability_mode: DurabilityMode::Derived,
@@ -1532,6 +1534,7 @@ impl OpenOptions {
     pub const fn read_only() -> Self {
         Self {
             embedder: None,
+            document_schedule: embedded::DocumentSchedule::Immediate,
             inspection: false,
             access_mode: AccessMode::ReadOnly,
             durability_mode: DurabilityMode::Derived,
@@ -2694,6 +2697,8 @@ pub struct OpenMigrations {
 /// One explicitly closeable embedded-store handle.
 pub struct Store {
     embedder: Mutex<Option<Arc<dyn embedded::NamespaceEmbedder>>>,
+    /// Background document embedding of a writable embedded namespace.
+    pub(crate) embedding: embedded::EmbeddingWorker,
     open_migrations: OpenMigrations,
     pub(crate) private_preparation: Option<namespace_batch::PrivatePreparation>,
     pub(crate) directory: PathBuf,
@@ -3531,6 +3536,10 @@ impl Store {
             epoch_alias: crate::epoch::EpochAliasCell::new(persisted_epoch.or(declared_epoch)),
             epoch: options.epoch.or_else(|| snapshot.embedded_epoch.clone()),
             embedder: Mutex::new(options.embedder.map(|model| model.0)),
+            embedding: embedded::EmbeddingWorker::new(
+                options.document_schedule,
+                options.access_mode == AccessMode::ReadWrite,
+            ),
             tokenizer,
             schema,
             lexical_index_cache: LexicalIndexCache::new(),
@@ -4659,7 +4668,8 @@ impl Store {
                 }
             };
             let mut document = document;
-            snapshot.expose_metadata(&mut document, fields)
+            snapshot
+                .expose_metadata(&mut document, fields)
                 .map_err(QueryError::Store)?;
             documents.push(document);
         }
@@ -7450,7 +7460,8 @@ fn search_pinned(
     };
 
     if !active.is_empty() {
-        let mut alive = active.alive().map_err(QueryError::Store)?;
+        // A row without a vector is never a vector candidate.
+        let mut alive = active.vector_alive().map_err(QueryError::Store)?;
         if let Some(filter) = request.filter {
             alive.retain(&filter.active_rows(active)?);
         }
@@ -7562,7 +7573,7 @@ fn search_pinned(
         merge_store_outcome(
             outcome,
             RowSource::Active,
-            |row| Ok(active.document(row)),
+            |row| Ok((row, active.document(row))),
             &mut candidates,
             &mut dims_touched,
             &mut bytes_read,
@@ -7610,6 +7621,22 @@ fn search_pinned(
         } else {
             original_alive.as_ref()
         };
+        // Vector readers index compact vector ordinals. A segment whose rows
+        // all hold a vector maps them one to one and borrows `alive`.
+        let vector_alive = segment
+            .vector_alive(alive)
+            .map_err(StoreError::Segment)
+            .map_err(QueryError::Store)?;
+        let alive = vector_alive.as_ref();
+        // A segment whose rows all lack a vector has nothing to score.
+        if segment
+            .vector_count()
+            .map_err(StoreError::Segment)
+            .map_err(QueryError::Store)?
+            == 0
+        {
+            continue;
+        }
         let source = RowSource::Sealed(segment.meta().id);
         // Automatic tiering follows the artifact that is atomically published
         // now, not the tier policy's desired future state. A due-but-unbuilt
@@ -7732,9 +7759,10 @@ fn search_pinned(
         merge_store_outcome(
             outcome,
             source,
-            |row| {
+            |ordinal| {
                 segment
-                    .document_version(row)
+                    .vector_row(ordinal)
+                    .and_then(|row| Ok((row, segment.document_version(row)?)))
                     .map_err(StoreError::Segment)
                     .map_err(QueryError::Store)
             },
@@ -7941,6 +7969,15 @@ fn fold_exact_vector_ceiling(
         )?;
     }
     for segment in snapshot.segments() {
+        // A segment whose rows all lack a vector bounds no distance.
+        if segment
+            .vector_count()
+            .map_err(StoreError::Segment)
+            .map_err(QueryError::Store)?
+            == 0
+        {
+            continue;
+        }
         let range = segment_range(segment)?;
         ceiling = fold_vector_ceiling(ceiling, range, query)?;
     }
@@ -8465,7 +8502,10 @@ fn scan_sealed_segment(
         )?;
         return scan_squared_l2(
             vectors,
-            segment.meta().row_count as usize,
+            segment
+                .vector_count()
+                .map_err(StoreError::Segment)
+                .map_err(QueryError::Store)? as usize,
             alive,
             request.vector(),
             k,
@@ -9364,7 +9404,8 @@ fn map_scan_error(error: crate::scan::ScanError) -> QueryError {
 fn merge_store_outcome(
     outcome: crate::scan::ScanOutcome,
     source: crate::ingest::RowSource,
-    document: impl Fn(usize) -> Result<Option<crate::ingest::DocumentVersion>, QueryError>,
+    // Maps a scan ordinal to its document row and version.
+    document: impl Fn(usize) -> Result<(usize, Option<crate::ingest::DocumentVersion>), QueryError>,
     candidates: &mut Vec<crate::ingest::SearchCandidate>,
     dims_touched: &mut u64,
     bytes_read: &mut u64,
@@ -9396,11 +9437,12 @@ fn merge_store_outcome(
         vector_fault_tier,
     )?;
     for candidate in outcome.candidates {
-        let local_row = u32::try_from(candidate.row_id)
+        let (row, version) = document(candidate.row_id)?;
+        let local_row = u32::try_from(row)
             .map_err(|_| QueryError::Scan(crate::scan::ScanError::ArithmeticOverflow))?;
         candidates.push(crate::ingest::SearchCandidate::new(
             crate::ingest::GlobalRowId::new(source, local_row),
-            document(candidate.row_id)?,
+            version,
             candidate.score,
             exact_score,
         ));
@@ -9985,7 +10027,8 @@ fn materialize_active_document(
         .get(row)
         .copied()
         .ok_or(StoreError::ActiveRowOverflow)?;
-    let vector = if fields.contains(DocumentFields::VECTOR) {
+    // A row without a vector reports none, as an unrequested vector does.
+    let vector = if fields.contains(DocumentFields::VECTOR) && !active.is_vector_absent(row) {
         let dimensions = active.dims().ok_or(StoreError::ActiveRowOverflow)?;
         let start = row
             .checked_mul(dimensions)
@@ -10057,12 +10100,23 @@ fn materialize_sealed_document(
             "sealed document row {row} has no timestamp"
         )))
     })?;
-    let vector = if fields.contains(DocumentFields::VECTOR) {
+    let slot = if fields.contains(DocumentFields::VECTOR) {
+        segment.row_vector(row).map_err(StoreError::Segment)?
+    } else {
+        None
+    };
+    // A row without a vector reports none, as an unrequested vector does.
+    let vector = if let Some(slot) = slot {
+        let slot_u32 = u32::try_from(slot).map_err(|_| {
+            StoreError::Segment(crate::segment::SegmentError::Geometry(
+                "sealed vector ordinal exceeds u32".to_owned(),
+            ))
+        })?;
         segment
-            .validate_rescore_rows(&[row_u32])
+            .validate_rescore_rows(&[slot_u32])
             .map_err(StoreError::Segment)?;
         let dimensions = segment.meta().dims as usize;
-        let start = row.checked_mul(dimensions).ok_or_else(|| {
+        let start = slot.checked_mul(dimensions).ok_or_else(|| {
             StoreError::Segment(crate::segment::SegmentError::Geometry(
                 "sealed vector row offset overflow".to_owned(),
             ))

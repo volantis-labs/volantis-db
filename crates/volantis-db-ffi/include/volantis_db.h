@@ -635,7 +635,8 @@ typedef struct ZeNamespaceSpec {
     size_t attribute_count;
     /*
      Zero for records, one for vectors, two for ZeEmbeddedNamespaceSpec,
-     three for ZeEmbeddedNamespaceSpecV2, or four for ZeEmbeddedNamespaceSpecV3.
+     three for ZeEmbeddedNamespaceSpecV2, four for ZeEmbeddedNamespaceSpecV3,
+     or five for ZeEmbeddedNamespaceSpecV4.
      */
     uint32_t has_vector_space;
     /*
@@ -3775,6 +3776,59 @@ typedef struct ZeChunkRank {
 } ZeChunkRank;
 
 /*
+ Background embedding state of one writable embedded namespace handle.
+ */
+typedef struct ZeEmbeddingStatus {
+    /*
+     sizeof(ZeEmbeddingStatus).
+     */
+    uint32_t abi_size;
+    /*
+     Must be zero.
+     */
+    uint32_t abi_reserved;
+    /*
+     Live rows that wait for embedding at the current generation.
+     */
+    uint64_t pending;
+    /*
+     `1` when admission of new batches is stopped.
+     */
+    uint32_t paused;
+    /*
+     `1` while a batch is between admission and its completion commit.
+     */
+    uint32_t in_flight;
+    /*
+     `1` when a worker thread runs for this handle.
+     */
+    uint32_t running;
+    /*
+     Last failure: 0 none, 1 model error, 2 invalid model output, 3 store
+     refusal. The worker waits for resume after a failure.
+     */
+    uint32_t last_error;
+} ZeEmbeddingStatus;
+
+/*
+ Embedded query totals returned beside the ranked documents.
+ */
+typedef struct ZeEmbeddedReport {
+    /*
+     sizeof(ZeEmbeddedReport).
+     */
+    uint32_t abi_size;
+    /*
+     Must be zero.
+     */
+    uint32_t abi_reserved;
+    /*
+     Eligible rows that wait for embedding, after filters and before top-k.
+     */
+    uint64_t pending_rows;
+} ZeEmbeddedReport;
+
+/*
  One stored document, optionally restricted to a single source chunk.
  */
 typedef struct ZeNeighbourSource {
@@ -4050,6 +4104,26 @@ typedef struct ZeEmbeddedNamespaceSpecV3 {
      */
     uint32_t has_mlx_cache_limit;
 } ZeEmbeddedNamespaceSpecV3;
+
+/*
+ Embedded namespace with a document schedule (WF-985).
+ A zero-initialized extension selects the immediate schedule.
+ */
+typedef struct ZeEmbeddedNamespaceSpecV4 {
+    /*
+     Prefix with abi_size = sizeof(ZeEmbeddedNamespaceSpecV4), has_vector_space = 5.
+     */
+    struct ZeEmbeddedNamespaceSpecV3 v3;
+    /*
+     `0` embeds inside the upsert; `1` commits text first and embeds it in
+     a background worker; `2` is `1` with the worker paused at open.
+     */
+    uint32_t document_schedule;
+    /*
+     Must be zero.
+     */
+    uint32_t reserved;
+} ZeEmbeddedNamespaceSpecV4;
 
 #ifdef __cplusplus
 extern "C" {
@@ -4750,6 +4824,40 @@ ze_error_code ze_query_embedded(ze_handle handle,
                                 struct ZeChunkRank *ranks,
                                 size_t rank_capacity,
                                 struct ZeGetResult *out_result);
+
+/*
+ Stops admission of new background embedding batches on a writable
+ embedded namespace handle. A batch already admitted may still finish.
+ Repeated calls are idempotent.
+ */
+ze_error_code ze_namespace_embedding_pause(ze_handle handle);
+
+/*
+ Restarts background embedding and retries a batch that failed.
+ Repeated calls are idempotent.
+ */
+ze_error_code ze_namespace_embedding_resume(ze_handle handle);
+
+/*
+ Reads background embedding state. `out_status` is caller-owned and must
+ have `abi_size` initialized. The pending count reads the store once.
+ */
+ze_error_code ze_namespace_embedding_status(ze_handle handle,
+                                            struct ZeEmbeddingStatus *out_status);
+
+/*
+ `ze_query_embedded` plus the eligible pending-row count and one state per
+ returned entry in caller-owned `states` (0 ready chunk, 1 pending source
+ matched lexically over its whole text). `ranks` and `states` each hold
+ `rank_capacity` entries. Free `out_result` with `ze_get_result_free`.
+ */
+ze_error_code ze_query_embedded_report(ze_handle handle,
+                                       const struct ZeEmbeddedQueryRequest *request,
+                                       struct ZeChunkRank *ranks,
+                                       uint32_t *states,
+                                       size_t rank_capacity,
+                                       struct ZeGetResult *out_result,
+                                       struct ZeEmbeddedReport *out_report);
 
 /*
  Finds neighbours by stored vectors without invoking a model. Pass one source for

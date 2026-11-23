@@ -644,7 +644,11 @@ pub(crate) fn build_round<'scratch>(
         let squared_l2 = match scores.get(key) {
             Some(score) => score,
             None => {
-                let score = exact_squared_l2(snapshot, active, sources, query, hit.doc)?;
+                // A row without a vector has no vector-leg score.
+                let Some(score) = exact_squared_l2(snapshot, active, sources, query, hit.doc)?
+                else {
+                    continue;
+                };
                 if retain_scores {
                     scores.insert(key, score)?;
                 }
@@ -1007,7 +1011,7 @@ fn exact_squared_l2(
     sources: &[StructuredLexicalSource],
     query: &[f32],
     doc: crate::fts::search::GlobalDocId,
-) -> Result<f64, FusionError> {
+) -> Result<Option<f64>, FusionError> {
     let invariant = |detail: &str| FusionError::Leg {
         leg: FusionLeg::Vector,
         kind: LegFailureKind::Invariant,
@@ -1017,23 +1021,38 @@ fn exact_squared_l2(
         .ok()
         .and_then(|slot| sources.get(slot))
         .ok_or_else(|| invariant("hybrid cross-fill named an unknown lexical segment"))?;
-    let rows = match source {
+    let lexical_row =
+        usize::try_from(doc.row).map_err(|_| invariant("hybrid cross-fill row exceeds usize"))?;
+    let (rows, slot) = match source {
         StructuredLexicalSource::Sealed(ordinal) => {
             let segment = snapshot
                 .segments()
                 .get(*ordinal)
                 .ok_or_else(|| invariant("hybrid cross-fill named an absent sealed segment"))?;
-            crate::lifecycle::exact_rescore_rows(segment).map_err(FusionError::from)?
+            let Some(slot) = segment
+                .row_vector(lexical_row)
+                .map_err(|_| invariant("hybrid cross-fill row is outside its segment"))?
+            else {
+                return Ok(None);
+            };
+            (
+                crate::lifecycle::exact_rescore_rows(segment).map_err(FusionError::from)?,
+                slot,
+            )
         }
         #[cfg(feature = "graph-cypher")]
         StructuredLexicalSource::NodeText { .. } => {
             return Err(invariant("graph-only text has no vector"));
         }
-        StructuredLexicalSource::Active => active.vectors(),
+        StructuredLexicalSource::Active => {
+            if active.is_vector_absent(lexical_row) {
+                return Ok(None);
+            }
+            (active.vectors(), lexical_row)
+        }
     };
     let dimension = query.len();
-    let row = usize::try_from(doc.row)
-        .ok()
+    let row = Some(slot)
         .and_then(|row| row.checked_mul(dimension))
         .and_then(|start| start.checked_add(dimension).map(|end| start..end))
         .and_then(|range| rows.get(range))
@@ -1063,7 +1082,7 @@ fn exact_squared_l2(
             "hybrid cross-fill produced a non-finite distance",
         ));
     }
-    Ok(f64::from(squared_l2))
+    Ok(Some(f64::from(squared_l2)))
 }
 
 #[cfg(test)]

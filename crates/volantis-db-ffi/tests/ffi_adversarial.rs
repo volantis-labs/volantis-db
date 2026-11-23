@@ -333,6 +333,42 @@ const ABI_REGISTRY: &[AbiEntry] = &[
         }),
     },
     AbiEntry {
+        name: "ze_query_embedded_report",
+        coverage: AbiCoverage::InvalidProbe(|context| {
+            ProbeResult::Status(ze_query_embedded_report(
+                context.store.handle,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            ))
+        }),
+    },
+    AbiEntry {
+        // Handle zero is never issued.
+        name: "ze_namespace_embedding_pause",
+        coverage: AbiCoverage::InvalidProbe(|_| {
+            ProbeResult::Status(ze_namespace_embedding_pause(0))
+        }),
+    },
+    AbiEntry {
+        name: "ze_namespace_embedding_resume",
+        coverage: AbiCoverage::InvalidProbe(|_| {
+            ProbeResult::Status(ze_namespace_embedding_resume(0))
+        }),
+    },
+    AbiEntry {
+        name: "ze_namespace_embedding_status",
+        coverage: AbiCoverage::InvalidProbe(|context| {
+            ProbeResult::Status(ze_namespace_embedding_status(
+                context.store.handle,
+                std::ptr::null_mut(),
+            ))
+        }),
+    },
+    AbiEntry {
         name: "ze_query_filtered",
         coverage: AbiCoverage::InvalidProbe(probe_query_filtered),
     },

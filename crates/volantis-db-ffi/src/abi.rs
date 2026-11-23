@@ -209,7 +209,8 @@ pub struct ZeNamespaceSpec {
     /// Number of attribute definitions.
     pub attribute_count: usize,
     /// Zero for records, one for vectors, two for ZeEmbeddedNamespaceSpec,
-    /// three for ZeEmbeddedNamespaceSpecV2, or four for ZeEmbeddedNamespaceSpecV3.
+    /// three for ZeEmbeddedNamespaceSpecV2, four for ZeEmbeddedNamespaceSpecV3,
+    /// or five for ZeEmbeddedNamespaceSpecV4.
     pub has_vector_space: u32,
     /// Vector dimensions, or zero or one for a record-only namespace.
     pub dimensions: u32,
@@ -2166,6 +2167,53 @@ pub struct ZeEmbeddedNamespaceSpecV3 {
     /// `1` when v2.mlx_cache_limit_bytes is an explicit limit, including zero;
     /// `0` accepts the configured process policy.
     pub has_mlx_cache_limit: u32,
+}
+
+/// Embedded namespace with a document schedule (WF-985).
+/// A zero-initialized extension selects the immediate schedule.
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct ZeEmbeddedNamespaceSpecV4 {
+    /// Prefix with abi_size = sizeof(ZeEmbeddedNamespaceSpecV4), has_vector_space = 5.
+    pub v3: ZeEmbeddedNamespaceSpecV3,
+    /// `0` embeds inside the upsert; `1` commits text first and embeds it in
+    /// a background worker; `2` is `1` with the worker paused at open.
+    pub document_schedule: u32,
+    /// Must be zero.
+    pub reserved: u32,
+}
+
+/// Background embedding state of one writable embedded namespace handle.
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct ZeEmbeddingStatus {
+    /// sizeof(ZeEmbeddingStatus).
+    pub abi_size: u32,
+    /// Must be zero.
+    pub abi_reserved: u32,
+    /// Live rows that wait for embedding at the current generation.
+    pub pending: u64,
+    /// `1` when admission of new batches is stopped.
+    pub paused: u32,
+    /// `1` while a batch is between admission and its completion commit.
+    pub in_flight: u32,
+    /// `1` when a worker thread runs for this handle.
+    pub running: u32,
+    /// Last failure: 0 none, 1 model error, 2 invalid model output, 3 store
+    /// refusal. The worker waits for resume after a failure.
+    pub last_error: u32,
+}
+
+/// Embedded query totals returned beside the ranked documents.
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct ZeEmbeddedReport {
+    /// sizeof(ZeEmbeddedReport).
+    pub abi_size: u32,
+    /// Must be zero.
+    pub abi_reserved: u32,
+    /// Eligible rows that wait for embedding, after filters and before top-k.
+    pub pending_rows: u64,
 }
 
 /// Text query against a model-bound Store namespace.

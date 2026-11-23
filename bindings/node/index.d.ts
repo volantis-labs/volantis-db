@@ -159,6 +159,14 @@ export interface NamespaceSpec {
   /** Model supplying both towers. Mutually exclusive with vectorSpace. */
   readonly embeddedModel?: TextModelRef;
   /**
+   * When a new source runs the document tower; requires embeddedModel.
+   * 'immediate' (the default) embeds inside the upsert. 'background' commits
+   * the text, attributes and lexical index at once and a worker of this
+   * writable handle embeds it later; 'paused' is 'background' with the worker
+   * paused until resumeEmbedding(). Pending rows survive close and reopen.
+   */
+  readonly embeddingSchedule?: 'immediate' | 'background' | 'paused';
+  /**
    * Persisted tokenizer profile; defaults to textDefault. Supply the same
    * profile on reopen or receive ZE_ERR_EPOCH_MISMATCH. No vector space or
    * embedding epoch is required. voice normalizes transcript number words
@@ -472,6 +480,32 @@ export interface EmbeddedHit {
   readonly score: number;
 }
 
+export interface EmbeddedReportHit extends EmbeddedHit {
+  /** 'pending': a lexical match on the whole source of a row not embedded yet (chunk 0). */
+  readonly state: 'ready' | 'pending';
+}
+
+export interface EmbeddedReport {
+  readonly hits: EmbeddedReportHit[];
+  /** Store generation of every row read. */
+  readonly generation: bigint;
+  /** Eligible rows that wait for embedding, after filters and before top-k. */
+  readonly pendingRows: bigint;
+}
+
+export interface EmbeddingStatus {
+  /** Admission of new batches is stopped. */
+  readonly paused: boolean;
+  /** A batch is between admission and its completion commit. */
+  readonly inFlight: boolean;
+  /** A worker runs for this handle (writable, background or paused schedule). */
+  readonly running: boolean;
+  /** Live rows that wait for embedding now. */
+  readonly pending: bigint;
+  /** 0 none, 1 model error, 2 invalid model output, 3 store refusal. The worker waits for resumeEmbedding() after a failure. */
+  readonly lastErrorCode: number;
+}
+
 export interface QueryRequest {
   /** Document ids allowed on both legs before ranking/fusion; [] selects no hits. Maximum 524288 ids. */
   readonly eligibleIds?: readonly bigint[];
@@ -720,6 +754,14 @@ export declare class Store {
   /** Rank source chunks of eligible documents using the namespace model and tokenizer. */
   queryEmbedded(request: EmbeddedQuery): EmbeddedHit[];
   queryEmbeddedAsync(request: EmbeddedQuery & { readonly signal?: AbortSignal }): Promise<EmbeddedHit[]>;
+  /** queryEmbedded plus the generation, the eligible pending-row count and a state per hit. */
+  queryEmbeddedReport(request: EmbeddedQuery): EmbeddedReport;
+  queryEmbeddedReportAsync(request: EmbeddedQuery & { readonly signal?: AbortSignal }): Promise<EmbeddedReport>;
+  /** Stops admission of new background embedding batches; a batch in flight may finish. */
+  pauseEmbedding(): void;
+  /** Restarts background embedding and retries a failed batch. */
+  resumeEmbedding(): void;
+  embeddingStatus(): EmbeddingStatus;
   /** AbortSignal cancels engine work cooperatively and rejects with
    * VolantisError (ZE_ERR_CANCELLED), never partial results. The promise settles
    * after the worker stops. Use either signal or cancelToken, not both; keep a

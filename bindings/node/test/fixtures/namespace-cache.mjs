@@ -6,6 +6,17 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
 const {openNamespace, openNamespaceAsync, TextStore} = createRequire(import.meta.url)('../..');
+
+// Waits for the background worker with a bounded deadline.
+async function drained(writer, deadline = Date.now() + 60_000) {
+  for (;;) {
+    const status = writer.embeddingStatus();
+    if (status.pending === 0n && !status.inFlight) return;
+    assert.equal(status.lastErrorCode, 0);
+    assert.ok(Date.now() < deadline, 'background embedding did not drain');
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
 const root = mkdtempSync(join(tmpdir(), 'ze599-'));
 const writers = [];
 try {
@@ -25,7 +36,45 @@ try {
   const opts = mlxCacheLimitBytes => ({mlxCacheLimitBytes});
   const text = limit => TextStore.open(join(root, 'text'), bundle, opts(limit));
   const mode = process.argv[2];
-  if (mode === 'race') {
+  if (mode === 'deferred') {
+    for (const [name, open] of [['sync', openNamespace], ['async', openNamespaceAsync]]) {
+      const writer = await open(root, name, {...spec, embeddingSchedule: 'paused'});
+      writers.push(writer);
+      const id = 60001n;
+      const text = 'fictitious mauve sprocket';
+      writer.upsert([{id, revision: 7n, text}]);
+      assert.equal(writer.get([id]).documents[0].revision, 7n);
+      const query = {text, leg: 'dense', eligibleIds: [id], k: 1};
+      assert.deepEqual(writer.queryEmbedded(query).map(hit => hit.id), []);
+      // The pending row is a lexical hit at once and counts as pending.
+      const report = writer.queryEmbeddedReport({...query, leg: 'lexical'});
+      assert.deepEqual(report.hits.map(hit => [hit.id, hit.state]), [[id, 'pending']]);
+      assert.equal(report.pendingRows, 1n);
+      const status = writer.embeddingStatus();
+      assert.equal(status.paused, true);
+      assert.equal(status.pending, 1n);
+      writer.resumeEmbedding();
+      await drained(writer);
+      assert.deepEqual(writer.queryEmbedded(query).map(hit => hit.id), [id]);
+      assert.equal(writer.queryEmbeddedReport(query).pendingRows, 0n);
+    }
+  } else if (mode === 'deferred-reopen') {
+    const id = 60001n;
+    const query = {text: 'mauve', leg: 'lexical', eligibleIds: [id], k: 1};
+    let writer = openNamespace(root, 'reopen', {...spec, embeddingSchedule: 'paused'});
+    writer.upsert([{id, revision: 7n, text: 'fictitious mauve sprocket'}]);
+    writer.close();
+    writer = openNamespace(root, 'reopen', {...spec, embeddingSchedule: 'paused'});
+    const report = writer.queryEmbeddedReport(query);
+    assert.deepEqual(report.hits.map(hit => [hit.id, hit.state]), [[id, 'pending']]);
+    assert.equal(report.pendingRows, 1n);
+    writer.close();
+    writer = openNamespace(root, 'reopen', {...spec, embeddingSchedule: 'background'});
+    writers.push(writer);
+    await drained(writer);
+    const dense = writer.queryEmbeddedReport({...query, leg: 'dense'});
+    assert.deepEqual(dense.hits.map(hit => [hit.id, hit.state]), [[id, 'ready']]);
+  } else if (mode === 'race') {
     const results = await Promise.allSettled(['toy-a', 'toy-b'].map((name, i) =>
       openNamespaceAsync(root, name, spec, opts(BigInt(i)))));
     const won = results.filter(r => r.status === 'fulfilled');

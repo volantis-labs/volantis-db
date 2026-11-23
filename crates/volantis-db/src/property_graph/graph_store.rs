@@ -496,7 +496,7 @@ impl<'a, 'b, 'c> GraphBatch<'a, 'b, 'c> {
         ) -> Result<T, NativeGraphError>,
     ) -> Result<T, GraphStoreError> {
         let mut bound = self.bind(store, true)?;
-        let result = apply(&bound.writes, bound.documents.as_deref());
+        let mut result = apply(&bound.writes, bound.documents.as_deref());
         if result.is_err()
             && bound
                 .documents
@@ -506,7 +506,16 @@ impl<'a, 'b, 'c> GraphBatch<'a, 'b, 'c> {
         {
             drop(bound);
             bound = self.bind(store, false)?;
-            return Ok(apply(&bound.writes, bound.documents.as_deref())?);
+            result = apply(&bound.writes, bound.documents.as_deref());
+        }
+        // Signal the worker only after the whole graph batch committed.
+        if result.is_ok()
+            && bound
+                .documents
+                .as_deref()
+                .is_some_and(crate::ingest::IngestBatch::has_pending)
+        {
+            store.embedding.notify();
         }
         Ok(result?)
     }
@@ -577,8 +586,10 @@ impl<'a, 'b, 'c> GraphBatch<'a, 'b, 'c> {
             };
             documents.push(linked.document.clone());
         }
+        // A node-linked document embeds at write time even on a deferred
+        // schedule: completion never rewrites graph-linked rows.
         let reuse = store
-            .prepare_embedded(&mut documents, None, allow_reuse)
+            .prepare_embedded_now(&mut documents, None, allow_reuse)
             .map_err(|error| GraphStoreError::graph(NativeGraphError::Store(error)))?;
         let mut input_bytes = 0_u64;
         // Minimum Begin/Commit envelope (512 bytes) and its mixed wrapper.

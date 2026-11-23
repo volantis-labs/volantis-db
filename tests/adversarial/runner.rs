@@ -4519,9 +4519,9 @@ fn render_family_artifact(name: &str, records: &[String]) -> Result<Vec<u8>, Str
             .first()
             .ok_or_else(|| "family fixture.json requires at least one record".to_owned())
             .and_then(|record| {
-                volantis_db_bench::harness_json::from_str::<
-                    volantis_db_bench::harness_json::Value,
-                >(record)
+                volantis_db_bench::harness_json::from_str::<volantis_db_bench::harness_json::Value>(
+                    record,
+                )
                 .map_err(|error| format!("parse fixture.json record: {error}"))
             })?
             .get("campaign")
@@ -7552,8 +7552,7 @@ fn validate_ingest_receipt(
             && original_segment.iter().any(|byte| *byte != 0)
             && replacement_segment.iter().any(|byte| *byte != 0)
             && old_file_name
-                == &volantis_db::segment::SegmentId::from_bytes(*original_segment)
-                    .file_name()
+                == &volantis_db::segment::SegmentId::from_bytes(*original_segment).file_name()
             && *io_kind == IngestRetentionIoKind::Other
             && *replacement_manifest_committed
             && *intent_present
@@ -10529,6 +10528,7 @@ fn metadata_region_key(region: volantis_db::segment::layout::RegionKind) -> &'st
         RegionKind::DocumentVersions => "document-versions",
         RegionKind::StoredMetadata => "stored-metadata",
         RegionKind::StoredText => "stored-text",
+        RegionKind::VectorPresence => "vector-presence",
         RegionKind::VectorSpaceN => "vector-space-n",
     }
 }

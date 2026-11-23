@@ -805,7 +805,8 @@ impl crate::lifecycle::Store {
                     stage: "active",
                     detail: "active row exceeds u32".to_owned(),
                 })?;
-                if !alive.is_alive(row_u32) {
+                // A row without a vector has nothing to self-check.
+                if !alive.is_alive(row_u32) || active.segment.is_vector_absent(row) {
                     continue;
                 }
                 let start = row.checked_mul(dims).ok_or_else(|| SelfCheckFailure {
@@ -855,7 +856,11 @@ impl crate::lifecycle::Store {
                 stage: "sealed",
                 detail: error.to_string(),
             })?;
-            if rows.checked_mul(dims) != Some(vectors.len()) {
+            let vector_count = segment.vector_count().map_err(|error| SelfCheckFailure {
+                stage: "sealed",
+                detail: error.to_string(),
+            })? as usize;
+            if vector_count.checked_mul(dims) != Some(vectors.len()) {
                 return Err(SelfCheckFailure {
                     stage: "sealed",
                     detail: format!("segment {} f32 rows are not rectangular", segment.meta().id),
@@ -873,7 +878,15 @@ impl crate::lifecycle::Store {
                 if !alive.is_alive(row_u32) {
                     continue;
                 }
-                let start = row.checked_mul(dims).ok_or_else(|| SelfCheckFailure {
+                // A row without a vector has nothing to self-check.
+                let Some(slot) = segment.row_vector(row).map_err(|error| SelfCheckFailure {
+                    stage: "sealed",
+                    detail: error.to_string(),
+                })?
+                else {
+                    continue;
+                };
+                let start = slot.checked_mul(dims).ok_or_else(|| SelfCheckFailure {
                     stage: "sealed",
                     detail: "sealed vector offset overflowed".to_owned(),
                 })?;

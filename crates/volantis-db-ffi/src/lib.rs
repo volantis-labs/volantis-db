@@ -569,23 +569,37 @@ struct EmbeddedPolicy {
     cache_limit: Option<u64>,
     cache_dir: Option<std::path::PathBuf>,
     offline: bool,
+    schedule: volantis_db::lifecycle::embedded::DocumentSchedule,
 }
 
-/// Reads the layout selected by tag 2, 3 or 4; each size is checked first.
+fn parse_document_schedule(
+    value: u32,
+) -> Result<volantis_db::lifecycle::embedded::DocumentSchedule, FfiError> {
+    use volantis_db::lifecycle::embedded::DocumentSchedule;
+    match value {
+        0 => Ok(DocumentSchedule::Immediate),
+        1 => Ok(DocumentSchedule::Background),
+        2 => Ok(DocumentSchedule::Paused),
+        _ => Err(FfiError::invalid("unknown document_schedule")),
+    }
+}
+
+/// Reads the layout selected by tag 2, 3, 4 or 5; each size is checked first.
 fn embedded_policy(pointer: *const ZeNamespaceSpec, tag: u32) -> Result<EmbeddedPolicy, FfiError> {
     match tag {
-        4 => {
-            let v3 = marshal::read_struct(pointer.cast::<ZeEmbeddedNamespaceSpecV3>())?;
-            let explicit_limit = parse_flag(v3.has_mlx_cache_limit, "has_mlx_cache_limit")?;
-            let offline = parse_flag(v3.offline, "offline")?;
-            let cache_dir = marshal::utf8_without_nul(v3.model_cache_dir, v3.model_cache_dir_len)?;
-            Ok(EmbeddedPolicy {
-                embedded: v3.v2.embedded,
-                cache_limit: explicit_limit.then_some(v3.v2.mlx_cache_limit_bytes),
-                cache_dir: (!cache_dir.is_empty()).then(|| Path::new(cache_dir).to_path_buf()),
-                offline,
-            })
+        5 => {
+            let v4 = marshal::read_struct(pointer.cast::<ZeEmbeddedNamespaceSpecV4>())?;
+            if v4.reserved != 0 {
+                return Err(FfiError::invalid("reserved must be zero"));
+            }
+            let schedule = parse_document_schedule(v4.document_schedule)?;
+            let mut policy = embedded_policy_v3(v4.v3)?;
+            policy.schedule = schedule;
+            Ok(policy)
         }
+        4 => embedded_policy_v3(marshal::read_struct(
+            pointer.cast::<ZeEmbeddedNamespaceSpecV3>(),
+        )?),
         3 => {
             let v2 = marshal::read_struct(pointer.cast::<ZeEmbeddedNamespaceSpecV2>())?;
             Ok(EmbeddedPolicy {
@@ -593,6 +607,7 @@ fn embedded_policy(pointer: *const ZeNamespaceSpec, tag: u32) -> Result<Embedded
                 cache_limit: Some(v2.mlx_cache_limit_bytes),
                 cache_dir: None,
                 offline: false,
+                schedule: Default::default(),
             })
         }
         _ => Ok(EmbeddedPolicy {
@@ -600,8 +615,22 @@ fn embedded_policy(pointer: *const ZeNamespaceSpec, tag: u32) -> Result<Embedded
             cache_limit: None,
             cache_dir: None,
             offline: false,
+            schedule: Default::default(),
         }),
     }
+}
+
+fn embedded_policy_v3(v3: ZeEmbeddedNamespaceSpecV3) -> Result<EmbeddedPolicy, FfiError> {
+    let explicit_limit = parse_flag(v3.has_mlx_cache_limit, "has_mlx_cache_limit")?;
+    let offline = parse_flag(v3.offline, "offline")?;
+    let cache_dir = marshal::utf8_without_nul(v3.model_cache_dir, v3.model_cache_dir_len)?;
+    Ok(EmbeddedPolicy {
+        embedded: v3.v2.embedded,
+        cache_limit: explicit_limit.then_some(v3.v2.mlx_cache_limit_bytes),
+        cache_dir: (!cache_dir.is_empty()).then(|| Path::new(cache_dir).to_path_buf()),
+        offline,
+        schedule: Default::default(),
+    })
 }
 
 fn namespace_options(
@@ -611,7 +640,7 @@ fn namespace_options(
 ) -> Result<(OpenOptions, Schema, StoreEpoch), FfiError> {
     let spec = marshal::read_struct(pointer)?;
     // Preserve the legacy diagnostic for tag 2 on a base-only declaration.
-    if matches!(spec.has_vector_space, 3 | 4)
+    if matches!(spec.has_vector_space, 3..=5)
         || (spec.has_vector_space == 2
             && spec.abi_size as usize >= size_of::<ZeEmbeddedNamespaceSpec>())
     {
@@ -663,7 +692,8 @@ fn namespace_options(
             let options = options
                 .with_tokenizer(tokenizer)
                 .with_embedder(std::sync::Arc::new(model))
-                .map_err(FfiError::store)?;
+                .map_err(FfiError::store)?
+                .with_document_schedule(policy.schedule);
             let epoch = options
                 .declared_epoch()
                 .cloned()
@@ -1050,11 +1080,27 @@ fn open_store_at(
     if let Some(schema) = schema {
         options = options.with_schema(schema);
     }
+    let deferred = options.document_schedule()
+        != volantis_db::lifecycle::embedded::DocumentSchedule::Immediate;
     let store = Store::open(path, options).map_err(FfiError::store)?;
     #[cfg(feature = "graph-cypher")]
     let handle = registry::insert_store_with_document(store, identity, document)?;
     #[cfg(not(feature = "graph-cypher"))]
     let handle = registry::insert_store(store, identity)?;
+    // A writable handle with a deferred schedule runs the embedding worker.
+    // A read-only handle never does; an immediate one leaves earlier pending
+    // rows for the next deferred handle.
+    if deferred {
+        let store = registry::lookup(handle)?.store;
+        match store.attach_embedding_worker() {
+            Ok(()) | Err(volantis_db::lifecycle::StoreError::ReadOnly) => {}
+            Err(error) => {
+                drop(store);
+                let _ = close_handle(handle);
+                return Err(FfiError::store(error));
+            }
+        }
+    }
     marshal::write_scalar(out_handle, handle);
     Ok(())
 }
@@ -1932,7 +1978,7 @@ fn decode_namespace_mutations(
         } else {
             decode_upsert_documents(
                 spec.has_vector_space == 0,
-                matches!(spec.has_vector_space, 2..=4),
+                matches!(spec.has_vector_space, 2..=5),
                 &schema,
                 upsert,
             )?
@@ -2043,12 +2089,12 @@ pub extern "C" fn ze_namespace_batch_live(
                     let live = access
                         .iter()
                         .zip(mutations)
-                        .map(|(access, mutation)| {
-                            volantis_db::lifecycle::LiveNamespaceMutation {
+                        .map(
+                            |(access, mutation)| volantis_db::lifecycle::LiveNamespaceMutation {
                                 store: &access.store,
                                 mutation,
-                            }
-                        })
+                            },
+                        )
                         .collect();
                     #[cfg(feature = "abi-panic-probe")]
                     let outcome = {
@@ -2381,12 +2427,9 @@ fn text_open_with_limit(
     if bundle_path.is_empty() {
         return Err(FfiError::invalid("bundle path must not be empty"));
     }
-    let store = volantis_db_text::TextStore::open(
-        Path::new(&store_path),
-        Path::new(bundle_path),
-        options,
-    )
-    .map_err(FfiError::text)?;
+    let store =
+        volantis_db_text::TextStore::open(Path::new(&store_path), Path::new(bundle_path), options)
+            .map_err(FfiError::text)?;
     let handle = text_registry::insert(store)?;
     marshal::write_scalar(out_handle, handle);
     Ok(())
@@ -3299,6 +3342,16 @@ pub extern "C" fn ze_close(handle: ZeHandle) -> ZeErrorCode {
             Err(error) => finish(Some(handle), Err(error)),
         }
     })
+}
+
+fn close_handle(handle: ZeHandle) -> Result<(), FfiError> {
+    match registry::begin_close(handle)? {
+        registry::CloseAccess::Poisoned => Ok(()),
+        registry::CloseAccess::Store(store) => {
+            let closed = store.close().map_err(FfiError::store);
+            closed.and(registry::finish_close(handle))
+        }
+    }
 }
 
 /// Reads the explicit store lifecycle state. `out_report` is caller-owned
@@ -6614,71 +6667,198 @@ pub extern "C" fn ze_query_embedded(
         run_named_panic_probe("ze_query_embedded");
         finish(
             Some(handle),
+            embedded_query_into(handle, request, ranks, rank_capacity, out_result, |_, _| {}),
+        )
+    })
+}
+
+/// Runs one embedded query report and publishes its hits as `ze_get` rows.
+/// `on_report` receives the pending count and one state per published hit
+/// before the result is written.
+fn embedded_query_into(
+    handle: ZeHandle,
+    request: *const ZeEmbeddedQueryRequest,
+    ranks: *mut ZeChunkRank,
+    rank_capacity: usize,
+    out_result: *mut ZeGetResult,
+    on_report: impl FnOnce(u64, &[u32]),
+) -> Result<(), FfiError> {
+    use volantis_db::lifecycle::embedded::{EmbeddedLeg, EmbeddedRowState};
+    let access = registry::lookup(handle)?;
+    let request = marshal::read_struct(request)?;
+    let abi_size = marshal::validate_output(out_result)?;
+    marshal::write_output(out_result, empty_get_result(abi_size));
+    if !(1..=4096).contains(&request.k) || rank_capacity < request.k {
+        return Err(FfiError::invalid(
+            "embedded query requires 1..4096 rank slots for k",
+        ));
+    }
+    scalar_output(ranks)?;
+    let leg = match request.leg {
+        0 => EmbeddedLeg::Dense,
+        1 => EmbeddedLeg::Lexical,
+        2 => EmbeddedLeg::Hybrid,
+        _ => return Err(FfiError::invalid("unknown embedded query leg")),
+    };
+    let control = query_control_for(request.cancel_token, request.deadline_ns)?;
+    let text = std::str::from_utf8(marshal::read_slice(request.text, request.text_len)?)
+        .map_err(|_| FfiError::invalid("invalid query UTF-8"))?;
+    let filter = embedded_query_filter(
+        access.store.schema(),
+        request.constraints,
+        request.has_eligible,
+        request.eligible_ids,
+        request.eligible_count,
+    )?;
+    let report = access
+        .store
+        .query_embedded_report(text, leg, request.k, filter.as_ref(), control)
+        .map_err(FfiError::query)?;
+    let mut result = empty_get_result(abi_size);
+    result.generation = report.generation;
+    let mut states = Vec::with_capacity(report.hits.len());
+    if report.hits.is_empty() {
+        on_report(report.pending_rows, &states);
+    } else {
+        let mut ids = Vec::with_capacity(report.hits.len());
+        let mut documents = Vec::with_capacity(report.hits.len());
+        let mut coordinates = Vec::with_capacity(report.hits.len());
+        for hit in report.hits {
+            states.push(u32::from(hit.state == EmbeddedRowState::Pending));
+            ids.push(ffi_doc_id(hit.version.doc_id()));
+            coordinates.push(ZeChunkRank {
+                chunk: hit.chunk,
+                byte_start: hit.bytes.start,
+                byte_end: hit.bytes.end,
+                score: hit.score,
+            });
+            documents.push(Some(StoredDocument {
+                doc_id: hit.version.doc_id(),
+                revision: hit.version.revision(),
+                timestamp: hit.timestamp,
+                text: Some(hit.text),
+                attributes: Some(hit.attributes),
+                metadata: None,
+                vector: None,
+            }));
+        }
+        let (ptr, allocation, _) = publish_get_documents(&ids, &documents)?;
+        result.documents = ptr;
+        result.document_count = ids.len();
+        result.abi_reserved = allocation;
+        // Caller guarantees rank_capacity writable entries. The engine returned at most k.
+        marshal::write_slice(ranks, &coordinates);
+        on_report(report.pending_rows, &states);
+    }
+    marshal::write_output(out_result, result);
+    Ok(())
+}
+
+/// Stops admission of new background embedding batches on a writable
+/// embedded namespace handle. A batch already admitted may still finish.
+/// Repeated calls are idempotent.
+#[unsafe(no_mangle)]
+pub extern "C" fn ze_namespace_embedding_pause(handle: ZeHandle) -> ZeErrorCode {
+    ffi_entry!(Some(handle), ZeErrorCode::ZeErrPanic, {
+        run_named_panic_probe("ze_namespace_embedding_pause");
+        finish(
+            Some(handle),
+            registry::lookup(handle)
+                .and_then(|access| access.store.pause_embedding().map_err(FfiError::store)),
+        )
+    })
+}
+
+/// Restarts background embedding and retries a batch that failed.
+/// Repeated calls are idempotent.
+#[unsafe(no_mangle)]
+pub extern "C" fn ze_namespace_embedding_resume(handle: ZeHandle) -> ZeErrorCode {
+    ffi_entry!(Some(handle), ZeErrorCode::ZeErrPanic, {
+        run_named_panic_probe("ze_namespace_embedding_resume");
+        finish(
+            Some(handle),
+            registry::lookup(handle)
+                .and_then(|access| access.store.resume_embedding().map_err(FfiError::store)),
+        )
+    })
+}
+
+/// Reads background embedding state. `out_status` is caller-owned and must
+/// have `abi_size` initialized. The pending count reads the store once.
+#[unsafe(no_mangle)]
+pub extern "C" fn ze_namespace_embedding_status(
+    handle: ZeHandle,
+    out_status: *mut ZeEmbeddingStatus,
+) -> ZeErrorCode {
+    ffi_entry!(Some(handle), ZeErrorCode::ZeErrPanic, {
+        run_named_panic_probe("ze_namespace_embedding_status");
+        finish(
+            Some(handle),
             (|| {
-                use volantis_db::lifecycle::embedded::EmbeddedLeg;
                 let access = registry::lookup(handle)?;
-                let request = marshal::read_struct(request)?;
-                let abi_size = marshal::validate_output(out_result)?;
-                marshal::write_output(out_result, empty_get_result(abi_size));
-                if !(1..=4096).contains(&request.k) || rank_capacity < request.k {
-                    return Err(FfiError::invalid(
-                        "embedded query requires 1..4096 rank slots for k",
-                    ));
-                }
-                scalar_output(ranks)?;
-                let leg = match request.leg {
-                    0 => EmbeddedLeg::Dense,
-                    1 => EmbeddedLeg::Lexical,
-                    2 => EmbeddedLeg::Hybrid,
-                    _ => return Err(FfiError::invalid("unknown embedded query leg")),
-                };
-                let control = query_control_for(request.cancel_token, request.deadline_ns)?;
-                let text =
-                    std::str::from_utf8(marshal::read_slice(request.text, request.text_len)?)
-                        .map_err(|_| FfiError::invalid("invalid query UTF-8"))?;
-                let filter = embedded_query_filter(
-                    access.store.schema(),
-                    request.constraints,
-                    request.has_eligible,
-                    request.eligible_ids,
-                    request.eligible_count,
+                let abi_size = marshal::validate_output(out_status)?;
+                let status = access.store.embedding_status().map_err(FfiError::store)?;
+                marshal::write_output(
+                    out_status,
+                    ZeEmbeddingStatus {
+                        abi_size,
+                        abi_reserved: 0,
+                        pending: status.pending,
+                        paused: u32::from(status.paused),
+                        in_flight: u32::from(status.in_flight),
+                        running: u32::from(status.running),
+                        last_error: status.last_error as u32,
+                    },
+                );
+                Ok(())
+            })(),
+        )
+    })
+}
+
+/// `ze_query_embedded` plus the eligible pending-row count and one state per
+/// returned entry in caller-owned `states` (0 ready chunk, 1 pending source
+/// matched lexically over its whole text). `ranks` and `states` each hold
+/// `rank_capacity` entries. Free `out_result` with `ze_get_result_free`.
+#[unsafe(no_mangle)]
+pub extern "C" fn ze_query_embedded_report(
+    handle: ZeHandle,
+    request: *const ZeEmbeddedQueryRequest,
+    ranks: *mut ZeChunkRank,
+    states: *mut u32,
+    rank_capacity: usize,
+    out_result: *mut ZeGetResult,
+    out_report: *mut ZeEmbeddedReport,
+) -> ZeErrorCode {
+    ffi_entry!(Some(handle), ZeErrorCode::ZeErrPanic, {
+        run_named_panic_probe("ze_query_embedded_report");
+        finish(
+            Some(handle),
+            (|| {
+                registry::lookup(handle)?;
+                let report_size = marshal::validate_output(out_report)?;
+                scalar_output(states)?;
+                let mut pending_rows = 0;
+                embedded_query_into(
+                    handle,
+                    request,
+                    ranks,
+                    rank_capacity,
+                    out_result,
+                    |report, hit_states| {
+                        pending_rows = report;
+                        // Caller guarantees rank_capacity writable entries.
+                        marshal::write_slice(states, hit_states);
+                    },
                 )?;
-                let (generation, hits) = access
-                    .store
-                    .query_embedded_at(text, leg, request.k, filter.as_ref(), control)
-                    .map_err(FfiError::query)?;
-                let mut result = empty_get_result(abi_size);
-                result.generation = generation;
-                if !hits.is_empty() {
-                    let mut ids = Vec::with_capacity(hits.len());
-                    let mut documents = Vec::with_capacity(hits.len());
-                    let mut coordinates = Vec::with_capacity(hits.len());
-                    for hit in hits {
-                        ids.push(ffi_doc_id(hit.version.doc_id()));
-                        coordinates.push(ZeChunkRank {
-                            chunk: hit.chunk,
-                            byte_start: hit.bytes.start,
-                            byte_end: hit.bytes.end,
-                            score: hit.score,
-                        });
-                        documents.push(Some(StoredDocument {
-                            doc_id: hit.version.doc_id(),
-                            revision: hit.version.revision(),
-                            timestamp: hit.timestamp,
-                            text: Some(hit.text),
-                            attributes: Some(hit.attributes),
-                            metadata: None,
-                            vector: None,
-                        }));
-                    }
-                    let (ptr, allocation, _) = publish_get_documents(&ids, &documents)?;
-                    result.documents = ptr;
-                    result.document_count = ids.len();
-                    result.abi_reserved = allocation;
-                    // Caller guarantees rank_capacity writable entries. The engine returned at most k.
-                    marshal::write_slice(ranks, &coordinates);
-                }
-                marshal::write_output(out_result, result);
+                marshal::write_output(
+                    out_report,
+                    ZeEmbeddedReport {
+                        abi_size: report_size,
+                        abi_reserved: 0,
+                        pending_rows,
+                    },
+                );
                 Ok(())
             })(),
         )
@@ -6751,6 +6931,136 @@ fn embedded_query_returns_parallel_owned_document_rows_and_chunk_ranks() {
         );
     }
     assert_eq!(ze_get_result_free(&mut result), ZeErrorCode::ZeOk);
+    assert_eq!(ze_close(handle), ZeErrorCode::ZeOk);
+}
+
+#[cfg(test)]
+#[test]
+#[allow(clippy::expect_used)]
+fn wf985_report_status_and_control_through_the_abi() {
+    use volantis_db::lifecycle::embedded::DocumentSchedule;
+    let directory = tempfile::tempdir().expect("namespace");
+    let options = OpenOptions::new()
+        .with_embedder(std::sync::Arc::new(namespace_model::GateModel::default()))
+        .expect("model")
+        .with_document_schedule(DocumentSchedule::Paused);
+    let store = Store::open(directory.path(), options).expect("open");
+    let id = DocId::new(60001);
+    store
+        .ingest(IngestBatch::new(vec![
+            IngestDocument::new(DocumentVersion::new(id, Revision::new(7)), vec![])
+                .with_text("fictitious mauve sprocket"),
+        ]))
+        .expect("pending ingest");
+    let epoch = store.epoch_identity();
+    let handle = registry::insert_store(store, epoch).expect("register");
+    registry::lookup(handle)
+        .expect("lookup")
+        .store
+        .attach_embedding_worker()
+        .expect("attach");
+    let mut status = ZeEmbeddingStatus {
+        abi_size: size_of::<ZeEmbeddingStatus>() as u32,
+        abi_reserved: 0,
+        pending: 0,
+        paused: 0,
+        in_flight: 0,
+        running: 0,
+        last_error: 0,
+    };
+    assert_eq!(
+        ze_namespace_embedding_status(handle, &mut status),
+        ZeErrorCode::ZeOk
+    );
+    assert_eq!(
+        (
+            status.pending,
+            status.paused,
+            status.running,
+            status.last_error
+        ),
+        (1, 1, 1, 0)
+    );
+    let mut short = status;
+    short.abi_size = 8;
+    assert_eq!(
+        ze_namespace_embedding_status(handle, &mut short),
+        ZeErrorCode::ZeErrInvalidArgument
+    );
+    let q = ZeEmbeddedQueryRequest {
+        abi_size: size_of::<ZeEmbeddedQueryRequest>() as u32,
+        abi_reserved: 0,
+        leg: 1,
+        has_eligible: 0,
+        text: b"mauve".as_ptr(),
+        text_len: 5,
+        k: 2,
+        constraints: std::ptr::null(),
+        eligible_ids: std::ptr::null(),
+        eligible_count: 0,
+        deadline_ns: 0,
+        cancel_token: 0,
+    };
+    let mut result = empty_get_result(size_of::<ZeGetResult>() as u32);
+    let mut report = ZeEmbeddedReport {
+        abi_size: size_of::<ZeEmbeddedReport>() as u32,
+        abi_reserved: 0,
+        pending_rows: 0,
+    };
+    let mut ranks = [ZeChunkRank {
+        chunk: 9,
+        byte_start: 0,
+        byte_end: 0,
+        score: 0.,
+    }; 2];
+    let mut states = [7_u32; 2];
+    assert_eq!(
+        ze_query_embedded_report(
+            handle,
+            &q,
+            ranks.as_mut_ptr(),
+            states.as_mut_ptr(),
+            2,
+            &mut result,
+            &mut report
+        ),
+        ZeErrorCode::ZeOk
+    );
+    assert_eq!((result.document_count, report.pending_rows), (1, 1));
+    assert_eq!(states[0], 1);
+    assert_eq!(
+        (ranks[0].chunk, ranks[0].byte_start, ranks[0].byte_end),
+        (0, 0, 25)
+    );
+    assert_eq!(ze_get_result_free(&mut result), ZeErrorCode::ZeOk);
+    // A short report struct is refused before any allocation.
+    let mut short = report;
+    short.abi_size = 4;
+    assert_eq!(
+        ze_query_embedded_report(
+            handle,
+            &q,
+            ranks.as_mut_ptr(),
+            states.as_mut_ptr(),
+            2,
+            &mut result,
+            &mut short
+        ),
+        ZeErrorCode::ZeErrInvalidArgument
+    );
+    assert_eq!(ze_namespace_embedding_resume(handle), ZeErrorCode::ZeOk);
+    let store = registry::lookup(handle).expect("lookup").store;
+    let drained = store
+        .wait_embedding_idle(std::time::Duration::from_secs(30))
+        .expect("drain");
+    drop(store);
+    assert_eq!(drained.pending, 0);
+    assert_eq!(ze_namespace_embedding_pause(handle), ZeErrorCode::ZeOk);
+    assert_eq!(
+        ze_namespace_embedding_status(handle, &mut status),
+        ZeErrorCode::ZeOk
+    );
+    assert_eq!((status.pending, status.paused), (0, 1));
     assert_eq!(ze_close(handle), ZeErrorCode::ZeOk);
 }
 

@@ -459,6 +459,8 @@ pub struct SegmentReaderCore {
     stored_metadata_validated: OnceLock<()>,
     vector_codes_validated: OnceLock<()>,
     vector_factors_validated: OnceLock<()>,
+    // Set after the presence region passed its checksum and row checks.
+    vector_presence_validated: OnceLock<()>,
     rescore_valid_chunks: Mutex<Box<[u64]>>,
     query_accounting: Option<Arc<crate::lifecycle::stats::Accounting>>,
     _snapshot_accounting: Option<crate::lifecycle::stats::AccountedCounter>,
@@ -702,6 +704,7 @@ impl SegmentReader {
                 stored_metadata_validated: OnceLock::new(),
                 vector_codes_validated: OnceLock::new(),
                 vector_factors_validated: OnceLock::new(),
+                vector_presence_validated: OnceLock::new(),
                 rescore_valid_chunks: Mutex::new(
                     vec![0_u64; rescore_valid_chunks].into_boxed_slice(),
                 ),
@@ -810,6 +813,7 @@ impl SegmentReader {
                 stored_metadata_validated: OnceLock::new(),
                 vector_codes_validated: OnceLock::new(),
                 vector_factors_validated: OnceLock::new(),
+                vector_presence_validated: OnceLock::new(),
                 rescore_valid_chunks: Mutex::new(
                     vec![0_u64; rescore_valid_chunks].into_boxed_slice(),
                 ),
@@ -1056,7 +1060,7 @@ impl SegmentReader {
         }
         let expected = (self.meta.dims as usize)
             .div_ceil(2)
-            .checked_mul(self.meta.row_count as usize)
+            .checked_mul(self.vector_count()? as usize)
             .ok_or_else(|| SegmentError::Geometry("Bit4 code length overflow".to_owned()))?;
         if header.row_stride_bytes as usize != (self.meta.dims as usize).div_ceil(2)
             || payload.len() != expected
@@ -1097,7 +1101,7 @@ impl SegmentReader {
             )));
         }
         let expected = (self.meta.dims as usize)
-            .checked_mul(self.meta.row_count as usize)
+            .checked_mul(self.vector_count()? as usize)
             .ok_or_else(|| SegmentError::Geometry("F32 code length overflow".to_owned()))?;
         let expected_bytes = expected
             .checked_mul(std::mem::size_of::<f32>())
@@ -1138,7 +1142,7 @@ impl SegmentReader {
             )));
         }
         let expected = (self.meta.dims as usize)
-            .checked_mul(self.meta.row_count as usize)
+            .checked_mul(self.vector_count()? as usize)
             .ok_or_else(|| SegmentError::Geometry("Int8 code length overflow".to_owned()))?;
         if header.row_stride_bytes as usize != self.meta.dims as usize || payload.len() != expected
         {
@@ -1181,7 +1185,7 @@ impl SegmentReader {
                 header.factor_stride_bytes
             )));
         }
-        cast_slice::<Bit4Factors>(payload, self.meta.row_count as usize, "Bit4 factors")
+        cast_slice::<Bit4Factors>(payload, self.vector_count()? as usize, "Bit4 factors")
     }
 
     /// Casts a validated Int8 factor region directly to permanent records.
@@ -1214,7 +1218,7 @@ impl SegmentReader {
         }
         #[cfg(any(test, feature = "test-seams"))]
         account_region_decode(RegionKind::VectorFactors, payload.len());
-        cast_slice::<Int8Factors>(payload, self.meta.row_count as usize, "Int8 factors")
+        cast_slice::<Int8Factors>(payload, self.vector_count()? as usize, "Int8 factors")
     }
 
     /// Reports whether query paths verify region checksums at all.
@@ -1357,6 +1361,123 @@ impl SegmentReader {
             })
     }
 
+    /// Rows that hold a vector, one per compact vector ordinal, strictly
+    /// increasing. `None` means every row holds a vector: vector ordinal and
+    /// document row are the same number.
+    pub fn vector_rows(&self) -> Result<Option<&[u32]>, SegmentError> {
+        let entry = match self.entry(RegionKind::VectorPresence) {
+            Ok(entry) => entry,
+            Err(SegmentError::MissingRegion(_)) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let bytes = if self.vector_presence_validated.get().is_some() {
+            self.region_slice_unaccounted(entry)?
+        } else {
+            let bytes = self.region(RegionKind::VectorPresence)?;
+            let rows = decode_presence(bytes, self.meta.row_count)?;
+            let mut previous = None;
+            for row in rows {
+                if *row >= self.meta.row_count || previous.is_some_and(|before| before >= *row) {
+                    return Err(SegmentError::Geometry(format!(
+                        "vector presence row {row} is out of order or exceeds {} rows",
+                        self.meta.row_count
+                    )));
+                }
+                previous = Some(*row);
+            }
+            let _ = self.vector_presence_validated.set(());
+            bytes
+        };
+        decode_presence(bytes, self.meta.row_count).map(Some)
+    }
+
+    /// Number of rows that hold a vector: the row count of every vector region.
+    pub fn vector_count(&self) -> Result<u32, SegmentError> {
+        match self.vector_rows()? {
+            Some(rows) => u32::try_from(rows.len())
+                .map_err(|_| SegmentError::Geometry("vector count exceeds u32".to_owned())),
+            None => Ok(self.meta.row_count),
+        }
+    }
+
+    /// Document row of compact vector ordinal `ordinal`.
+    pub fn vector_row(&self, ordinal: usize) -> Result<usize, SegmentError> {
+        match self.vector_rows()? {
+            Some(rows) => rows.get(ordinal).map(|row| *row as usize).ok_or_else(|| {
+                SegmentError::Geometry(format!("vector ordinal {ordinal} is out of range"))
+            }),
+            None if ordinal < self.meta.row_count as usize => Ok(ordinal),
+            None => Err(SegmentError::Geometry(format!(
+                "vector ordinal {ordinal} is out of range"
+            ))),
+        }
+    }
+
+    /// Compact vector ordinal of document row `row`, or `None` when the row
+    /// holds no vector.
+    pub fn row_vector(&self, row: usize) -> Result<Option<usize>, SegmentError> {
+        if row >= self.meta.row_count as usize {
+            return Err(SegmentError::Geometry(format!("row {row} is out of range")));
+        }
+        match self.vector_rows()? {
+            Some(rows) => {
+                let row = u32::try_from(row)
+                    .map_err(|_| SegmentError::Geometry("row exceeds u32".to_owned()))?;
+                Ok(rows.binary_search(&row).ok())
+            }
+            None => Ok(Some(row)),
+        }
+    }
+
+    /// Whether document row `row` holds a vector.
+    pub fn row_has_vector(&self, row: usize) -> Result<bool, SegmentError> {
+        self.row_vector(row).map(|ordinal| ordinal.is_some())
+    }
+
+    /// Maps a row-space alive or eligibility set to compact vector ordinals.
+    /// A row without a vector has no ordinal, so it can never be scored.
+    pub(crate) fn vector_alive<'a>(
+        &self,
+        alive: &'a AliveSet,
+    ) -> Result<std::borrow::Cow<'a, AliveSet>, SegmentError> {
+        let Some(rows) = self.vector_rows()? else {
+            return Ok(std::borrow::Cow::Borrowed(alive));
+        };
+        let count = u32::try_from(rows.len())
+            .map_err(|_| SegmentError::Geometry("vector count exceeds u32".to_owned()))?;
+        let mut mapped = AliveSet::new(count);
+        for (ordinal, row) in rows.iter().enumerate() {
+            if !alive.is_alive(*row) {
+                let ordinal = u32::try_from(ordinal)
+                    .map_err(|_| SegmentError::Geometry("vector ordinal exceeds u32".to_owned()))?;
+                mapped
+                    .tombstone(ordinal)
+                    .map_err(|error| SegmentError::Geometry(error.to_string()))?;
+            }
+        }
+        Ok(std::borrow::Cow::Owned(mapped))
+    }
+
+    /// Maps a row-space candidate bitmap to compact vector ordinals, or
+    /// `None` when ordinals and rows are the same numbers.
+    pub(crate) fn vector_bitmap(
+        &self,
+        rows: &crate::meta::DocBitmap,
+    ) -> Result<Option<crate::meta::DocBitmap>, SegmentError> {
+        let Some(present) = self.vector_rows()? else {
+            return Ok(None);
+        };
+        let mut mapped = crate::meta::DocBitmap::new();
+        for (ordinal, row) in present.iter().enumerate() {
+            if rows.contains(*row) {
+                mapped.insert(u32::try_from(ordinal).map_err(|_| {
+                    SegmentError::Geometry("vector ordinal exceeds u32".to_owned())
+                })?);
+            }
+        }
+        Ok(Some(mapped))
+    }
+
     /// Casts validated f32 exact-rescore rows directly from the mmap.
     pub fn rescore_f32(&self) -> Result<&[f32], SegmentError> {
         let (header, payload) = self.vector_payload(RegionKind::VectorRescore)?;
@@ -1366,7 +1487,7 @@ impl SegmentReader {
                 header.scheme
             )));
         }
-        let count = (self.meta.row_count as usize)
+        let count = (self.vector_count()? as usize)
             .checked_mul(self.meta.dims as usize)
             .ok_or_else(|| SegmentError::Geometry("rescore count overflow".to_owned()))?;
         cast_slice::<f32>(payload, count, "f32 rescore")
@@ -1381,7 +1502,7 @@ impl SegmentReader {
                 header.scheme
             )));
         }
-        let count = (self.meta.row_count as usize)
+        let count = (self.vector_count()? as usize)
             .checked_mul(self.meta.dims as usize)
             .ok_or_else(|| SegmentError::Geometry("rescore count overflow".to_owned()))?;
         cast_slice::<f32>(payload, count, "f32 rescore")
@@ -1391,11 +1512,11 @@ impl SegmentReader {
         let row_bytes = (self.meta.dims as usize)
             .checked_mul(std::mem::size_of::<f32>())
             .ok_or_else(|| SegmentError::Geometry("rescore row byte length overflow".to_owned()))?;
+        let vectors = self.vector_count()?;
         for row in rows {
-            if *row >= self.meta.row_count {
+            if *row >= vectors {
                 return Err(SegmentError::Geometry(format!(
-                    "rescore row {row} is outside {} rows",
-                    self.meta.row_count
+                    "rescore vector {row} is outside {vectors} vectors"
                 )));
             }
             let start = (*row as usize)
@@ -2251,8 +2372,9 @@ impl SegmentReader {
             SegmentError::Geometry(format!("{kind:?} is shorter than vector header"))
         })?;
         let header = decode_vector_header(header_bytes)?;
+        let vectors = self.vector_count()?;
         if header.dims != self.meta.dims
-            || header.row_count != self.meta.row_count
+            || header.row_count != vectors
             || (kind != RegionKind::VectorRescore && header.scheme != self.meta.scheme)
         {
             return Err(SegmentError::Geometry(format!(
@@ -2262,7 +2384,7 @@ impl SegmentReader {
                 header.row_count,
                 self.meta.scheme,
                 self.meta.dims,
-                self.meta.row_count
+                vectors
             )));
         }
         let payload = region
@@ -2281,8 +2403,9 @@ impl SegmentReader {
             SegmentError::Geometry(format!("{kind:?} is shorter than vector header"))
         })?;
         let header = decode_vector_header(header_bytes)?;
+        let vectors = self.vector_count()?;
         if header.dims != self.meta.dims
-            || header.row_count != self.meta.row_count
+            || header.row_count != vectors
             || (kind != RegionKind::VectorRescore && header.scheme != self.meta.scheme)
         {
             return Err(SegmentError::Geometry(format!(
@@ -2292,7 +2415,7 @@ impl SegmentReader {
                 header.row_count,
                 self.meta.scheme,
                 self.meta.dims,
-                self.meta.row_count
+                vectors
             )));
         }
         let payload = region
@@ -2760,6 +2883,16 @@ fn parse_segment_header(
         entries.push(entry);
     }
     validate_non_overlapping(&entries)?;
+    let has_presence = entries
+        .iter()
+        .any(|entry| entry.kind == RegionKind::VectorPresence.id());
+    if has_presence != (fixed.version == 2) {
+        return Err(SegmentError::Geometry(format!(
+            "segment version {} {} a vector presence region",
+            fixed.version,
+            if has_presence { "has" } else { "lacks" }
+        )));
+    }
     Ok(ParsedHeader {
         meta: SegmentMeta {
             id: actual_id,
@@ -2865,6 +2998,37 @@ fn validate_non_overlapping(entries: &[RegionEntry]) -> Result<(), SegmentError>
     Ok(())
 }
 
+fn decode_presence(bytes: &[u8], rows: u32) -> Result<&[u32], SegmentError> {
+    let count = bytes
+        .get(..4)
+        .and_then(|word| <[u8; 4]>::try_from(word).ok())
+        .map(u32::from_le_bytes)
+        .ok_or_else(|| SegmentError::Geometry("short vector presence header".to_owned()))?;
+    let reserved = bytes
+        .get(4..8)
+        .and_then(|word| <[u8; 4]>::try_from(word).ok())
+        .map(u32::from_le_bytes)
+        .ok_or_else(|| SegmentError::Geometry("short vector presence header".to_owned()))?;
+    let expected = (count as usize)
+        .checked_mul(4)
+        .and_then(|length| length.checked_add(8))
+        .ok_or_else(|| SegmentError::Geometry("vector presence length overflow".to_owned()))?;
+    // A full list is the identity map and is never written.
+    if reserved != 0 || count >= rows || bytes.len() != expected {
+        return Err(SegmentError::Geometry(format!(
+            "vector presence count {count} of {rows} rows, reserved {reserved}, bytes {}",
+            bytes.len()
+        )));
+    }
+    cast_slice::<u32>(
+        bytes.get(8..).ok_or_else(|| {
+            SegmentError::Geometry("vector presence payload offset is invalid".to_owned())
+        })?,
+        count as usize,
+        "vector presence",
+    )
+}
+
 fn cast_slice<'a, T>(
     bytes: &'a [u8],
     count: usize,
@@ -2898,5 +3062,30 @@ fn cast_slice<'a, T>(
         // pinned repr(C) all-f32 record types (or f32), and the checksum plus
         // little-endian target makes the mapped representation valid.
         Ok(unsafe { std::slice::from_raw_parts(bytes.as_ptr().cast::<T>(), count) })
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::indexing_slicing)]
+mod wf985_presence_tests {
+    use super::decode_presence;
+
+    /// The region as mapped: little-endian words with u32 alignment.
+    fn bytes(words: &[u32]) -> &[u8] {
+        // SAFETY: u8 has no alignment or validity requirement, and the view
+        // covers exactly the borrowed words for the same lifetime.
+        unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<u8>(), size_of_val(words)) }
+    }
+
+    #[test]
+    fn wf985_corrupt_presence_map_is_rejected() {
+        let valid = [2_u32, 0, 0, 2];
+        assert_eq!(decode_presence(bytes(&valid), 3).expect("valid"), &[0, 2]);
+        // A full map is the identity and is never written.
+        assert!(decode_presence(bytes(&valid), 2).is_err());
+        // Nonzero reserved word, short payload and trailing bytes.
+        assert!(decode_presence(bytes(&[2, 1, 0, 2]), 3).is_err());
+        assert!(decode_presence(bytes(&valid[..3]), 3).is_err());
+        assert!(decode_presence(bytes(&[2, 0, 0, 2, 9]), 3).is_err());
     }
 }

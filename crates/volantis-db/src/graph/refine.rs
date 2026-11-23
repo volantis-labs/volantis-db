@@ -2666,7 +2666,11 @@ fn write_permuted_segment(
     policy: DurabilityPolicy,
 ) -> Result<SegmentMeta, RefinementError> {
     for entry in input.directory() {
-        if !crate::graph::consolidate::consolidation_supports_region(entry.kind) {
+        // Renumbering follows graph node order; a segment with rows that
+        // have no vector never holds a graph.
+        if !crate::graph::consolidate::consolidation_supports_region(entry.kind)
+            || entry.kind == RegionKind::VectorPresence.id()
+        {
             return Err(RefinementError::Geometry(format!(
                 "renumber cannot carry source region kind {}",
                 entry.kind
@@ -2756,6 +2760,8 @@ fn write_permuted_segment(
                 metadata,
                 text,
                 postings,
+                // Only graph segments are refined; their rows all hold a vector.
+                vector_rows: None,
             },
             policy,
         )

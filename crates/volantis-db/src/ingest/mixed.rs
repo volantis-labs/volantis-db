@@ -33,10 +33,12 @@ impl Store {
         }
         for document in &batch.documents {
             validate_document_columns(&self.schema, document)?;
-            if self.epoch.as_ref().is_some_and(|epoch| {
-                epoch.embedding.document.normalization == crate::epoch::Normalization::L2
-            }) && let Some(squared_norm) =
-                crate::graph::search::non_unit_squared_norm(document.vector())
+            if document.absent_dims().is_none()
+                && self.epoch.as_ref().is_some_and(|epoch| {
+                    epoch.embedding.document.normalization == crate::epoch::Normalization::L2
+                })
+                && let Some(squared_norm) =
+                    crate::graph::search::non_unit_squared_norm(document.vector())
             {
                 return Err(IngestError::Vector(crate::quant::QuantError::NonUnitNorm {
                     squared_norm_bits: squared_norm.to_bits(),

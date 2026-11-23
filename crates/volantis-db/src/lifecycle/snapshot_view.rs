@@ -139,6 +139,11 @@ impl Store {
                     })?
                     .clone(),
             ),
+            // A snapshot view is read-only and never runs the worker.
+            embedding: super::embedded::EmbeddingWorker::new(
+                super::embedded::DocumentSchedule::Immediate,
+                false,
+            ),
             epoch_alias: crate::epoch::EpochAliasCell::new(self.epoch_alias.load()),
             tokenizer: self.tokenizer.clone(),
             schema: self.schema.clone(),

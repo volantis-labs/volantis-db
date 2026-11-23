@@ -873,6 +873,45 @@ C callers pass a size-versioned `ZeEmbeddedNamespaceSpec` through its
 The returned `ZeGetResult` owns the parallel hit rows, text and attributes.
 Release that result with `ze_get_result_free`.
 
+#### Embed later: background schedule, pause and resume
+
+Set `embeddingSchedule` on an embedded spec to commit text before inference.
+`'immediate'` (the default) embeds inside the upsert. With `'background'` an
+upsert commits the text, attributes, metadata, revision and lexical index in
+one generation without a call to the document tower, and a worker of this
+writable handle embeds the new rows later in batches. `'paused'` is the same
+schedule with the worker paused at open. A row waits as `pending` until its
+chunks and vector are committed in a later generation; its revision does not
+change. Lexical search finds a pending row at once. Dense search and
+`nearestChunks` use ready vectors only.
+
+```js
+const notes = openNamespace(root, 'notes', {...spec, embeddingSchedule: 'paused'});
+notes.upsert([{id: noteId, revision: 7n, text: transcript}]);   // no model call
+const report = notes.queryEmbeddedReport({text: 'delivery', leg: 'lexical', k: 5});
+report.hits[0].state;   // 'pending': one hit over the whole source, chunk 0
+report.pendingRows;     // 1n, eligible pending rows before top-k
+notes.resumeEmbedding();
+notes.embeddingStatus(); // {paused, inFlight, running, pending, lastErrorCode}
+```
+
+`queryEmbeddedReport[Async]` returns `{hits, generation, pendingRows}`; each hit
+adds `state: 'ready' | 'pending'`. `pendingRows` counts rows that pass the filter
+and eligible IDs. `pauseEmbedding()` stops admission of new batches. A batch
+that is already in flight can still finish, so `inFlight` can be true while
+`paused` is true. A failed batch keeps its rows pending, sets `lastErrorCode`
+(1 model error, 2 invalid model output, 3 store refusal) and waits:
+`resumeEmbedding()` retries it. An edit, delete or purge during a batch wins:
+the worker drops a stale result. Pending rows survive close and reopen. A
+read-only handle, a snapshot and an `'immediate'` handle run no worker, so they
+leave pending rows for the next `'background'` or `'paused'` handle. Close
+waits for a batch in flight and then releases the model.
+
+C callers pass `ZeEmbeddedNamespaceSpecV4` (`has_vector_space = 5`) with
+`document_schedule` 0, 1 or 2, and use `ze_namespace_embedding_pause`,
+`ze_namespace_embedding_resume`, `ze_namespace_embedding_status` and
+`ze_query_embedded_report`.
+
 #### Neighbours of stored chunks
 
 On an embedded Store namespace, use a document ID for the whole source or

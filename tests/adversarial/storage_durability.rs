@@ -1434,7 +1434,7 @@ fn ack_evidence(
     }
 }
 
-fn copy_directory(source: &Path) -> Result<TempDir, String> {
+pub(crate) fn copy_directory(source: &Path) -> Result<TempDir, String> {
     copy_directory_with_traversal(source).map(|(destination, _)| destination)
 }
 
@@ -1741,9 +1741,7 @@ fn segment_id(path: &Path) -> Result<volantis_db::segment::SegmentId, String> {
         &bytes,
     )
     .map_err(|error| error.to_string())?;
-    Ok(volantis_db::segment::SegmentId::from_bytes(
-        parsed.fact.id,
-    ))
+    Ok(volantis_db::segment::SegmentId::from_bytes(parsed.fact.id))
 }
 
 fn hex_bytes(bytes: &[u8]) -> String {
@@ -1795,9 +1793,7 @@ fn independent_location(
     value: volantis_db::wal::replay::CorruptionLocation,
 ) -> independent::CorruptionLocation {
     match value {
-        volantis_db::wal::replay::CorruptionLocation::Tail => {
-            independent::CorruptionLocation::Tail
-        }
+        volantis_db::wal::replay::CorruptionLocation::Tail => independent::CorruptionLocation::Tail,
         volantis_db::wal::replay::CorruptionLocation::Middle => {
             independent::CorruptionLocation::Middle
         }

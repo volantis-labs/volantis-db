@@ -17,6 +17,9 @@ pub const REQUIRED: &[&str] = &[
     "storage-durability.embedded-batch.encoder-fault",
     "storage-durability.embedded-batch.clean",
     "storage-durability.embedded-batch.neighbour-visibility",
+    "storage-durability.deferred.pending-commit-restart",
+    "storage-durability.deferred.completion-restart",
+    "storage-durability.deferred.stale-completion",
 ];
 
 pub const PART_A_REQUIRED: &[&str] = &[
@@ -298,6 +301,7 @@ fn mixed_batch(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String>
     }
     coverage.hit(REQUIRED[10]);
     embedded_batch(seed, coverage).map_err(|e| e.to_string())?;
+    deferred_restart(seed, coverage).map_err(|e| e.to_string())?;
     coverage.hit("op.MixedBatch");
     Ok(())
 }
@@ -384,6 +388,108 @@ fn embedded_batch(
         });
     }
     coverage.hit("storage-durability.embedded-batch.neighbour-visibility");
+    Ok(())
+}
+
+/// Stored vector and pending-row count read back from one crash image.
+type RowImage = (Option<Vec<f32>>, u64);
+
+/// WF-985: a crash image taken after each publish boundary of deferred
+/// embedding (pending commit, completion, stale completion after purge and
+/// reinsert) reopens to exactly the acknowledged row state.
+fn deferred_restart(
+    seed: u64,
+    coverage: &mut CoverageRegistry,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::sync::Arc;
+    use std::time::Duration;
+    use volantis_db::ingest::{
+        DeleteBatch, DocId, DocumentVersion, IngestBatch, IngestDocument, Revision,
+    };
+    use volantis_db::lifecycle::embedded::{DocumentSchedule, EmbeddedLeg, EmbeddedRowState};
+    use volantis_db::lifecycle::{CancelToken, DocumentFields, OpenOptions, QueryControl, Store};
+    let root = tempfile::tempdir()?;
+    let path = root.path().join("deferred");
+    let model = Arc::new(namespace_model::GateModel::default());
+    let open =
+        |path: &std::path::Path, schedule| -> Result<Arc<Store>, Box<dyn std::error::Error>> {
+            let options = OpenOptions::new()
+                .with_embedder(model.clone())?
+                .with_document_schedule(schedule);
+            Ok(Arc::new(Store::open(path, options)?))
+        };
+    let doc = |id: DocId, text: &str| {
+        IngestDocument::new(DocumentVersion::new(id, Revision::new(7)), vec![]).with_text(text)
+    };
+    // Reopens a copy of the store directory taken while the writer is open.
+    let image = |id: DocId| -> Result<RowImage, Box<dyn std::error::Error>> {
+        let copy = super::storage_durability::copy_directory(&path)?;
+        let store = open(copy.path(), DocumentSchedule::Paused)?;
+        let row = store
+            .get_documents(&[id], DocumentFields::ALL)?
+            .pop()
+            .flatten()
+            .ok_or("acknowledged row missing after restart")?;
+        let report = store.query_embedded_report(
+            "fictitious",
+            EmbeddedLeg::Lexical,
+            4,
+            None,
+            QueryControl::Cancel(CancelToken::new()),
+        )?;
+        if report.hits.iter().any(|hit| {
+            hit.version.doc_id() == id
+                && (hit.state == EmbeddedRowState::Pending) != row.vector.is_none()
+        }) {
+            return Err("row state and stored vector disagree after restart".into());
+        }
+        if !volantis_db::verify::verify_store(copy.path())?.is_clean() {
+            return Err("crash image does not verify".into());
+        }
+        Ok((row.vector, report.pending_rows))
+    };
+    let first = DocId::new(u128::MAX - 2 * u128::from(seed) - 1);
+    let second = DocId::new(u128::MAX - 2 * u128::from(seed) - 2);
+    let store = open(&path, DocumentSchedule::Paused)?;
+    store.ingest(IngestBatch::new(vec![doc(
+        first,
+        "fictitious mauve sprocket",
+    )]))?;
+    if image(first)? != (None, 1) {
+        return Err("pending commit did not survive restart".into());
+    }
+    coverage.hit("storage-durability.deferred.pending-commit-restart");
+    store.attach_embedding_worker()?;
+    store.resume_embedding()?;
+    if store.wait_embedding_idle(Duration::from_secs(30))?.pending != 0 {
+        return Err("worker did not drain".into());
+    }
+    if image(first)? != (Some(vec![1., 0.]), 0) {
+        return Err("completion did not survive restart".into());
+    }
+    coverage.hit("storage-durability.deferred.completion-restart");
+    model.close_gate();
+    store.ingest(IngestBatch::new(vec![doc(
+        second,
+        "fictitious cyan thimble",
+    )]))?;
+    if !model.wait_entered(2, Duration::from_secs(30)) {
+        return Err("worker did not admit the second batch".into());
+    }
+    store.pause_embedding()?;
+    store.delete(DeleteBatch::new(vec![second]))?;
+    store.await_physical_purge(store.purge(&[second])?)?;
+    store.ingest(IngestBatch::new(vec![doc(
+        second,
+        "fictitious cyan thimble",
+    )]))?;
+    model.open_gate();
+    store.wait_embedding_idle(Duration::from_secs(30))?;
+    if image(second)? != (None, 1) {
+        return Err("a stale completion resurrected a purged admission".into());
+    }
+    coverage.hit("storage-durability.deferred.stale-completion");
+    store.close()?;
     Ok(())
 }
 

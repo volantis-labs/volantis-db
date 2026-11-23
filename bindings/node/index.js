@@ -614,6 +614,31 @@ class Store {
     } catch (error) { throw translateError(error); }
   }
 
+  queryEmbeddedReport(request) {
+    graphObject(request, ['text','leg','k','eligibleIds','filter','timestampRange','deadlineNs','cancelToken'], 'embedded query');
+    return callNative(() => this._native.queryEmbeddedReport({...request,cancelToken: request.cancelToken?.[nativeToken] ?? request.cancelToken ?? 0n}));
+  }
+
+  async queryEmbeddedReportAsync(request) {
+    graphObject(request, ['text','leg','k','eligibleIds','filter','timestampRange','deadlineNs','cancelToken','signal'], 'embedded query');
+    if (request.signal !== undefined && request.cancelToken != null) throw new TypeError('use signal or cancelToken, not both');
+    try {
+      return await withSignal(request.signal, token => this._native.queryEmbeddedReportAsync({...request,cancelToken:token ?? request.cancelToken?.[nativeToken] ?? request.cancelToken ?? 0n}));
+    } catch (error) { throw translateError(error); }
+  }
+
+  pauseEmbedding() {
+    callNative(() => this._native.pauseEmbedding());
+  }
+
+  resumeEmbedding() {
+    callNative(() => this._native.resumeEmbedding());
+  }
+
+  embeddingStatus() {
+    return callNative(() => this._native.embeddingStatus());
+  }
+
   /**
    * One structured query: a vector leg, a lexical leg, or hybrid fusion of
    * both.

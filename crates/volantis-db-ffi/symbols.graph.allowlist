@@ -28,6 +28,9 @@ ze_namespace_batch
 ze_namespace_batch_live
 ze_namespace_declare_cascade
 ze_namespace_delete_cascade
+ze_namespace_embedding_pause
+ze_namespace_embedding_resume
+ze_namespace_embedding_status
 ze_namespace_list
 ze_namespace_list_result_free
 ze_namespace_open
@@ -42,6 +45,7 @@ ze_open_with_epoch
 ze_purge
 ze_query
 ze_query_embedded
+ze_query_embedded_report
 ze_query_filtered
 ze_query_result_free
 ze_query_snippet_source_ranges

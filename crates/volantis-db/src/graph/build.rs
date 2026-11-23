@@ -62,11 +62,14 @@ pub(crate) const fn graph_rewrite_source_region(kind: u16) -> GraphRewriteRegion
         Some(RegionKind::Postings | RegionKind::StoredMetadata | RegionKind::StoredText) | None => {
             GraphRewriteRegion::CopyForward
         }
+        // A graph node is a vector ordinal. Segments with rows that have no
+        // vector (WF-985) keep exact scan until a rewrite makes them dense.
         Some(
             RegionKind::GraphColocatedCodes
             | RegionKind::SignPlane
             | RegionKind::PdxClusteredBlocks
-            | RegionKind::VectorSpaceN,
+            | RegionKind::VectorSpaceN
+            | RegionKind::VectorPresence,
         ) => GraphRewriteRegion::Unsupported,
     }
 }

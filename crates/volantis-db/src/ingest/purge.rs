@@ -1738,11 +1738,53 @@ impl OwnedFactors {
     }
 }
 
+/// Compact vector ordinals of the survivors that hold a vector, in survivor
+/// order. Survivors without a vector keep no vector bytes.
+fn survivor_ordinals(
+    reader: &SegmentReader,
+    survivors: &[usize],
+) -> Result<Vec<usize>, StoreError> {
+    let mut ordinals = Vec::new();
+    ordinals
+        .try_reserve_exact(survivors.len())
+        .map_err(|_| StoreError::ActiveRowOverflow)?;
+    for row in survivors {
+        if let Some(ordinal) = reader.row_vector(*row).map_err(StoreError::Segment)? {
+            ordinals.push(ordinal);
+        }
+    }
+    Ok(ordinals)
+}
+
+/// Output positions (indices into `survivors`) that hold a vector, or `None`
+/// when every survivor holds one.
+pub(crate) fn survivor_vector_rows(
+    reader: &SegmentReader,
+    survivors: &[usize],
+    base: u32,
+) -> Result<Option<Vec<u32>>, StoreError> {
+    if reader.vector_rows().map_err(StoreError::Segment)?.is_none() {
+        return Ok(None);
+    }
+    let mut rows = Vec::new();
+    for (position, row) in survivors.iter().enumerate() {
+        if reader.row_has_vector(*row).map_err(StoreError::Segment)? {
+            let position = u32::try_from(position).map_err(|_| StoreError::ActiveRowOverflow)?;
+            rows.push(
+                base.checked_add(position)
+                    .ok_or(StoreError::ActiveRowOverflow)?,
+            );
+        }
+    }
+    Ok(Some(rows))
+}
+
 pub(crate) fn gather_survivor_codes(
     reader: &SegmentReader,
     survivors: &[usize],
     dims: usize,
 ) -> Result<(Vec<u8>, OwnedFactors), StoreError> {
+    let survivors = &survivor_ordinals(reader, survivors)?;
     match reader.meta().scheme {
         4 => {
             let stride = dims.div_ceil(2);
@@ -1810,6 +1852,7 @@ pub(crate) fn gather_survivor_rescore(
     survivors: &[usize],
     dims: usize,
 ) -> Result<Vec<f32>, StoreError> {
+    let survivors = &survivor_ordinals(reader, survivors)?;
     let source_rescore = reader.rescore_f32().map_err(StoreError::Segment)?;
     let mut rescore = Vec::with_capacity(survivors.len().saturating_mul(dims));
     for row in survivors {
@@ -1977,11 +2020,13 @@ fn rewrite_segment(
             bytes,
         });
     let postings = postings.as_deref().map(|bytes| SegmentPostings { bytes });
+    let vector_rows = survivor_vector_rows(reader, survivors, 0)?;
     let payloads = SegmentPayloads {
         documents,
         metadata,
         text,
         postings,
+        vector_rows: vector_rows.as_deref(),
     };
     // Graph node ids remain valid only when every row keeps its original position.
     let rows_preserved = survivors.len() == reader.meta().row_count as usize
@@ -2179,6 +2224,11 @@ fn active_wal_records(segment: &super::ActiveSegment) -> Result<WalImageRecords,
             document = document.with_text(text);
         }
         document = document.with_columns(segment.column_values(row)?);
+        if segment.is_vector_absent(row) {
+            let metadata = document.metadata().to_vec();
+            let dims = u32::try_from(dims).map_err(|_| StoreError::ActiveRowOverflow)?;
+            document.set_vector_absent(dims, metadata);
+        }
         records.push(super::encode_persisted_upsert(&document).map_err(purge_ingest_error)?);
         let row_u32 = u32::try_from(row).map_err(|_| StoreError::ActiveRowOverflow)?;
         let is_tombstoned = !alive.is_alive(row_u32);

@@ -1,6 +1,9 @@
 //! Text embedding in a normal Store namespace.
 mod neighbours;
+mod worker;
 pub use neighbours::{ChunkNeighbour, NeighbourOptions};
+pub(crate) use worker::EmbeddingWorker;
+pub use worker::{EmbeddingErrorCode, EmbeddingStatus};
 
 use super::*;
 use crate::epoch::{EmbedderError, EmbeddingEpoch, StoreEpoch};
@@ -46,6 +49,30 @@ pub enum EmbeddedLeg {
     Hybrid,
 }
 
+/// When an embedded namespace runs the document tower for a new source.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DocumentSchedule {
+    /// Embed inside the upsert, before it commits (the default).
+    #[default]
+    Immediate,
+    /// Commit the source as pending; a background worker embeds it later.
+    Background,
+    /// As `Background`, but the worker starts paused.
+    Paused,
+}
+
+/// Embedding state of one stored source revision. The values are persisted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum EmbeddedRowState {
+    /// Chunks and the representative vector are stored.
+    Ready = 0,
+    /// The source is committed; it has no chunks and no vector yet.
+    Pending = 1,
+    /// Reserved for WF-988: complete with zero chunks and no vector.
+    Empty = 2,
+}
+
 /// One matching chunk of a live source revision.
 #[derive(Debug)]
 pub struct EmbeddedHit {
@@ -63,10 +90,109 @@ pub struct EmbeddedHit {
     pub score: f64,
     /// Typed attributes of this revision.
     pub attributes: Vec<(ColumnId, PredicateValue)>,
+    /// `Pending` marks a lexical match on the whole source of a row that is
+    /// not embedded yet; its `chunk` is zero.
+    pub state: EmbeddedRowState,
+}
+
+/// Ranked chunks with the generation they were read at and the number of
+/// eligible rows that wait for embedding.
+#[derive(Debug)]
+pub struct EmbeddedReport {
+    /// Store generation of every row read.
+    pub generation: u64,
+    /// Eligible pending rows after predicates and eligible ids, before top-k.
+    pub pending_rows: u64,
+    /// Ranked hits.
+    pub hits: Vec<EmbeddedHit>,
 }
 
 pub(crate) const EPOCH_TAG: &[u8] = b"ZEEMBED1";
+/// Ready row: `ROW_TAG, caller_len:u32, caller, (start:u32, end:u32, f32[dims])+`.
 const ROW_TAG: &[u8] = b"ZECHUNK1";
+/// Row that is not ready: `STATE_TAG, state:u32, token:[u8; 16], caller_len:u32,
+/// caller`. The token identifies one admission, so a purge and reinsert of
+/// the same id, revision and text gets a different token.
+const STATE_TAG: &[u8] = b"ZESTATE1";
+const TOKEN_LEN: usize = 16;
+
+/// One decoded embedded row envelope.
+pub(crate) struct EmbeddedRow<'a> {
+    pub(crate) state: EmbeddedRowState,
+    pub(crate) caller: &'a [u8],
+    /// Packed chunks of a ready row; empty otherwise.
+    pub(crate) chunks: &'a [u8],
+}
+
+pub(crate) fn decode_row(input: &[u8]) -> Result<EmbeddedRow<'_>, StoreError> {
+    if input.starts_with(ROW_TAG) {
+        let (caller, chunks) = unpack(input)?;
+        return Ok(EmbeddedRow {
+            state: EmbeddedRowState::Ready,
+            caller,
+            chunks,
+        });
+    }
+    let mut data = input
+        .strip_prefix(STATE_TAG)
+        .ok_or_else(|| invalid("missing embedded row header"))?;
+    let state = match word(&mut data)? {
+        1 => EmbeddedRowState::Pending,
+        // Ready rows use ROW_TAG; Empty is reserved until WF-988 adds it.
+        other => return Err(invalid(format!("unsupported embedded row state {other}"))),
+    };
+    let (_, rest) = data
+        .split_at_checked(TOKEN_LEN)
+        .ok_or_else(|| invalid("short embedded admission token"))?;
+    data = rest;
+    let n = word(&mut data)?;
+    if data.len() != n {
+        return Err(invalid("embedded row metadata length mismatch"));
+    }
+    Ok(EmbeddedRow {
+        state,
+        caller: data,
+        chunks: &[],
+    })
+}
+
+fn pending_row(caller: &[u8]) -> Result<Vec<u8>, StoreError> {
+    let mut packed = Vec::new();
+    let size = caller
+        .len()
+        .checked_add(STATE_TAG.len() + 4 + TOKEN_LEN + 4)
+        .ok_or_else(|| invalid("embedded row overflow"))?;
+    packed
+        .try_reserve_exact(size)
+        .map_err(|_| invalid("embedded row allocation failed"))?;
+    packed.extend_from_slice(STATE_TAG);
+    put_word(&mut packed, EmbeddedRowState::Pending as usize)?;
+    packed.extend_from_slice(&admission_token());
+    put_word(&mut packed, caller.len())?;
+    packed.extend_from_slice(caller);
+    Ok(packed)
+}
+
+/// A token that differs for every admission in every process.
+fn admission_token() -> [u8; TOKEN_LEN] {
+    use std::hash::{BuildHasher, Hasher};
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    static KEYS: std::sync::OnceLock<std::collections::hash_map::RandomState> =
+        std::sync::OnceLock::new();
+    let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    let keys = KEYS.get_or_init(std::collections::hash_map::RandomState::new);
+    let mut hasher = keys.build_hasher();
+    hasher.write_u64(count);
+    hasher.write_u128(nanos);
+    let mut token = [0; TOKEN_LEN];
+    let (time, mixed) = token.split_at_mut(8);
+    time.copy_from_slice(&(nanos as u64).to_le_bytes());
+    mixed.copy_from_slice(&(hasher.finish() ^ count).to_le_bytes());
+    token
+}
 
 fn invalid(detail: impl Into<String>) -> StoreError {
     StoreError::Embedding(crate::epoch::EmbedderFailure::new(detail).into())
@@ -120,13 +246,26 @@ fn read_chunk<'a>(
     Ok((range, vector))
 }
 
+/// Checks one stored embedded row. A ready row holds chunks and a vector; a
+/// pending row holds neither.
 pub(crate) fn verify_row(
     source: Option<&str>,
     metadata: Option<&[u8]>,
+    has_vector: bool,
     dims: usize,
 ) -> Result<(), StoreError> {
     let source = source.ok_or_else(|| invalid("missing embedded source"))?;
-    let (_, mut data) = unpack(metadata.unwrap_or_default())?;
+    let row = decode_row(metadata.unwrap_or_default())?;
+    if row.state != EmbeddedRowState::Ready {
+        if has_vector {
+            return Err(invalid("pending embedded row holds a vector"));
+        }
+        return Ok(());
+    }
+    if !has_vector {
+        return Err(invalid("ready embedded row has no vector"));
+    }
+    let mut data = row.chunks;
     if data.is_empty() || dims == 0 {
         return Err(invalid("missing embedded chunks or dimensions"));
     }
@@ -149,7 +288,7 @@ fn repack(
     caller: &[u8],
     dims: usize,
 ) -> Result<(Vec<f32>, Vec<u8>), StoreError> {
-    verify_row(Some(text), Some(stored), dims)?;
+    verify_row(Some(text), Some(stored), true, dims)?;
     let (_, suffix) = unpack(stored)?;
     let mut remaining = suffix;
     let (_, bytes) = read_chunk(&mut remaining, text, dims)?;
@@ -223,6 +362,34 @@ impl ReuseProof {
     }
 }
 
+/// Validates document-tower output for one source and packs the ready row:
+/// the first chunk's vector and the ZECHUNK1 envelope.
+pub(crate) fn ready_row(
+    text: &str,
+    caller: &[u8],
+    chunks: &[EmbeddedChunk],
+    dims: usize,
+) -> Result<(Vec<f32>, Vec<u8>), StoreError> {
+    let first = chunks
+        .first()
+        .ok_or_else(|| invalid("document encoder returned no chunks"))?;
+    let mut metadata = ROW_TAG.to_vec();
+    put_word(&mut metadata, caller.len())?;
+    metadata.extend_from_slice(caller);
+    for chunk in chunks {
+        if text.get(chunk.bytes.clone()).is_none() {
+            return Err(invalid("invalid chunk source range"));
+        }
+        check_vector(&chunk.vector, dims)?;
+        put_word(&mut metadata, chunk.bytes.start)?;
+        put_word(&mut metadata, chunk.bytes.end)?;
+        for v in &chunk.vector {
+            metadata.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    Ok((first.vector.clone(), metadata))
+}
+
 fn check_vector(vector: &[f32], dims: usize) -> Result<(), StoreError> {
     if dims == 0 || vector.len() != dims || vector.iter().any(|v| !v.is_finite()) {
         return Err(invalid("invalid embedding dimensions or coordinates"));
@@ -272,6 +439,18 @@ impl OpenOptions {
     /// Declared epoch, including the embedded namespace model pins.
     pub fn declared_epoch(&self) -> Option<&StoreEpoch> {
         self.epoch.as_ref()
+    }
+    /// Selects when new sources run the document tower. It is a property of
+    /// this handle, not of the persisted epoch.
+    #[must_use]
+    pub const fn with_document_schedule(mut self, schedule: DocumentSchedule) -> Self {
+        self.document_schedule = schedule;
+        self
+    }
+    /// Declared document schedule.
+    #[must_use]
+    pub const fn document_schedule(&self) -> DocumentSchedule {
+        self.document_schedule
     }
 }
 impl Store {
@@ -345,17 +524,51 @@ impl Store {
         declaration: Option<crate::epoch::EpochIdentity>,
         allow_reuse: bool,
     ) -> Result<Option<ReuseProof>, StoreError> {
+        #[cfg_attr(not(feature = "graph-cypher"), allow(unused_mut))]
+        let mut defer = self.embedding.defers();
+        // A document linked to a graph node embeds at write time: completion
+        // never rewrites graph-linked rows.
+        #[cfg(feature = "graph-cypher")]
+        if defer && self.native_graph.is_installed()? {
+            let ids = documents
+                .iter()
+                .map(|document| document.version().doc_id())
+                .collect::<Vec<_>>();
+            defer = !self
+                .documents_have_native_nodes(&ids)
+                .map_err(|error| StoreError::DocumentMutation(Box::new(error)))?;
+        }
+        self.prepare_embedded_with(documents, declaration, allow_reuse, defer)
+    }
+
+    /// As `prepare_embedded`, but always runs the document tower now.
+    #[cfg(feature = "graph-cypher")]
+    pub(crate) fn prepare_embedded_now(
+        &self,
+        documents: &mut [IngestDocument],
+        declaration: Option<crate::epoch::EpochIdentity>,
+        allow_reuse: bool,
+    ) -> Result<Option<ReuseProof>, StoreError> {
+        self.prepare_embedded_with(documents, declaration, allow_reuse, false)
+    }
+
+    fn prepare_embedded_with(
+        &self,
+        documents: &mut [IngestDocument],
+        declaration: Option<crate::epoch::EpochIdentity>,
+        allow_reuse: bool,
+        defer: bool,
+    ) -> Result<Option<ReuseProof>, StoreError> {
         if !self.is_embedded() || documents.is_empty() {
             return Ok(None);
         }
-        let model = self.admit_embedder()?;
         let epoch = self
             .epoch
             .as_ref()
             .ok_or(StoreError::MissingEmbedder)?
             .identity();
         for doc in documents.iter() {
-            if !doc.vector().is_empty() {
+            if !doc.vector().is_empty() || doc.absent_dims().is_some() {
                 return Err(invalid(
                     "embedded upsert requires text without a caller vector",
                 ));
@@ -397,10 +610,14 @@ impl Store {
                         let revision = prior
                             .map(|(revision, _)| revision)
                             .or_else(|| row.as_ref().map(|r| r.revision));
+                        // Only a ready predecessor has chunks to reuse; a
+                        // pending one gives a new pending admission.
                         let source = if let Some((_, index)) = prior {
                             Source::Earlier(index)
                         } else if let Some(row) = row
                             && row.text.as_deref() == doc.text()
+                            && decode_row(row.metadata.as_deref().unwrap_or_default())?.state
+                                == EmbeddedRowState::Ready
                         {
                             let (vector, metadata) = repack(
                                 doc.text()
@@ -429,12 +646,12 @@ impl Store {
             match sources.get(index) {
                 Some(Source::Stored) => continue,
                 Some(Source::Earlier(previous)) => {
-                    if documents
+                    let previous = documents
                         .get(*previous)
-                        .ok_or(StoreError::ActiveRowOverflow)?
-                        .text()
-                        == doc.text()
-                    {
+                        .ok_or(StoreError::ActiveRowOverflow)?;
+                    // Reuse a ready earlier row of this batch. A deferred
+                    // earlier row has no chunks to copy.
+                    if previous.text() == doc.text() && !defer {
                         continue;
                     }
                     *sources
@@ -449,10 +666,32 @@ impl Store {
                     .ok_or_else(|| invalid("missing embedded source"))?,
             );
         }
+        let dims = self.embedded_dims()?;
+        if defer {
+            // Commit the source now; the background worker embeds it later.
+            let dims =
+                u32::try_from(dims).map_err(|_| invalid("embedding dimensions exceed u32"))?;
+            for index in pending {
+                let doc = documents
+                    .get_mut(index)
+                    .ok_or(StoreError::ActiveRowOverflow)?;
+                let packed = pending_row(doc.metadata())?;
+                doc.set_vector_absent(dims, packed);
+            }
+            return Ok(generation
+                .filter(|_| {
+                    sources
+                        .iter()
+                        .any(|source| matches!(source, Source::Stored))
+                })
+                .map(|g| ReuseProof::new(self, g, epoch)));
+        }
         let encoded = if texts.is_empty() {
             Vec::new()
         } else {
-            model.documents(&texts).map_err(StoreError::Embedding)?
+            self.admit_embedder()?
+                .documents(&texts)
+                .map_err(StoreError::Embedding)?
         };
         if encoded.len() != pending.len() {
             return Err(invalid("document encoder returned wrong document count"));
@@ -472,12 +711,7 @@ impl Store {
                 }
                 Some(Source::Earlier(index)) => {
                     let previous = prior.get(*index).ok_or(StoreError::ActiveRowOverflow)?;
-                    let (vector, packed) = repack(
-                        text,
-                        previous.metadata(),
-                        doc.metadata(),
-                        self.embedded_dims()?,
-                    )?;
+                    let (vector, packed) = repack(text, previous.metadata(), doc.metadata(), dims)?;
                     doc.set_embedded(vector, packed);
                     reused = true;
                     continue;
@@ -488,24 +722,8 @@ impl Store {
                 .next()
                 .filter(|(position, _)| *position == index)
                 .ok_or_else(|| invalid("missing encoded document"))?;
-            let first = chunks
-                .first()
-                .ok_or_else(|| invalid("document encoder returned no chunks"))?;
-            let mut metadata = ROW_TAG.to_vec();
-            put_word(&mut metadata, doc.metadata().len())?;
-            metadata.extend_from_slice(doc.metadata());
-            for chunk in &chunks {
-                if text.get(chunk.bytes.clone()).is_none() {
-                    return Err(invalid("invalid chunk source range"));
-                }
-                check_vector(&chunk.vector, self.embedded_dims()?)?;
-                put_word(&mut metadata, chunk.bytes.start)?;
-                put_word(&mut metadata, chunk.bytes.end)?;
-                for v in &chunk.vector {
-                    metadata.extend_from_slice(&v.to_le_bytes());
-                }
-            }
-            doc.set_embedded(first.vector.clone(), metadata);
+            let (vector, metadata) = ready_row(text, doc.metadata(), &chunks, dims)?;
+            doc.set_embedded(vector, metadata);
         }
         Ok(generation
             .filter(|_| reused)
@@ -516,7 +734,7 @@ impl Store {
         docs: &mut [IngestDocument],
     ) -> Result<(), StoreError> {
         for doc in docs {
-            let (caller, _) = unpack(doc.metadata())?;
+            let caller = decode_row(doc.metadata())?.caller;
             let mut metadata = Vec::new();
             metadata
                 .try_reserve_exact(caller.len())
@@ -571,6 +789,21 @@ impl Store {
         filter: Option<&QueryFilter>,
         control: QueryControl,
     ) -> Result<(u64, Vec<EmbeddedHit>), QueryError> {
+        self.query_embedded_report(text, leg, k, filter, control)
+            .map(|report| (report.generation, report.hits))
+    }
+
+    /// Ranks chunks and counts eligible pending rows at one generation. A
+    /// pending row is one lexical candidate over its whole source and never a
+    /// dense candidate; hybrid fusion keeps only candidates with a score.
+    pub fn query_embedded_report(
+        &self,
+        text: &str,
+        leg: EmbeddedLeg,
+        k: usize,
+        filter: Option<&QueryFilter>,
+        control: QueryControl,
+    ) -> Result<EmbeddedReport, QueryError> {
         use crate::fts::index::{DEFAULT_FIELD, Document, LexicalIndex, SegmentIndex};
         use crate::fts::search::{TermQuery, search};
         let error = |detail: &str| QueryError::Store(invalid(detail));
@@ -590,6 +823,7 @@ impl Store {
         let mut rows = Vec::new();
         let mut dense = Vec::new();
         let mut cursor = None;
+        let mut pending_rows = 0_u64;
         let generation = loop {
             let fields = DocumentFields::TEXT
                 | DocumentFields::ATTRIBUTES
@@ -601,8 +835,28 @@ impl Store {
                     .text
                     .as_deref()
                     .ok_or_else(|| error("missing embedded source"))?;
-                let (_, mut data) = unpack(doc.metadata.as_deref().unwrap_or_default())
+                let row = decode_row(doc.metadata.as_deref().unwrap_or_default())
                     .map_err(QueryError::Store)?;
+                if row.state == EmbeddedRowState::Pending {
+                    pending_rows = pending_rows.saturating_add(1);
+                    if leg != EmbeddedLeg::Dense {
+                        index
+                            .push_document(&self.tokenizer, &Document::with_text(source))
+                            .map_err(|e| error(&e.to_string()))?;
+                        rows.push(EmbeddedHit {
+                            version: DocumentVersion::new(doc.doc_id, doc.revision),
+                            chunk: 0,
+                            timestamp: doc.timestamp,
+                            bytes: 0..source.len(),
+                            text: source.to_owned(),
+                            attributes: doc.attributes.clone().unwrap_or_default(),
+                            score: 0.,
+                            state: EmbeddedRowState::Pending,
+                        });
+                    }
+                    continue;
+                }
+                let mut data = row.chunks;
                 if data.is_empty() {
                     return Err(error("missing embedded chunks"));
                 }
@@ -637,6 +891,7 @@ impl Store {
                         text: chunk_text.to_owned(),
                         attributes: doc.attributes.clone().unwrap_or_default(),
                         score: 0.,
+                        state: EmbeddedRowState::Ready,
                     });
                     chunk += 1;
                 }
@@ -684,7 +939,12 @@ impl Store {
                             1. / (61. + rank as f64);
                     }
                 }
-                let mut ranked: Vec<_> = scores.into_iter().enumerate().collect();
+                // A pending row with no lexical match contributes nothing.
+                let mut ranked: Vec<_> = scores
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(_, score)| *score > 0.)
+                    .collect();
                 ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
                 ranked
             }
@@ -703,7 +963,11 @@ impl Store {
                 Ok(hit)
             })
             .collect::<Result<_, _>>()?;
-        Ok((generation, hits))
+        Ok(EmbeddedReport {
+            generation,
+            pending_rows,
+            hits,
+        })
     }
 }
 
@@ -717,7 +981,7 @@ impl PublishedSnapshot {
             && fields.contains(DocumentFields::METADATA)
             && !fields.contains(DocumentFields::CHUNKS)
         {
-            let (user, _) = unpack(doc.metadata.as_deref().unwrap_or_default())?;
+            let user = decode_row(doc.metadata.as_deref().unwrap_or_default())?.caller;
             doc.metadata = (!user.is_empty()).then(|| user.to_vec());
         }
         Ok(())

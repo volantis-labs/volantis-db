@@ -90,12 +90,21 @@ pub const UPSERT_V2_METADATA: u32 = 1 << 3;
 pub const UPSERT_V2_TYPED_COLUMNS: u32 = 1 << 4;
 /// Reserved-unused upsert-v2 bit for a future per-record epoch tag.
 pub const UPSERT_V2_EPOCH_TAG_RESERVED: u32 = 1 << 5;
+/// Upsert-v2 row with no vector: a `dims:u32` declared dimension replaces the
+/// vector field. It excludes [`UPSERT_V2_VECTOR`]. Readers before WF-985
+/// reject the unknown bit.
+pub const UPSERT_V2_ABSENT_VECTOR: u32 = 1 << 6;
+/// Upsert-v2 engine completion: the record replaces the live row at the same
+/// revision. Readers before WF-985 reject the unknown bit.
+pub const UPSERT_V2_COMPLETION: u32 = 1 << 7;
 
 const UPSERT_V2_KNOWN_FIELDS: u32 = UPSERT_V2_VECTOR
     | UPSERT_V2_TEXT
     | UPSERT_V2_TIMESTAMP
     | UPSERT_V2_METADATA
-    | UPSERT_V2_TYPED_COLUMNS;
+    | UPSERT_V2_TYPED_COLUMNS
+    | UPSERT_V2_ABSENT_VECTOR
+    | UPSERT_V2_COMPLETION;
 
 const PAYLOAD_VERSION: u16 = 1;
 const COMMON_HEADER_LEN: usize = 4;
@@ -369,7 +378,14 @@ pub fn encode_upsert_with_timestamp_and_metadata(
 /// Encodes one bitmap-based upsert v2. The operation id carries the payload
 /// version, so the first four payload bytes are the field-presence bitmap.
 pub fn encode_upsert_v2(document: &IngestDocument) -> Result<Vec<u8>, PayloadError> {
-    let mut bitmap = UPSERT_V2_VECTOR;
+    let mut bitmap = if document.absent_dims().is_some() {
+        UPSERT_V2_ABSENT_VECTOR
+    } else {
+        UPSERT_V2_VECTOR
+    };
+    if document.is_completion() {
+        bitmap |= UPSERT_V2_COMPLETION;
+    }
     if document.text().is_some() {
         bitmap |= UPSERT_V2_TEXT;
     }
@@ -382,8 +398,18 @@ pub fn encode_upsert_v2(document: &IngestDocument) -> Result<Vec<u8>, PayloadErr
     if document.has_columns() {
         bitmap |= UPSERT_V2_TYPED_COLUMNS;
     }
-    validate_vector(document.vector())?;
-    let dims = u32::try_from(document.vector().len()).map_err(|_| PayloadError::LengthOverflow)?;
+    let dims = match document.absent_dims() {
+        Some(dims) => {
+            if dims == 0 || !document.vector().is_empty() {
+                return Err(PayloadError::EmptyVector);
+            }
+            dims
+        }
+        None => {
+            validate_vector(document.vector())?;
+            u32::try_from(document.vector().len()).map_err(|_| PayloadError::LengthOverflow)?
+        }
+    };
     let mut payload = Vec::new();
     payload.extend_from_slice(&bitmap.to_le_bytes());
     append_version(&mut payload, document.version());
@@ -715,6 +741,18 @@ pub fn decode_upsert_v2(payload: &[u8]) -> Result<IngestDocument, PayloadError> 
         return Err(PayloadError::FieldBitmap(reserved));
     }
     let version = cursor.read_version()?;
+    let absent_dims = if bitmap & UPSERT_V2_ABSENT_VECTOR != 0 {
+        if bitmap & UPSERT_V2_VECTOR != 0 {
+            return Err(PayloadError::FieldBitmap(UPSERT_V2_ABSENT_VECTOR));
+        }
+        let dims = cursor.read_u32()?;
+        if dims == 0 {
+            return Err(PayloadError::EmptyVector);
+        }
+        Some(dims)
+    } else {
+        None
+    };
     let vector = if bitmap & UPSERT_V2_VECTOR != 0 {
         let dims = usize::try_from(cursor.read_u32()?).map_err(|_| PayloadError::LengthOverflow)?;
         if dims == 0 {
@@ -765,6 +803,17 @@ pub fn decode_upsert_v2(payload: &[u8]) -> Result<IngestDocument, PayloadError> 
     }
     if let Some(columns) = columns {
         document = document.with_columns(columns);
+    }
+    if let Some(dims) = absent_dims {
+        let metadata = document.metadata().to_vec();
+        let present = document.has_metadata();
+        document.set_vector_absent(dims, metadata);
+        if !present {
+            document.clear_metadata_presence();
+        }
+    }
+    if bitmap & UPSERT_V2_COMPLETION != 0 {
+        document.mark_completion();
     }
     Ok(document)
 }
@@ -1395,5 +1444,68 @@ pub fn transaction_decision(
             TransactionDecision::Committed
         }
         _ => TransactionDecision::Mismatch,
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::indexing_slicing)]
+mod wf985_absent_vector_tests {
+    use super::*;
+    use crate::ingest::{DocId, DocumentVersion, Revision};
+
+    fn pending(dims: u32) -> IngestDocument {
+        let mut document = IngestDocument::new(
+            DocumentVersion::new(DocId::new(60001), Revision::new(7)),
+            vec![],
+        )
+        .with_text("fictitious mauve sprocket");
+        document.set_vector_absent(dims, b"FAKE600".to_vec());
+        document
+    }
+
+    #[test]
+    fn wf985_absent_vector_upsert_round_trips() {
+        let encoded = encode_upsert_v2(&pending(2)).expect("encode");
+        let bitmap = u32::from_le_bytes(encoded[..4].try_into().expect("bitmap"));
+        assert_eq!(bitmap & UPSERT_V2_VECTOR, 0);
+        assert_ne!(bitmap & UPSERT_V2_ABSENT_VECTOR, 0);
+        let decoded = decode_upsert_v2(&encoded).expect("decode");
+        assert_eq!(decoded.absent_dims(), Some(2));
+        assert!(decoded.vector().is_empty() && !decoded.is_completion());
+        assert_eq!(decoded.metadata(), b"FAKE600");
+        assert_eq!(decoded.text(), Some("fictitious mauve sprocket"));
+
+        let mut ready = IngestDocument::new(
+            DocumentVersion::new(DocId::new(60001), Revision::new(7)),
+            vec![1.0, 0.0],
+        );
+        ready.mark_completion();
+        let decoded = decode_upsert_v2(&encode_upsert_v2(&ready).expect("encode")).expect("decode");
+        assert!(decoded.is_completion() && decoded.absent_dims().is_none());
+        assert_eq!(decoded.vector(), &[1.0, 0.0]);
+    }
+
+    #[test]
+    fn wf985_absent_vector_upsert_rejects_malformed_records() {
+        assert!(matches!(
+            encode_upsert_v2(&pending(0)),
+            Err(PayloadError::EmptyVector)
+        ));
+        let encoded = encode_upsert_v2(&pending(2)).expect("encode");
+        // Truncated anywhere: never a partial document.
+        for cut in 0..encoded.len() {
+            assert!(decode_upsert_v2(&encoded[..cut]).is_err(), "cut {cut}");
+        }
+        // Both vector bits.
+        let mut both = encoded.clone();
+        both[..4].copy_from_slice(&(UPSERT_V2_ABSENT_VECTOR | UPSERT_V2_VECTOR).to_le_bytes());
+        assert!(decode_upsert_v2(&both).is_err());
+        // Zero declared dimension.
+        let mut zero = encoded;
+        zero[28..32].copy_from_slice(&0_u32.to_le_bytes());
+        assert!(matches!(
+            decode_upsert_v2(&zero),
+            Err(PayloadError::EmptyVector)
+        ));
     }
 }

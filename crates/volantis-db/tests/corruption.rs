@@ -12,7 +12,6 @@ use std::ops::Range;
 use std::path::Path;
 
 use tempfile::tempdir;
-use xxhash_rust::xxh3::xxh3_64;
 use volantis_db::format::frame::{FILE_HEADER_LEN, FILE_TRAILER_LEN, FormatCheck};
 use volantis_db::manifest::io::{DurableLog, MANIFEST_FILE, load_manifest, open_manifest};
 use volantis_db::manifest::{Manifest, ManifestError, decode_manifest, encode_manifest};
@@ -25,6 +24,7 @@ use volantis_db::segment::reader::{SegmentReader, validate_segment_bytes};
 use volantis_db::segment::writer::{SegmentBuild, SegmentFactors, encode_segment};
 use volantis_db::segment::{SegmentError, SegmentId, SegmentMeta};
 use volantis_db::vfs::StdVfs;
+use xxhash_rust::xxh3::xxh3_64;
 
 const DIRECTORY_START: usize = FILE_HEADER_LEN + SEGMENT_PREFIX_LEN;
 const COLUMNS_ENTRY: usize = 0;
@@ -336,7 +336,8 @@ const SEGMENT_CASES: &[SegmentCase] = &[
     },
     SegmentCase {
         name: "segment_version_above_range",
-        mutation: SegmentMutation::Version(2),
+        // Version 2 (WF-985 vector presence) is accepted; 3 is above range.
+        mutation: SegmentMutation::Version(3),
         action: SegmentAction::Open,
         expected: ExpectedSegment::Format {
             check: FormatCheck::Version,

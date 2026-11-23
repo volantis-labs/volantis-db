@@ -23,6 +23,7 @@ pub(crate) mod purge_support {
     pub(crate) use super::purge::{
         OwnedFactors, PURGE_INTENT_FILE, append_survivor_columns, clustering_range,
         gather_survivor_codes, gather_survivor_documents, gather_survivor_rescore,
+        survivor_vector_rows,
     };
 }
 mod retention;
@@ -155,6 +156,11 @@ pub struct IngestDocument {
     text: Option<String>,
     columns: Vec<(ColumnId, PredicateValue)>,
     columns_present: bool,
+    /// Declared dimension of a row that has no vector yet. Only the engine
+    /// sets it; a caller vector is never absent.
+    absent_dims: Option<u32>,
+    /// Engine completion of a pending row at its unchanged revision.
+    completion: bool,
 }
 
 impl IngestDocument {
@@ -162,6 +168,27 @@ impl IngestDocument {
         self.vector = vector;
         self.metadata = metadata;
         self.metadata_present = true;
+        self.absent_dims = None;
+    }
+    /// Stores the row with no vector and the declared dimension.
+    pub(crate) fn set_vector_absent(&mut self, dims: u32, metadata: Vec<u8>) {
+        self.vector = Vec::new();
+        self.metadata = metadata;
+        self.metadata_present = true;
+        self.absent_dims = Some(dims);
+    }
+    /// Declared dimension when this row has no vector.
+    pub(crate) const fn absent_dims(&self) -> Option<u32> {
+        self.absent_dims
+    }
+    pub(crate) fn clear_metadata_presence(&mut self) {
+        self.metadata_present = false;
+    }
+    pub(crate) fn mark_completion(&mut self) {
+        self.completion = true;
+    }
+    pub(crate) const fn is_completion(&self) -> bool {
+        self.completion
     }
     /// Constructs one document upsert.
     #[must_use]
@@ -177,6 +204,8 @@ impl IngestDocument {
             text: None,
             columns: Vec::new(),
             columns_present: false,
+            absent_dims: None,
+            completion: false,
         }
     }
 
@@ -301,6 +330,9 @@ pub struct IngestBatch {
     pub(crate) reuse: Option<crate::lifecycle::embedded::ReuseProof>,
     documents: Vec<IngestDocument>,
     epoch: Option<crate::epoch::EpochIdentity>,
+    /// Engine completion claims: the live stored metadata each document
+    /// replaces. A document whose live row differs is dropped as stale.
+    claims: Option<Vec<Vec<u8>>>,
 }
 
 /// One atomic caller batch of stable document ids to tombstone.
@@ -355,6 +387,25 @@ impl IngestBatch {
             documents,
             reuse: None,
             epoch: None,
+            claims: None,
+        }
+    }
+
+    /// Engine completion of pending rows. Each document carries the ready
+    /// form of one pending row and `claims` holds that row's live metadata.
+    pub(crate) fn completion(
+        mut documents: Vec<IngestDocument>,
+        claims: Vec<Vec<u8>>,
+        epoch: crate::epoch::EpochIdentity,
+    ) -> Self {
+        for document in &mut documents {
+            document.mark_completion();
+        }
+        Self {
+            documents,
+            reuse: None,
+            epoch: Some(epoch),
+            claims: Some(claims),
         }
     }
 
@@ -369,6 +420,12 @@ impl IngestBatch {
     #[must_use]
     pub fn documents(&self) -> &[IngestDocument] {
         &self.documents
+    }
+
+    pub(crate) fn has_pending(&self) -> bool {
+        self.documents
+            .iter()
+            .any(|document| document.absent_dims().is_some())
     }
 }
 
@@ -931,6 +988,65 @@ fn resolve_revision(
     resolved
 }
 
+/// For each completion document, whether its claim still names the live row:
+/// same revision and byte-identical stored metadata, which carries the
+/// row's unique admission token. Runs under the WAL writer lock.
+fn current_completion_claims(
+    active: &ActiveSegment,
+    snapshot: &PublishedSnapshot,
+    sealed: &[purge::SealedDocumentMatch],
+    documents: &[IngestDocument],
+    claims: &[Vec<u8>],
+) -> Result<Vec<bool>, StoreError> {
+    if claims.len() != documents.len() {
+        return Err(StoreError::Synchronization {
+            component: "embedded completion claims",
+        });
+    }
+    let mut current = Vec::new();
+    current
+        .try_reserve_exact(documents.len())
+        .map_err(|_| StoreError::ActiveRowOverflow)?;
+    for (document, claim) in documents.iter().zip(claims) {
+        let doc_id = document.version().doc_id();
+        let live = if let Some((row, version, _)) = active.existing(doc_id)
+            && !active.is_tombstoned(row)
+        {
+            Some((
+                version,
+                active.metadata(row).map(<[u8]>::to_vec),
+                active.is_vector_absent(row),
+            ))
+        } else {
+            let mut found = None;
+            for matched in sealed.iter().filter(|m| m.version.doc_id() == doc_id) {
+                let segment = snapshot
+                    .segments()
+                    .get(matched.segment_index)
+                    .ok_or(StoreError::ActiveRowOverflow)?;
+                let row = u32::try_from(matched.row).map_err(|_| StoreError::ActiveRowOverflow)?;
+                if !segment.query_alive()?.is_alive(row) {
+                    continue;
+                }
+                let metadata = segment
+                    .stored_metadata()
+                    .map_err(StoreError::Segment)?
+                    .and_then(|rows| rows.row(matched.row))
+                    .map(<[u8]>::to_vec);
+                let absent = !segment
+                    .row_has_vector(matched.row)
+                    .map_err(StoreError::Segment)?;
+                found = Some((matched.version, metadata, absent));
+            }
+            found
+        };
+        current.push(live.is_some_and(|(version, metadata, absent)| {
+            absent && version == document.version() && metadata.as_deref() == Some(claim.as_slice())
+        }));
+    }
+    Ok(current)
+}
+
 /// Returns the live revision of `doc_id` in the given committed state, or
 /// `None` when no live row exists. Tombstoned rows are not live.
 fn live_revision(
@@ -1062,10 +1178,22 @@ impl Store {
     ) -> Result<(), IngestError> {
         let segment = progress.working.as_ref().unwrap_or(current);
         let existing = resolve_revision(segment, sealed, document.version().doc_id(), sealed_seq);
-        let action = revise::classify_revision(
+        let mut action = revise::classify_revision(
             existing.map(|resolved| (resolved.version, resolved.seq)),
             document.version(),
         );
+        if document.is_completion() {
+            // The caller checked this claim against the live pending row
+            // under the WAL lock; it replaces that row at its own revision.
+            action = match action {
+                revise::RevisionDecision::Replay { .. } => revise::RevisionDecision::Replace,
+                _ => {
+                    return Err(IngestError::Store(StoreError::Synchronization {
+                        component: "embedded completion claim",
+                    }));
+                }
+            };
+        }
         match action {
             revise::RevisionDecision::Replace => {
                 let row = existing.and_then(|resolved| resolved.active_row);
@@ -1276,16 +1404,20 @@ impl Store {
         if self.is_embedded() {
             batch.embed_documents(self, true)?;
         }
-        let result = self.ingest_prepared(&batch);
+        let mut result = self.ingest_prepared(&batch);
         if result.is_err() && batch.reuse.as_ref().is_some_and(|p| p.invalidated()) {
             self.restore_embedded_inputs(&mut batch.documents)?;
             batch.embed_documents(self, false)?;
-            return self.ingest_prepared(&batch);
+            result = self.ingest_prepared(&batch);
+        }
+        // Signal the worker only after the whole batch committed.
+        if result.is_ok() && batch.has_pending() {
+            self.embedding.notify();
         }
         result
     }
 
-    fn ingest_prepared(&self, batch: &IngestBatch) -> Result<IngestAck, IngestError> {
+    pub(crate) fn ingest_prepared(&self, batch: &IngestBatch) -> Result<IngestAck, IngestError> {
         #[cfg(feature = "graph-cypher")]
         {
             self.with_native_document_recovery(
@@ -1327,6 +1459,9 @@ impl Store {
             epoch.embedding.document.normalization == crate::epoch::Normalization::L2
         }) {
             for document in &batch.documents {
+                if document.absent_dims().is_some() {
+                    continue;
+                }
                 if let Some(squared_norm) =
                     crate::graph::search::non_unit_squared_norm(document.vector())
                 {
@@ -1352,6 +1487,15 @@ impl Store {
                     .collect::<Vec<_>>(),
             )?
         {
+            if batch.claims.is_some() {
+                // Graph-linked rows embed at write time; they are never pending.
+                return Err(IngestError::Store(StoreError::Embedding(
+                    crate::epoch::EmbedderFailure::new(
+                        "embedded completion of a graph-linked document",
+                    )
+                    .into(),
+                )));
+            }
             let result =
                 self.apply_native_mixed_locked(batch, writer)
                     .map_err(|error| match error {
@@ -1429,6 +1573,26 @@ impl Store {
             .collect::<Vec<_>>();
         let sealed = purge::sealed_document_matches(&snapshot, &requested_ids)?;
         let sealed_seq = LogSeq::new(snapshot.absorbed_through());
+        let current_claims = match &batch.claims {
+            Some(claims) => Some(current_completion_claims(
+                current_segment.as_ref(),
+                &snapshot,
+                &sealed,
+                &batch.documents,
+                claims,
+            )?),
+            None => None,
+        };
+        if current_claims
+            .as_ref()
+            .is_some_and(|current| !current.contains(&true))
+        {
+            // Every claim is stale: nothing to publish, no generation change.
+            return Ok(IngestAck {
+                seq: LogSeq::new(writer.durable_end()),
+                generation: current_generation,
+            });
+        }
         let mut progress = RevisionProgress {
             working: None,
             records: Vec::new(),
@@ -1438,6 +1602,12 @@ impl Store {
             sealed_tombstones: Vec::new(),
         };
         for (index, document) in batch.documents.iter().enumerate() {
+            if current_claims
+                .as_ref()
+                .is_some_and(|current| current.get(index) != Some(&true))
+            {
+                continue;
+            }
             let remaining = batch
                 .documents
                 .get(index..)

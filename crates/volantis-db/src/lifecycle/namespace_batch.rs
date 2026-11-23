@@ -157,6 +157,18 @@ fn execute_live(
             &proofs,
         );
         if result.is_ok() || !proofs.values().any(|proof| proof.invalidated()) {
+            // Signal each participant's worker only after the whole batch committed.
+            if result.is_ok() {
+                for p in &participants {
+                    if p.mutation
+                        .upserts
+                        .iter()
+                        .any(|document| document.absent_dims().is_some())
+                    {
+                        p.store.embedding.notify();
+                    }
+                }
+            }
             return result;
         }
         for p in &mut participants {

@@ -52,6 +52,10 @@ pub enum RegionKind {
     StoredMetadata = 13,
     /// Dense optional UTF-8 source text rows.
     StoredText = 14,
+    /// Strictly increasing document rows that hold a vector, one per compact
+    /// vector ordinal: `[count:u32][reserved:u32][row:u32; count]`. Present
+    /// only in a version 2 segment, where some row has no vector.
+    VectorPresence = 15,
     /// First id reserved for additive vector-space-N region triples.
     VectorSpaceN = 4096,
 }
@@ -81,6 +85,7 @@ impl RegionKind {
             12 => Some(Self::DocumentVersions),
             13 => Some(Self::StoredMetadata),
             14 => Some(Self::StoredText),
+            15 => Some(Self::VectorPresence),
             4096 => Some(Self::VectorSpaceN),
             _ => None,
         }
@@ -98,6 +103,7 @@ impl RegionKind {
             Self::DocumentVersions => Some(FormatFamily::DocumentVersions),
             Self::StoredMetadata => Some(FormatFamily::StoredMetadata),
             Self::StoredText => Some(FormatFamily::StoredText),
+            Self::VectorPresence => Some(FormatFamily::VectorPresence),
             Self::ChecksumTable => Some(FormatFamily::ChecksumTable),
             Self::GraphColocatedCodes
             | Self::SignPlane

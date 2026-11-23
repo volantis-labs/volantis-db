@@ -17,9 +17,7 @@ use volantis_db::fts::tokenizer::TokenizerConfig;
 use volantis_db::ingest::{DocId, DocumentVersion, IngestBatch, IngestDocument, Revision};
 use volantis_db::lifecycle::durability::{CommitTier, DurabilityMode, DurabilityPolicy};
 use volantis_db::lifecycle::{OpenOptions, Store};
-use volantis_db::manifest::{
-    EpochMeta, Manifest, ManifestError, decode_manifest, encode_manifest,
-};
+use volantis_db::manifest::{EpochMeta, Manifest, ManifestError, decode_manifest, encode_manifest};
 use volantis_db::meta::{
     AliveSet, ColumnDefinition, ColumnId, ColumnInput, ColumnStoreBuilder, ColumnType, ColumnValue,
     Schema,
@@ -389,15 +387,12 @@ fn format_every_registered_family_and_edge_shape_matches_checked_in_golden() {
             actual => panic!("unknown golden case {actual}"),
         }
     }
-    assert_eq!(
-        std::mem::size_of::<volantis_db::quant::Bit4Factors>(),
-        12
-    );
+    assert_eq!(std::mem::size_of::<volantis_db::quant::Bit4Factors>(), 12);
     assert_eq!(
         fixture(include_str!("fixtures/format/postings_reserved_v1.hex")),
         Vec::<u8>::new()
     );
-    assert_eq!(FormatRegistry::families().len(), 19);
+    assert_eq!(FormatRegistry::families().len(), 20);
     assert_eq!(FormatFamily::Wal.id(), 11);
     assert_eq!(FormatFamily::DocumentVersions.id(), 13);
     assert_eq!(FormatFamily::StoredMetadata.id(), 14);
@@ -406,7 +401,14 @@ fn format_every_registered_family_and_edge_shape_matches_checked_in_golden() {
     assert_eq!(FormatFamily::NativeGraphObject.id(), 17);
     assert_eq!(FormatFamily::NativeGraphRoot.id(), 18);
     assert_eq!(FormatFamily::NativeGraphWal.id(), 19);
+    assert_eq!(FormatFamily::VectorPresence.id(), 20);
     assert_eq!(RegionKind::StoredText.id(), 14);
+    assert_eq!(RegionKind::VectorPresence.id(), 15);
+    let segment = FormatRegistry::require(FormatFamily::Segment.id(), 2).expect("segment v2");
+    assert_eq!(
+        (segment.current_version, segment.maximum_accepted_version),
+        (1, 2)
+    );
     assert_eq!(
         FormatRegistry::require(FormatFamily::Wal.id(), 1)
             .expect("WAL family")

@@ -199,6 +199,9 @@ impl Store {
         }
         drop(state);
         let reader_deadline = Instant::now().checked_add(self.reader_drain_timeout);
+        // Stop admission and join the embedding worker before teardown, so
+        // the final release below drops the last runtime reference.
+        let embedding_result = self.embedding.stop();
         before_close();
 
         let mut background = self
@@ -343,7 +346,8 @@ impl Store {
             .take();
         *state = StoreState::Closed;
         self.state_changed.notify_all();
-        background_result
+        embedding_result
+            .and(background_result)
             .and(native_graph_result)
             .and(query_pool_result)
             .and(lexical_worker_result)
@@ -363,6 +367,8 @@ impl Store {
             return;
         }
         *state = StoreState::Closing;
+        // Joins the embedding worker unless this drop runs on that worker.
+        let _ = self.embedding.stop();
 
         let background_slot = match self.background.get_mut() {
             Ok(background) => background,

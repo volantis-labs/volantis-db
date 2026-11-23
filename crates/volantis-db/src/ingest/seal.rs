@@ -57,13 +57,12 @@ impl Store {
     #[cfg(any(test, feature = "test-seams"))]
     fn test_seal_storage(
         &self,
-        current: &ActiveState,
+        vectors: &[f32],
         dims: u32,
     ) -> Result<Option<TestSealStorage>, StoreError> {
         match self.vector_seal_scheme {
             Some(crate::quant::QuantScheme::Int8) => {
                 let dimension = usize::try_from(dims).map_err(|_| StoreError::ActiveRowOverflow)?;
-                let vectors = current.segment.vectors();
                 if dimension == 0 || !vectors.len().is_multiple_of(dimension) {
                     return Err(StoreError::Segment(crate::segment::SegmentError::Geometry(
                         format!(
@@ -215,8 +214,22 @@ impl Store {
             .ok_or(StoreError::ActiveRowOverflow)?;
         let dims = u32::try_from(dims).map_err(|_| StoreError::ActiveRowOverflow)?;
         let id = seal_id(generation, absorbed_through);
+        // Rows without a vector keep no vector bytes in the sealed segment.
+        let compact = current.segment.compact_vectors()?;
+        let (bit4_codes, bit4_factors, rescore) = match compact.as_ref() {
+            Some(compact) => (
+                compact.codes.as_slice(),
+                compact.factors.as_slice(),
+                compact.vectors.as_slice(),
+            ),
+            None => (
+                current.segment.codes(),
+                current.segment.factors(),
+                current.segment.vectors(),
+            ),
+        };
         #[cfg(any(test, feature = "test-seams"))]
-        let int8_storage = self.test_seal_storage(current, dims)?;
+        let int8_storage = self.test_seal_storage(rescore, dims)?;
         #[cfg(any(test, feature = "test-seams"))]
         let (scheme, codes, factors) = match int8_storage.as_ref() {
             Some((codes, factors)) => (
@@ -226,15 +239,15 @@ impl Store {
             ),
             None => (
                 u16::from(crate::quant::QuantScheme::Bit4.id()),
-                current.segment.codes(),
-                SegmentFactors::Bit4(current.segment.factors()),
+                bit4_codes,
+                SegmentFactors::Bit4(bit4_factors),
             ),
         };
         #[cfg(not(any(test, feature = "test-seams")))]
         let (scheme, codes, factors) = (
             u16::from(crate::quant::QuantScheme::Bit4.id()),
-            current.segment.codes(),
-            SegmentFactors::Bit4(current.segment.factors()),
+            bit4_codes,
+            SegmentFactors::Bit4(bit4_factors),
         );
         let build = SegmentBuild {
             id,
@@ -242,7 +255,7 @@ impl Store {
             dims,
             codes,
             factors,
-            rescore: current.segment.vectors(),
+            rescore,
             columns: &columns,
             alive: &alive,
         };
@@ -264,6 +277,7 @@ impl Store {
                     .postings
                     .as_deref()
                     .map(|bytes| SegmentPostings { bytes }),
+                vector_rows: compact.as_ref().map(|compact| compact.rows.as_slice()),
             },
             self.durability_policy,
         );

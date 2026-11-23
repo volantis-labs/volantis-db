@@ -90,6 +90,9 @@ pub(crate) struct SegmentPayloads<'a> {
     pub(crate) metadata: Option<SegmentStoredMetadata<'a>>,
     pub(crate) text: Option<SegmentStoredText<'a>>,
     pub(crate) postings: Option<SegmentPostings<'a>>,
+    /// Strictly increasing rows that hold a vector, one per compact vector
+    /// ordinal. `None` means every row holds a vector (identity map).
+    pub(crate) vector_rows: Option<&'a [u32]>,
 }
 
 /// One complete encoded lexical segment for the Postings region.
@@ -185,7 +188,88 @@ fn encode_segment_inner(
     postings: Option<SegmentPostings<'_>>,
     copied_regions: &[SegmentCopiedRegion<'_>],
 ) -> Result<Vec<u8>, SegmentError> {
+    encode_segment_rows(
+        build,
+        graph_bytes,
+        document_versions,
+        stored_metadata,
+        stored_text,
+        postings,
+        copied_regions,
+        None,
+    )
+}
+
+/// Validates a presence list and returns the compact vector count. A list
+/// that names every row is the identity map and is not written.
+fn presence_rows(rows: u32, vector_rows: Option<&[u32]>) -> Result<Option<&[u32]>, SegmentError> {
+    let Some(list) = vector_rows else {
+        return Ok(None);
+    };
+    let mut previous = None;
+    for row in list {
+        if *row >= rows || previous.is_some_and(|before| before >= *row) {
+            return Err(SegmentError::Geometry(format!(
+                "vector presence row {row} is out of order or exceeds {rows} rows"
+            )));
+        }
+        previous = Some(*row);
+    }
+    Ok((list.len() != rows as usize).then_some(list))
+}
+
+pub(crate) fn encode_presence(list: &[u32]) -> Result<Vec<u8>, SegmentError> {
+    let count = u32::try_from(list.len())
+        .map_err(|_| SegmentError::Geometry("vector presence count exceeds u32".to_owned()))?;
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(list.len().saturating_mul(4).saturating_add(8))
+        .map_err(|_| SegmentError::Geometry("vector presence allocation failed".to_owned()))?;
+    bytes.extend_from_slice(&count.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    for row in list {
+        bytes.extend_from_slice(&row.to_le_bytes());
+    }
+    Ok(bytes)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn encode_segment_rows(
+    build: SegmentBuild<'_>,
+    graph_bytes: Option<Vec<u8>>,
+    document_versions: Option<SegmentDocumentVersions<'_>>,
+    stored_metadata: Option<SegmentStoredMetadata<'_>>,
+    stored_text: Option<SegmentStoredText<'_>>,
+    postings: Option<SegmentPostings<'_>>,
+    copied_regions: &[SegmentCopiedRegion<'_>],
+    vector_rows: Option<&[u32]>,
+) -> Result<Vec<u8>, SegmentError> {
     let row_count = build.columns.row_count();
+    let presence = presence_rows(row_count, vector_rows)?;
+    if presence.is_some()
+        && (graph_bytes.is_some()
+            || copied_regions
+                .iter()
+                .any(|region| region.kind == RegionKind::VectorPresence.id()))
+    {
+        return Err(SegmentError::Geometry(
+            "a segment with rows that have no vector cannot carry a graph".to_owned(),
+        ));
+    }
+    if presence.is_none()
+        && copied_regions
+            .iter()
+            .any(|region| region.kind == RegionKind::VectorPresence.id())
+    {
+        return Err(SegmentError::Geometry(
+            "vector presence is written only by the segment writer".to_owned(),
+        ));
+    }
+    let vector_count = match presence {
+        Some(list) => u32::try_from(list.len())
+            .map_err(|_| SegmentError::Geometry("vector count exceeds u32".to_owned()))?,
+        None => row_count,
+    };
     if build.alive.row_count() != row_count {
         return Err(SegmentError::Geometry(format!(
             "alive rows {}, column rows {row_count}",
@@ -197,9 +281,10 @@ fn encode_segment_inner(
     let dims = usize::try_from(build.dims)
         .map_err(|_| SegmentError::Geometry("dims exceeds usize".to_owned()))?;
     let rows = row_count as usize;
-    let (row_stride, factor_stride, factor_bytes) = encode_factors(build, rows)?;
+    let vectors = vector_count as usize;
+    let (row_stride, factor_stride, factor_bytes) = encode_factors(build, vectors)?;
     let expected_codes = row_stride
-        .checked_mul(rows)
+        .checked_mul(vectors)
         .ok_or_else(|| SegmentError::Geometry("code length overflow".to_owned()))?;
     if build.codes.len() != expected_codes {
         return Err(SegmentError::Geometry(format!(
@@ -208,7 +293,7 @@ fn encode_segment_inner(
         )));
     }
     let expected_rescore = dims
-        .checked_mul(rows)
+        .checked_mul(vectors)
         .ok_or_else(|| SegmentError::Geometry("rescore length overflow".to_owned()))?;
     if build.rescore.len() != expected_rescore {
         return Err(SegmentError::Geometry(format!(
@@ -226,7 +311,7 @@ fn encode_segment_inner(
         factor_stride_bytes: factor_stride,
         transform_kind: 0,
         transform_seed: 0,
-        row_count,
+        row_count: vector_count,
         reserved: 0,
     };
     common_header.validate()?;
@@ -250,7 +335,7 @@ fn encode_segment_inner(
         factor_stride_bytes: 0,
         transform_kind: 0,
         transform_seed: 0,
-        row_count,
+        row_count: vector_count,
         reserved: 0,
     };
     let mut rescore =
@@ -287,6 +372,13 @@ fn encode_segment_inner(
             bytes: rescore,
         },
     ];
+    if let Some(list) = presence {
+        regions.push(RegionBytes {
+            kind: RegionKind::VectorPresence,
+            family: FormatFamily::VectorPresence,
+            bytes: encode_presence(list)?,
+        });
+    }
     if let Some(bytes) = graph_bytes {
         regions.push(RegionBytes {
             kind: RegionKind::GraphNodeBlocks,
@@ -329,7 +421,7 @@ fn encode_segment_inner(
             bytes: postings.bytes.to_vec(),
         });
     }
-    encode_regions(build, &regions, copied_regions)
+    encode_regions(build, &regions, copied_regions, presence.is_some())
 }
 
 fn encode_stored_metadata(
@@ -539,7 +631,11 @@ fn encode_regions(
     build: SegmentBuild<'_>,
     regions: &[RegionBytes],
     copied_regions: &[SegmentCopiedRegion<'_>],
+    has_presence: bool,
 ) -> Result<Vec<u8>, SegmentError> {
+    // Version 2 marks a segment whose vector regions are compact; an older
+    // reader rejects it rather than misreading row ordinals.
+    let segment_version: u16 = if has_presence { 2 } else { 1 };
     let region_count = regions
         .len()
         .saturating_add(copied_regions.len())
@@ -611,7 +707,7 @@ fn encode_regions(
     let mut output = Vec::with_capacity(file_length);
     output.extend_from_slice(&FILE_MAGIC);
     output.extend_from_slice(&FormatFamily::Segment.id().to_le_bytes());
-    output.extend_from_slice(&1_u16.to_le_bytes());
+    output.extend_from_slice(&segment_version.to_le_bytes());
     output.extend_from_slice(&0_u32.to_le_bytes());
     output.extend_from_slice(&(header_length as u64).to_le_bytes());
     output.extend_from_slice(&(file_length as u64).to_le_bytes());
@@ -861,7 +957,7 @@ pub(crate) fn write_segment_with_documents_payloads(
     payloads: SegmentPayloads<'_>,
     policy: DurabilityPolicy,
 ) -> Result<SegmentMeta, SegmentError> {
-    let bytes = encode_segment_inner(
+    let bytes = encode_segment_rows(
         build,
         None,
         Some(payloads.documents),
@@ -869,6 +965,7 @@ pub(crate) fn write_segment_with_documents_payloads(
         payloads.text,
         payloads.postings,
         &[],
+        payloads.vector_rows,
     )?;
     publish_segment(vfs, directory, build, policy, &bytes)
 }
@@ -897,7 +994,7 @@ pub(crate) fn write_segment_with_carried_graph_and_documents_payloads(
             build.columns.row_count()
         )));
     }
-    let bytes = encode_segment_inner(
+    let bytes = encode_segment_rows(
         build,
         Some(graph_bytes.to_vec()),
         Some(payloads.documents),
@@ -905,6 +1002,7 @@ pub(crate) fn write_segment_with_carried_graph_and_documents_payloads(
         payloads.text,
         payloads.postings,
         &[],
+        payloads.vector_rows,
     )?;
     publish_segment(vfs, directory, build, policy, &bytes)
 }
@@ -1097,9 +1195,35 @@ pub(crate) fn reindex_segment(
         columns: &columns,
         alive: &alive,
     };
-    let bytes = encode_regions(build, &[], &copied)?;
+    let has_presence = copied
+        .iter()
+        .any(|region| region.kind == RegionKind::VectorPresence.id());
+    let bytes = encode_regions(build, &[], &copied, has_presence)?;
     let mut meta = publish_segment(vfs, directory, build, policy, &bytes)?;
     meta.epoch_id = input.meta().epoch_id;
     meta.clustering_key_range = input.meta().clustering_key_range;
     Ok(meta)
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod wf985_presence_tests {
+    use super::presence_rows;
+
+    #[test]
+    fn wf985_presence_rows_are_strictly_increasing_and_in_range() {
+        assert_eq!(presence_rows(3, None).expect("identity"), None);
+        assert_eq!(presence_rows(3, Some(&[0, 1, 2])).expect("full"), None);
+        assert_eq!(
+            presence_rows(3, Some(&[0, 2])).expect("sparse"),
+            Some([0_u32, 2].as_slice())
+        );
+        assert_eq!(
+            presence_rows(3, Some(&[])).expect("none"),
+            Some([].as_slice())
+        );
+        assert!(presence_rows(3, Some(&[2, 0])).is_err());
+        assert!(presence_rows(3, Some(&[1, 1])).is_err());
+        assert!(presence_rows(3, Some(&[3])).is_err());
+    }
 }

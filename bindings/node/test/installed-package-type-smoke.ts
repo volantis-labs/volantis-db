@@ -149,3 +149,24 @@ void namespaceBatchLive('/tmp/root', [{store, name: 'notes', spec: embeddedSpec,
 void namespaceBatch('/tmp/root', [{name: 'notes', spec: embeddedSpec, offline: 'yes'}]);
 // @ts-expect-error modelCacheDir is a string.
 void namespaceBatchLive('/tmp/root', [{store, name: 'notes', spec: embeddedSpec, modelCacheDir: 1}]);
+
+// WF-985: deferred embedding schedule, control methods and both query forms.
+void openNamespace('/tmp/root', 'notes', {...embeddedSpec, embeddingSchedule: 'paused'});
+void openNamespaceAsync('/tmp/root', 'notes', {...embeddedSpec, embeddingSchedule: 'background'});
+// @ts-expect-error The schedule is one of three names.
+void openNamespace('/tmp/root', 'notes', {...embeddedSpec, embeddingSchedule: 'later'});
+const deferred = openNamespace('/tmp/root', 'notes', {...embeddedSpec, embeddingSchedule: 'immediate'});
+deferred.pauseEmbedding();
+deferred.resumeEmbedding();
+const embeddingStatus = deferred.embeddingStatus();
+const pendingNow: bigint = embeddingStatus.pending;
+const busy: boolean = embeddingStatus.paused || embeddingStatus.inFlight || embeddingStatus.running;
+const failure: number = embeddingStatus.lastErrorCode;
+void [pendingNow, busy, failure];
+const legacyHits: number = deferred.queryEmbedded({text: 'mauve', leg: 'dense', k: 1}).length;
+const embeddedReport = deferred.queryEmbeddedReport({text: 'mauve', leg: 'lexical', k: 1});
+const reportGeneration: bigint = embeddedReport.generation;
+const pendingRows: bigint = embeddedReport.pendingRows;
+const hitState: 'ready' | 'pending' | undefined = embeddedReport.hits[0]?.state;
+void [legacyHits, reportGeneration, pendingRows, hitState];
+void deferred.queryEmbeddedReportAsync({text: 'mauve', leg: 'hybrid', k: 1}).then(report => report.pendingRows);

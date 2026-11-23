@@ -503,6 +503,9 @@ fn every_phase_two_struct_has_the_frozen_size_and_field_offsets() {
     assert_layout!(ZeEmbeddedNamespaceSpec,104,8,{spec:0,model:48});
     assert_layout!(ZeEmbeddedNamespaceSpecV2,112,8,{embedded:0,mlx_cache_limit_bytes:104});
     assert_layout!(ZeEmbeddedNamespaceSpecV3,136,8,{v2:0,model_cache_dir:112,model_cache_dir_len:120,offline:128,has_mlx_cache_limit:132});
+    assert_layout!(ZeEmbeddedNamespaceSpecV4,144,8,{v3:0,document_schedule:136,reserved:140});
+    assert_layout!(ZeEmbeddingStatus,32,8,{abi_size:0,abi_reserved:4,pending:8,paused:16,in_flight:20,running:24,last_error:28});
+    assert_layout!(ZeEmbeddedReport,16,8,{abi_size:0,abi_reserved:4,pending_rows:8});
     assert_layout!(ZeNeighbourSource,24,8,{doc_id:0,has_chunk:16,chunk:20});
     assert_layout!(ZeNeighbourRequest,96,8,{abi_size:0,abi_reserved:4,sources:8,source_count:16,constraints:24,eligible_ids:32,eligible_count:40,k:48,threshold:56,include_source:64,has_threshold:68,has_eligible:72,reserved:76,cancel_token:80,deadline_ns:88});
     assert_layout!(ZeNeighbourHit,40,8,{source_index:0,doc_id:8,chunk:24,score:32});
@@ -649,6 +652,10 @@ const POISON_TABLE_NAMES: &[&str] = &[
     "ze_query_filtered",
     "ze_nearest_chunks",
     "ze_query_embedded",
+    "ze_query_embedded_report",
+    "ze_namespace_embedding_pause",
+    "ze_namespace_embedding_resume",
+    "ze_namespace_embedding_status",
     "ze_query_v2",
     "ze_scan",
     "ze_scan_ordered",
@@ -1048,6 +1055,26 @@ fn poison_function_table() -> Vec<(&'static str, PoisonCall)> {
                 0,
                 std::ptr::null_mut(),
             )
+        }),
+        ("ze_query_embedded_report", |context| {
+            ze_query_embedded_report(
+                context.store.handle,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        }),
+        ("ze_namespace_embedding_pause", |context| {
+            ze_namespace_embedding_pause(context.store.handle)
+        }),
+        ("ze_namespace_embedding_resume", |context| {
+            ze_namespace_embedding_resume(context.store.handle)
+        }),
+        ("ze_namespace_embedding_status", |context| {
+            ze_namespace_embedding_status(context.store.handle, std::ptr::null_mut())
         }),
         ("ze_query_filtered", |context| {
             let request: ZeQueryRequest = common::sized_zeroed();

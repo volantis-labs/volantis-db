@@ -300,9 +300,7 @@ fn namespace_batch_backup_revision_and_cascade_keep_chunk_ownership() {
 #[cfg(feature = "graph-cypher")]
 #[test]
 fn mixed_graph_batch_applies_the_embedded_document_contract() {
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
     use volantis_db::property_graph::{
         ApplicationKey, CanonicalContents, EntityKind, GraphBatch, GraphRevision,
         GraphStoreErrorKind, GraphWriteOutcome,
@@ -1251,4 +1249,760 @@ fn ze597_batch_failure_publishes_nothing() {
     drop((a, b));
     check(&open("a"));
     check(&open("b"));
+}
+
+// WF-985: commit text now, embed it later in the background.
+const WF985_META: &[u8] = b"FAKE600";
+const WF985_MAUVE: &str = "fictitious mauve sprocket";
+const WF985_CYAN: &str = "fictitious cyan thimble";
+const WF985_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn wf985_store(
+    path: &std::path::Path,
+    model: Arc<namespace_model::GateModel>,
+    schedule: DocumentSchedule,
+) -> Arc<Store> {
+    let options = OpenOptions::new()
+        .with_embedder(model)
+        .expect("model")
+        .with_document_schedule(schedule);
+    Arc::new(Store::open(path, options).expect("open"))
+}
+
+fn wf985_doc(id: u128, rev: u64, text: &str) -> IngestDocument {
+    IngestDocument::new(
+        DocumentVersion::new(DocId::new(id), Revision::new(rev)),
+        vec![],
+    )
+    .with_text(text)
+    .with_timestamp(rev as i64)
+    .with_metadata(WF985_META.to_vec())
+}
+
+fn wf985_report(store: &Store, text: &str, leg: EmbeddedLeg, k: usize) -> EmbeddedReport {
+    store
+        .query_embedded_report(text, leg, k, None, running())
+        .expect("embedded report")
+}
+
+fn wf985_hits(report: &EmbeddedReport) -> Vec<(u128, EmbeddedRowState)> {
+    report
+        .hits
+        .iter()
+        .map(|hit| (hit.version.doc_id().get(), hit.state))
+        .collect()
+}
+
+/// Raw dense search over stored vectors, exact and graph-free.
+fn wf985_dense_ids(store: &Store, k: usize) -> Vec<u128> {
+    let mut ids = store
+        .search(
+            SearchRequest::new(&[1.0, 0.0]),
+            k,
+            volantis_db::scan::ScanOptions { thread_budget: 1 },
+            running(),
+        )
+        .expect("dense search")
+        .candidates
+        .iter()
+        .filter_map(|candidate| candidate.document())
+        .map(|version| version.doc_id().get())
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids
+}
+
+fn wf985_vector(store: &Store, id: u128) -> Option<Vec<f32>> {
+    reuse_row(store, id).expect("live row").vector
+}
+
+#[test]
+fn wf985_ack_precedes_inference() {
+    let root = tempdir().expect("root");
+    let model = Arc::new(namespace_model::GateModel::default());
+    model.close_gate();
+    let store = wf985_store(
+        &root.path().join("bg"),
+        model.clone(),
+        DocumentSchedule::Background,
+    );
+    store.attach_embedding_worker().expect("attach");
+    store
+        .ingest(IngestBatch::new(vec![wf985_doc(60001, 7, WF985_MAUVE)]))
+        .expect("first write commits before inference");
+    assert!(
+        model.wait_entered(1, WF985_WAIT),
+        "worker never called the model"
+    );
+    // The model is held at the gate: writes, reads and lexical search go on.
+    let ack = store
+        .ingest(IngestBatch::new(vec![wf985_doc(60002, 1, WF985_CYAN)]))
+        .expect("second write while the model is blocked");
+    let row = reuse_row(&store, 60001).expect("pending row");
+    assert_eq!(row.revision, Revision::new(7));
+    assert_eq!(row.text.as_deref(), Some(WF985_MAUVE));
+    assert_eq!(row.metadata.as_deref(), Some(WF985_META));
+    assert_eq!(row.vector, None);
+    let lexical = wf985_report(&store, "mauve", EmbeddedLeg::Lexical, 4);
+    assert_eq!(lexical.generation, ack.generation());
+    assert_eq!(lexical.pending_rows, 2);
+    assert_eq!(
+        wf985_hits(&lexical),
+        vec![(60001, EmbeddedRowState::Pending)]
+    );
+    let hit = lexical.hits.first().expect("pending hit");
+    assert_eq!((hit.chunk, hit.bytes.clone()), (0, 0..WF985_MAUVE.len()));
+    let dense = wf985_report(&store, "mauve", EmbeddedLeg::Dense, 4);
+    assert!(dense.hits.is_empty());
+    assert_eq!(dense.pending_rows, 2);
+    let status = store.embedding_status().expect("status");
+    assert!(status.in_flight && status.running && !status.paused);
+    assert_eq!(status.pending, 2);
+    model.open_gate();
+    let status = store.wait_embedding_idle(WF985_WAIT).expect("drain");
+    assert_eq!(
+        (status.pending, status.last_error),
+        (0, EmbeddingErrorCode::None)
+    );
+    assert_eq!(wf985_vector(&store, 60001), Some(vec![1., 0.]));
+    assert_eq!(wf985_vector(&store, 60002), Some(vec![0., 1.]));
+    let dense = wf985_report(&store, "mauve", EmbeddedLeg::Dense, 4);
+    assert_eq!(
+        wf985_hits(&dense),
+        vec![
+            (60001, EmbeddedRowState::Ready),
+            (60002, EmbeddedRowState::Ready)
+        ]
+    );
+    assert_eq!(dense.pending_rows, 0);
+    assert_eq!(
+        reuse_row(&store, 60001).expect("ready").revision,
+        Revision::new(7)
+    );
+    store.close().expect("close");
+
+    // A paused open makes no document call.
+    let paused = Arc::new(namespace_model::GateModel::default());
+    let store = wf985_store(
+        &root.path().join("paused"),
+        paused.clone(),
+        DocumentSchedule::Paused,
+    );
+    store.attach_embedding_worker().expect("attach");
+    store
+        .ingest(IngestBatch::new(
+            (1..=3).map(|id| wf985_doc(id, 1, WF985_MAUVE)).collect(),
+        ))
+        .expect("paused writes");
+    let status = store.wait_embedding_idle(WF985_WAIT).expect("status");
+    assert!(status.paused && !status.in_flight);
+    assert_eq!(status.pending, 3);
+    assert_eq!(paused.call_count(), 0);
+}
+
+#[test]
+fn wf985_reuse_skips_pending() {
+    let root = tempdir().expect("root");
+    let model = Arc::new(namespace_model::GateModel::default());
+    let store = wf985_store(root.path(), model.clone(), DocumentSchedule::Immediate);
+    store
+        .ingest(IngestBatch::new(vec![wf985_doc(60001, 7, WF985_MAUVE)]))
+        .expect("ready seed");
+    assert_eq!(model.call_count(), 1);
+    store.close().expect("close");
+    drop(store);
+    let model = Arc::new(namespace_model::GateModel::default());
+    let store = wf985_store(root.path(), model.clone(), DocumentSchedule::Paused);
+    // Same text at a higher revision reuses the ready chunks at once.
+    store
+        .ingest(IngestBatch::new(vec![wf985_doc(60001, 8, WF985_MAUVE)]))
+        .expect("same text");
+    assert_eq!(model.call_count(), 0);
+    assert_eq!(wf985_vector(&store, 60001), Some(vec![1., 0.]));
+    assert_eq!(
+        wf985_report(&store, "x", EmbeddedLeg::Lexical, 1).pending_rows,
+        0
+    );
+    // Changed text becomes pending, and so does a new id.
+    store
+        .ingest(IngestBatch::new(vec![
+            wf985_doc(60001, 9, WF985_CYAN),
+            wf985_doc(60002, 1, WF985_MAUVE),
+        ]))
+        .expect("changed text");
+    assert_eq!(model.call_count(), 0);
+    assert_eq!(wf985_vector(&store, 60001), None);
+    assert_eq!(wf985_vector(&store, 60002), None);
+    assert_eq!(
+        wf985_report(&store, "x", EmbeddedLeg::Lexical, 1).pending_rows,
+        2
+    );
+    // A metadata-only edit of a pending row keeps one pending revision.
+    store
+        .ingest(IngestBatch::new(vec![
+            wf985_doc(60001, 10, WF985_CYAN).with_metadata(b"FAKE600-v2".to_vec()),
+        ]))
+        .expect("metadata edit");
+    let report = wf985_report(&store, "cyan", EmbeddedLeg::Lexical, 4);
+    assert_eq!(report.pending_rows, 2);
+    assert_eq!(
+        wf985_hits(&report),
+        vec![(60001, EmbeddedRowState::Pending)]
+    );
+    assert_eq!(
+        reuse_row(&store, 60001).expect("row").metadata.as_deref(),
+        Some(b"FAKE600-v2".as_slice())
+    );
+}
+
+#[test]
+fn wf985_worker_batches_rows() {
+    let root = tempdir().expect("root");
+    let texts = (0..10)
+        .map(|n| format!("fictitious row {n}"))
+        .collect::<Vec<_>>();
+    let docs = || {
+        texts
+            .iter()
+            .enumerate()
+            .map(|(n, text)| wf985_doc(n as u128 + 1, 1, text))
+            .collect::<Vec<_>>()
+    };
+    let sync = wf985_store(
+        &root.path().join("sync"),
+        Arc::new(namespace_model::GateModel::default()),
+        DocumentSchedule::Immediate,
+    );
+    sync.ingest(IngestBatch::new(docs())).expect("sync");
+    let model = Arc::new(namespace_model::GateModel::default());
+    let store = wf985_store(
+        &root.path().join("bg"),
+        model.clone(),
+        DocumentSchedule::Paused,
+    );
+    store.ingest(IngestBatch::new(docs())).expect("pending");
+    store.attach_embedding_worker().expect("attach");
+    store.resume_embedding().expect("resume");
+    let status = store.wait_embedding_idle(WF985_WAIT).expect("drain");
+    assert_eq!(
+        (status.pending, status.last_error),
+        (0, EmbeddingErrorCode::None)
+    );
+    let calls = model.calls.lock().expect("calls").clone();
+    assert!(calls.len() < texts.len(), "{calls:?}");
+    assert_eq!(calls.concat(), texts);
+    for id in 1..=10 {
+        let ready = reuse_row(&store, id).expect("ready");
+        let expected = reuse_row(&sync, id).expect("sync row");
+        assert_eq!(ready, expected);
+    }
+    let fields = DocumentFields::TEXT | DocumentFields::METADATA | DocumentFields::ATTRIBUTES;
+    assert_eq!(
+        store.get_documents(&[DocId::new(1)], fields).expect("get"),
+        sync.get_documents(&[DocId::new(1)], fields).expect("get")
+    );
+}
+
+#[test]
+fn wf985_completion_checks_admission_identity() {
+    let root = tempdir().expect("root");
+    let model = Arc::new(namespace_model::GateModel::default());
+    model.close_gate();
+    let store = wf985_store(root.path(), model.clone(), DocumentSchedule::Background);
+    store
+        .ingest(IngestBatch::new(
+            (1..=4).map(|id| wf985_doc(id, 7, WF985_MAUVE)).collect(),
+        ))
+        .expect("pending rows");
+    store.attach_embedding_worker().expect("attach");
+    assert!(model.wait_entered(1, WF985_WAIT));
+    // Stop the next admission so only the blocked batch completes.
+    store.pause_embedding().expect("pause");
+    store
+        .ingest(IngestBatch::new(vec![wf985_doc(1, 8, WF985_CYAN)]))
+        .expect("edit");
+    store
+        .delete(DeleteBatch::new(vec![DocId::new(2)]))
+        .expect("delete");
+    store
+        .delete(DeleteBatch::new(vec![DocId::new(3)]))
+        .expect("delete before purge");
+    let token = store.purge(&[DocId::new(3)]).expect("purge");
+    store.await_physical_purge(token).expect("physical purge");
+    store
+        .ingest(IngestBatch::new(vec![wf985_doc(3, 7, WF985_MAUVE)]))
+        .expect("reinsert with the purged revision");
+    let before = store.snapshot().expect("snapshot").generation();
+    model.open_gate();
+    let status = store.wait_embedding_idle(WF985_WAIT).expect("settle");
+    assert!(status.paused && !status.in_flight);
+    assert_eq!(
+        store.snapshot().expect("snapshot").generation(),
+        before + 1,
+        "one generation for the accepted completion"
+    );
+    assert_eq!(wf985_vector(&store, 4), Some(vec![1., 0.]));
+    let edited = reuse_row(&store, 1).expect("edited");
+    assert_eq!(
+        (edited.revision, edited.text.as_deref(), edited.vector),
+        (Revision::new(8), Some(WF985_CYAN), None)
+    );
+    assert!(reuse_row(&store, 2).is_none());
+    let reinserted = reuse_row(&store, 3).expect("reinserted");
+    assert_eq!(
+        (reinserted.revision, reinserted.vector),
+        (Revision::new(7), None)
+    );
+    assert_eq!(status.pending, 2);
+    // Equal-revision replay leaves the ready row alone; the next revision wins.
+    let generation = store.snapshot().expect("snapshot").generation();
+    store
+        .ingest(IngestBatch::new(vec![wf985_doc(4, 7, WF985_CYAN)]))
+        .expect("replay");
+    assert_eq!(store.snapshot().expect("snapshot").generation(), generation);
+    assert_eq!(wf985_vector(&store, 4), Some(vec![1., 0.]));
+    store
+        .ingest(IngestBatch::new(vec![wf985_doc(4, 8, WF985_CYAN)]))
+        .expect("next revision");
+    store.resume_embedding().expect("resume");
+    let status = store.wait_embedding_idle(WF985_WAIT).expect("drain");
+    assert_eq!(status.pending, 0);
+    assert_eq!(wf985_vector(&store, 1), Some(vec![0., 1.]));
+    assert_eq!(wf985_vector(&store, 3), Some(vec![1., 0.]));
+    assert_eq!(wf985_vector(&store, 4), Some(vec![0., 1.]));
+}
+
+#[test]
+fn wf985_pause_retry_and_close() {
+    let root = tempdir().expect("root");
+    let model = Arc::new(namespace_model::GateModel::default());
+    model.fail.store(true, std::sync::atomic::Ordering::SeqCst);
+    let store = wf985_store(root.path(), model.clone(), DocumentSchedule::Background);
+    store.attach_embedding_worker().expect("attach");
+    store
+        .ingest(IngestBatch::new(vec![
+            wf985_doc(1, 1, WF985_MAUVE),
+            wf985_doc(2, 1, WF985_CYAN),
+        ]))
+        .expect("pending rows");
+    let status = store.wait_embedding_idle(WF985_WAIT).expect("failure");
+    assert_eq!(
+        (status.pending, status.in_flight, status.last_error),
+        (2, false, EmbeddingErrorCode::Model)
+    );
+    // A parked failure waits for resume; repeated pause and resume are idempotent.
+    store.pause_embedding().expect("pause");
+    store.pause_embedding().expect("pause again");
+    assert!(store.embedding_status().expect("status").paused);
+    model.fail.store(false, std::sync::atomic::Ordering::SeqCst);
+    store.resume_embedding().expect("resume");
+    store.resume_embedding().expect("resume again");
+    let status = store.wait_embedding_idle(WF985_WAIT).expect("retry");
+    assert_eq!(
+        (status.pending, status.last_error),
+        (0, EmbeddingErrorCode::None)
+    );
+
+    // Close from another thread while the model is blocked.
+    model.close_gate();
+    store
+        .ingest(IngestBatch::new(vec![wf985_doc(3, 1, WF985_MAUVE)]))
+        .expect("pending row");
+    let entered = model.calls.lock().expect("calls").len();
+    assert!(model.wait_entered(entered, WF985_WAIT));
+    let closer = {
+        let store = Arc::clone(&store);
+        std::thread::spawn(move || store.close())
+    };
+    model.open_gate();
+    closer.join().expect("close thread").expect("close");
+    drop(store);
+    assert_eq!(
+        Arc::strong_count(&model),
+        1,
+        "the runtime lease outlived close"
+    );
+    let reopened = wf985_store(root.path(), model.clone(), DocumentSchedule::Paused);
+    let status = reopened.embedding_status().expect("status");
+    assert!(!status.running);
+    assert!(reuse_row(&reopened, 3).is_some());
+    reopened.attach_embedding_worker().expect("attach");
+    reopened.resume_embedding().expect("resume");
+    assert_eq!(
+        reopened
+            .wait_embedding_idle(WF985_WAIT)
+            .expect("drain")
+            .pending,
+        0
+    );
+}
+
+#[test]
+fn wf985_sparse_rows_round_trip() {
+    let root = tempdir().expect("root");
+    let path = root.path().join("store");
+    let ready_model = Arc::new(namespace_model::GateModel::default());
+    let store = wf985_store(&path, ready_model, DocumentSchedule::Immediate);
+    store
+        .ingest(IngestBatch::new(vec![
+            wf985_doc(1, 1, WF985_MAUVE),
+            wf985_doc(2, 1, "fictitious ready two"),
+        ]))
+        .expect("ready rows");
+    store.seal().expect("legacy all-ready segment");
+    store.close().expect("close");
+    drop(store);
+
+    let model = Arc::new(namespace_model::GateModel::default());
+    let store = wf985_store(&path, model.clone(), DocumentSchedule::Paused);
+    let check = |store: &Store, stage: &str| {
+        let expected: &[u128] =
+            if stage.starts_with("active pending") || stage.starts_with("all-pending") {
+                &[3, 4]
+            } else {
+                &[3, 4, 5]
+            };
+        assert_eq!(wf985_dense_ids(store, 10), vec![1, 2], "{stage}: dense");
+        let lexical = wf985_report(store, "fictitious", EmbeddedLeg::Lexical, 10);
+        assert_eq!(
+            lexical.pending_rows,
+            expected.len() as u64,
+            "{stage}: pending count"
+        );
+        let mut pending = wf985_hits(&lexical)
+            .into_iter()
+            .filter(|(_, state)| *state == EmbeddedRowState::Pending)
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>();
+        pending.sort_unstable();
+        assert_eq!(pending, expected, "{stage}: lexical pending");
+        let dense = wf985_report(store, "x", EmbeddedLeg::Dense, 10);
+        assert!(
+            dense
+                .hits
+                .iter()
+                .all(|hit| hit.state == EmbeddedRowState::Ready && hit.version.doc_id().get() <= 2),
+            "{stage}: dense chunks"
+        );
+        let hybrid = wf985_report(store, "pending", EmbeddedLeg::Hybrid, 10);
+        assert!(
+            hybrid.hits.iter().all(|hit| hit.score > 0.),
+            "{stage}: hybrid keeps scored candidates only"
+        );
+        assert_eq!(wf985_vector(store, 3), None, "{stage}");
+        assert_eq!(wf985_vector(store, 1), Some(vec![1., 0.]), "{stage}");
+        assert_eq!(
+            store
+                .nearest_chunks(DocId::new(1), None, &NeighbourOptions::default(), running())
+                .expect("neighbours")
+                .iter()
+                .map(|hit| hit.id.get())
+                .collect::<Vec<_>>(),
+            vec![2],
+            "{stage}: neighbours skip pending rows"
+        );
+        assert!(
+            matches!(
+                store.nearest_chunks(DocId::new(3), None, &NeighbourOptions::default(), running()),
+                Err(QueryError::Store(
+                    StoreError::NeighbourSourceNotFound { .. }
+                ))
+            ),
+            "{stage}: a pending source has no chunk"
+        );
+    };
+    // All-pending segment, then a mixed one.
+    store
+        .ingest(IngestBatch::new(vec![
+            wf985_doc(3, 1, "fictitious pending three"),
+            wf985_doc(4, 1, "fictitious pending four"),
+        ]))
+        .expect("pending rows");
+    check(&store, "active pending");
+    store.seal().expect("all-pending segment");
+    check(&store, "all-pending sealed");
+    store
+        .ingest(IngestBatch::new(vec![
+            wf985_doc(1, 2, WF985_MAUVE),
+            wf985_doc(5, 1, "fictitious pending five"),
+        ]))
+        .expect("mixed rows");
+    assert_eq!(model.call_count(), 0);
+    check(&store, "mixed active");
+    store.seal().expect("mixed segment");
+    check(&store, "mixed sealed");
+    assert_eq!(store.snapshot().expect("snapshot").segments().len(), 3);
+    let report = volantis_db::verify::verify_store(&path).expect("verify");
+    assert!(report.is_clean(), "{report:?}");
+    store.merge_sealed().expect("merge");
+    assert_eq!(store.snapshot().expect("snapshot").segments().len(), 1);
+    check(&store, "merged");
+    let backup = root.path().join("backup");
+    store.write_snapshot(&backup).expect("backup");
+    store.close().expect("close");
+    drop(store);
+    let report = volantis_db::verify::verify_store(&path).expect("verify");
+    assert!(report.is_clean(), "{report:?}");
+
+    let reader = Store::open(
+        &path,
+        OpenOptions::read_only()
+            .with_embedder(model.clone())
+            .expect("model"),
+    )
+    .expect("read-only");
+    check(&reader, "read-only");
+    assert!(matches!(
+        reader.pause_embedding(),
+        Err(StoreError::ReadOnly)
+    ));
+    assert!(!reader.embedding_status().expect("status").running);
+    drop(reader);
+    let restored = wf985_store(&backup, model.clone(), DocumentSchedule::Paused);
+    check(&restored, "restored backup");
+    drop(restored);
+    let store = wf985_store(&path, model.clone(), DocumentSchedule::Background);
+    check(&store, "writable reopen");
+    store.attach_embedding_worker().expect("attach");
+    assert_eq!(
+        store
+            .wait_embedding_idle(WF985_WAIT)
+            .expect("drain")
+            .pending,
+        0
+    );
+    assert_eq!(wf985_dense_ids(&store, 10), vec![1, 2, 3, 4, 5]);
+    store.close().expect("close");
+    drop(store);
+    // Completions of sealed pending rows now sit in the WAL: replay applies
+    // them once and tombstones the sealed pending rows.
+    let report = volantis_db::verify::verify_store(&path).expect("verify");
+    assert!(report.is_clean(), "{report:?}");
+    let store = wf985_store(&path, model.clone(), DocumentSchedule::Paused);
+    assert_eq!(wf985_dense_ids(&store, 10), vec![1, 2, 3, 4, 5]);
+    assert_eq!(
+        wf985_report(&store, "fictitious", EmbeddedLeg::Lexical, 10).pending_rows,
+        0
+    );
+    store.seal().expect("seal completions");
+    store.merge_sealed().expect("merge");
+    assert_eq!(wf985_dense_ids(&store, 10), vec![1, 2, 3, 4, 5]);
+    store.close().expect("close");
+    let report = volantis_db::verify::verify_store(&path).expect("verify");
+    assert!(report.is_clean(), "{report:?}");
+}
+
+#[test]
+fn wf985_namespace_batch_atomic_visibility() {
+    let root = tempdir().expect("root");
+    let model = Arc::new(namespace_model::GateModel::default());
+    let options = |schedule| {
+        OpenOptions::new()
+            .with_embedder(model.clone())
+            .expect("model")
+            .with_document_schedule(schedule)
+    };
+    let open = |name: &str, schedule| {
+        Arc::new(Store::open(root.path().join(name), options(schedule)).expect("open"))
+    };
+    let a = open("a", DocumentSchedule::Paused);
+    let b = open("b", DocumentSchedule::Paused);
+    b.ingest(IngestBatch::new(vec![wf985_doc(9, 5, WF985_CYAN)]))
+        .expect("seed");
+    let live = |a_docs, b_docs| {
+        namespace_batch_live(
+            root.path(),
+            vec![
+                LiveNamespaceMutation {
+                    store: &a,
+                    mutation: mutation("a", options(DocumentSchedule::Paused), a_docs),
+                },
+                LiveNamespaceMutation {
+                    store: &b,
+                    mutation: mutation("b", options(DocumentSchedule::Paused), b_docs),
+                },
+            ],
+        )
+    };
+    // A failed participant publishes no pending row anywhere.
+    assert!(
+        live(
+            vec![wf985_doc(60001, 7, WF985_MAUVE)],
+            vec![wf985_doc(9, 3, WF985_CYAN)]
+        )
+        .is_err()
+    );
+    assert!(reuse_row(&a, 60001).is_none());
+    assert_eq!(a.embedding_status().expect("status").pending, 0);
+    live(
+        vec![wf985_doc(60001, 7, WF985_MAUVE)],
+        vec![wf985_doc(60002, 1, WF985_CYAN)],
+    )
+    .expect("commit");
+    for (store, id) in [(&a, 60001), (&b, 60002)] {
+        let row = reuse_row(store, id).expect("visible at once");
+        assert_eq!(row.vector, None);
+        let report = wf985_report(store, "fictitious", EmbeddedLeg::Lexical, 4);
+        assert!(wf985_hits(&report).contains(&(id, EmbeddedRowState::Pending)));
+    }
+    drop((a, b));
+    // A portable batch has no worker; it leaves pending work for the next
+    // writable handle.
+    namespace_batch(
+        root.path(),
+        vec![
+            mutation(
+                "a",
+                options(DocumentSchedule::Paused),
+                vec![wf985_doc(60003, 1, WF985_CYAN)],
+            ),
+            mutation(
+                "b",
+                options(DocumentSchedule::Paused),
+                vec![wf985_doc(60004, 1, WF985_MAUVE)],
+            ),
+        ],
+    )
+    .expect("path batch");
+    assert_eq!(model.call_count(), 0);
+    for (name, ids) in [("a", vec![60001, 60003]), ("b", vec![9, 60002, 60004])] {
+        let store = open(name, DocumentSchedule::Background);
+        store.attach_embedding_worker().expect("attach");
+        let status = store.wait_embedding_idle(WF985_WAIT).expect("drain");
+        assert_eq!(status.pending, 0, "{name}");
+        for id in ids {
+            assert!(wf985_vector(&store, id).is_some(), "{name} {id}");
+        }
+    }
+}
+
+/// A graph-linked document embeds at write time on a deferred schedule:
+/// completion never rewrites graph-linked rows. A plain document of a
+/// graph batch is pending and the worker completes it.
+#[cfg(feature = "graph-cypher")]
+#[test]
+fn wf985_graph_linked_documents_embed_at_write_time() {
+    use volantis_db::property_graph::{staging::*, *};
+    let root = tempdir().expect("namespace");
+    let model = Arc::new(namespace_model::GateModel::default());
+    let store = wf985_store(root.path(), model.clone(), DocumentSchedule::Paused);
+    store.enable_graph().expect("graph");
+    let image = CanonicalContents::node(&mut [], &mut [], None, None).expect("image");
+    let writes = [StructuredWrite {
+        key: ApplicationKey::new(EntityKind::Node, "wf985", "linked").expect("key"),
+        revision: GraphRevision::new(1).expect("revision"),
+        operation: StructuredOperation::Create,
+        image: Some(WriteImage::Node(&image)),
+    }];
+    let docs = [GraphNodeDocument {
+        item_index: 0,
+        document: wf985_doc(60001, 1, WF985_MAUVE),
+    }];
+    store
+        .graph_apply(GraphBatch::with_node_documents(&writes, &docs), &running())
+        .expect("linked write");
+    assert_eq!(model.call_count(), 1);
+    assert_eq!(wf985_vector(&store, 60001), Some(vec![1., 0.]));
+    // A later plain upsert of the graph-linked id also embeds at once.
+    store
+        .ingest(IngestBatch::new(vec![wf985_doc(60001, 2, WF985_CYAN)]))
+        .expect("linked upsert");
+    assert_eq!(wf985_vector(&store, 60001), Some(vec![0., 1.]));
+    let writes = [StructuredWrite {
+        key: ApplicationKey::new(EntityKind::Node, "wf985", "other").expect("key"),
+        revision: GraphRevision::new(1).expect("revision"),
+        operation: StructuredOperation::Create,
+        image: Some(WriteImage::Node(&image)),
+    }];
+    let documents = IngestBatch::new(vec![wf985_doc(60002, 1, WF985_CYAN)]);
+    store
+        .graph_apply(
+            GraphBatch {
+                writes: &writes,
+                documents: Some(&documents),
+                node_documents: &[],
+            },
+            &running(),
+        )
+        .expect("mixed write");
+    assert_eq!(wf985_vector(&store, 60002), None);
+    store.attach_embedding_worker().expect("attach");
+    store.resume_embedding().expect("resume");
+    let status = store.wait_embedding_idle(WF985_WAIT).expect("drain");
+    assert_eq!(
+        (status.pending, status.last_error),
+        (0, EmbeddingErrorCode::None)
+    );
+    assert_eq!(wf985_vector(&store, 60002), Some(vec![0., 1.]));
+}
+
+/// Synthetic model with a fixed 200 ms delay per document-tower batch.
+struct DelayModel(namespace_model::GateModel);
+impl NamespaceEmbedder for DelayModel {
+    fn epoch(&self) -> volantis_db::epoch::EmbeddingEpoch {
+        self.0.epoch()
+    }
+    fn document(
+        &self,
+        text: &str,
+    ) -> Result<Vec<EmbeddedChunk>, volantis_db::epoch::EmbedderError> {
+        self.documents(&[text])?
+            .pop()
+            .ok_or_else(|| volantis_db::epoch::EmbedderFailure::new("missing").into())
+    }
+    fn documents(
+        &self,
+        texts: &[&str],
+    ) -> Result<Vec<Vec<EmbeddedChunk>>, volantis_db::epoch::EmbedderError> {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        self.0.documents(texts)
+    }
+    fn query(&self, text: &str) -> Result<Vec<f32>, volantis_db::epoch::EmbedderError> {
+        self.0.query(text)
+    }
+}
+
+/// One measurement: acknowledgement time of 32 rows, immediate versus paused.
+#[test]
+#[ignore = "measurement; run once with --ignored --nocapture"]
+fn wf985_ack_comparison_once() {
+    let root = tempdir().expect("root");
+    let docs = || {
+        (0..32)
+            .map(|n| wf985_doc(n + 1, 1, &format!("fictitious row {n}")))
+            .collect::<Vec<_>>()
+    };
+    for (name, schedule) in [
+        ("immediate", DocumentSchedule::Immediate),
+        ("paused", DocumentSchedule::Paused),
+    ] {
+        let model = Arc::new(DelayModel(namespace_model::GateModel::default()));
+        let options = OpenOptions::new()
+            .with_embedder(model.clone())
+            .expect("model")
+            .with_document_schedule(schedule);
+        let store = Arc::new(Store::open(root.path().join(name), options).expect("open"));
+        let start = std::time::Instant::now();
+        store.ingest(IngestBatch::new(docs())).expect("ingest");
+        let ack = start.elapsed();
+        let calls_at_ack = model.0.call_count();
+        let mut drain = std::time::Duration::ZERO;
+        if schedule == DocumentSchedule::Paused {
+            store.attach_embedding_worker().expect("attach");
+            let start = std::time::Instant::now();
+            store.resume_embedding().expect("resume");
+            let status = store.wait_embedding_idle(WF985_WAIT).expect("drain");
+            drain = start.elapsed();
+            assert_eq!(status.pending, 0);
+        }
+        let ready = (1..=32)
+            .filter(|id| wf985_vector(&store, *id).is_some())
+            .count();
+        println!(
+            "wf985 {name}: ack_ms={:.1} document_calls_at_ack={calls_at_ack} drain_ms={:.1} batches={} ready_rows={ready}",
+            ack.as_secs_f64() * 1e3,
+            drain.as_secs_f64() * 1e3,
+            model.0.call_count(),
+        );
+    }
 }

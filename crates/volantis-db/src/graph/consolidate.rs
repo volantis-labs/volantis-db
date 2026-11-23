@@ -142,7 +142,9 @@ pub(crate) const fn consolidation_supports_region(kind: u16) -> bool {
                 | RegionKind::ChecksumTable
                 | RegionKind::Postings
                 | RegionKind::StoredMetadata
-                | RegionKind::StoredText,
+                | RegionKind::StoredText
+                // Merge rebuilds the presence map from the survivors.
+                | RegionKind::VectorPresence,
         )
     )
 }
@@ -459,6 +461,9 @@ struct MergeGather {
     metadata: Option<(Vec<u64>, Vec<u8>)>,
     text: Option<(Vec<u8>, Vec<u64>, Vec<u8>)>,
     lexical: Option<SegmentIndex>,
+    /// Merged rows that hold a vector, once some input row lacks one.
+    vector_rows: Option<Vec<u32>>,
+    rows_gathered: u32,
 }
 
 /// Merges every input's live rows into one unpublished sealed segment.
@@ -500,6 +505,8 @@ pub(crate) fn merge_segments(
         metadata: carry_metadata.then(|| (Vec::new(), Vec::new())),
         text: None,
         lexical: rebuild_lexical.then(SegmentIndex::new),
+        vector_rows: None,
+        rows_gathered: 0,
     };
     let merge_schema = inputs
         .first()
@@ -594,10 +601,16 @@ pub(crate) fn merge_segments(
                 metadata,
                 text,
                 postings,
+                vector_rows: gather.vector_rows.as_deref(),
             },
             policy,
         )?
     } else {
+        if gather.vector_rows.is_some() {
+            return Err(ConsolidateError::Geometry(
+                "rows without a vector require document identities".to_owned(),
+            ));
+        }
         if gather.metadata.is_some() || text_has_rows || postings_bytes.is_some() {
             return Err(ConsolidateError::Geometry(
                 "merged payload regions require document identities".to_owned(),
@@ -727,6 +740,30 @@ fn gather_input(
     columns: &mut ColumnStoreBuilder,
 ) -> Result<(), ConsolidateError> {
     let dims = dims as usize;
+    let base = gather.rows_gathered;
+    let present = crate::ingest::purge_support::survivor_vector_rows(reader, rows, base)
+        .map_err(ConsolidateError::Store)?;
+    match (present, gather.vector_rows.as_mut()) {
+        (Some(present), Some(all)) => all.extend_from_slice(&present),
+        (Some(present), None) => {
+            // Every earlier merged row holds a vector.
+            let mut all: Vec<u32> = (0..base).collect();
+            all.extend_from_slice(&present);
+            gather.vector_rows = Some(all);
+        }
+        (None, Some(all)) => {
+            let end = u32::try_from(rows.len())
+                .ok()
+                .and_then(|count| base.checked_add(count))
+                .ok_or_else(|| ConsolidateError::Geometry("merged rows exceed u32".to_owned()))?;
+            all.extend(base..end);
+        }
+        (None, None) => {}
+    }
+    gather.rows_gathered = u32::try_from(rows.len())
+        .ok()
+        .and_then(|count| base.checked_add(count))
+        .ok_or_else(|| ConsolidateError::Geometry("merged rows exceed u32".to_owned()))?;
     let (codes, factors) = crate::ingest::purge_support::gather_survivor_codes(reader, rows, dims)
         .map_err(ConsolidateError::Store)?;
     let crate::ingest::purge_support::OwnedFactors::Bit4(factors) = factors else {
@@ -1127,6 +1164,7 @@ mod tests {
             RegionKind::Postings,
             RegionKind::StoredMetadata,
             RegionKind::StoredText,
+            RegionKind::VectorPresence,
         ] {
             assert!(consolidation_supports_region(kind.id()), "{kind:?}");
         }

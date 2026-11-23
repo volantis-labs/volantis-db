@@ -93,6 +93,14 @@ impl SealedTombstoneDemand {
         }
     }
 
+    /// A completion replaces the sealed row at its own revision too.
+    fn completion(version: DocumentVersion) -> Self {
+        Self {
+            doc_id: version.doc_id(),
+            below: version.revision().get().checked_add(1).map(Revision::new),
+        }
+    }
+
     pub(crate) const fn doc_id(self) -> DocId {
         self.doc_id
     }
@@ -410,6 +418,20 @@ impl ActiveState {
                     let document = documents.get(index).ok_or(StoreError::ActiveRowOverflow)?;
                     let doc_id = document.version().doc_id();
                     let row = match rows.get(&doc_id).copied() {
+                        Some(row)
+                            if document.is_completion()
+                                && segment.document(row) == Some(document.version()) =>
+                        {
+                            // A completion replaces only the pending row it
+                            // was checked against when it was committed.
+                            if !segment.is_vector_absent(row) || segment.is_tombstoned(row) {
+                                return Err(StoreError::UnsupportedWalMutation { seq, op });
+                            }
+                            segment
+                                .replace_row_in_place(row, document)
+                                .map_err(|error| recovery_apply_error(seq, op, error))?;
+                            row
+                        }
                         Some(row) => {
                             let current =
                                 segment.document(row).ok_or(StoreError::ActiveRowOverflow)?;
@@ -435,7 +457,11 @@ impl ActiveState {
                         }
                     };
                     segment.set_sequence(row, seq)?;
-                    sealed_tombstones.push(SealedTombstoneDemand::upsert(document.version()));
+                    sealed_tombstones.push(if document.is_completion() {
+                        SealedTombstoneDemand::completion(document.version())
+                    } else {
+                        SealedTombstoneDemand::upsert(document.version())
+                    });
                 }
                 ReplayStep::Delete(doc_ids) => {
                     for doc_id in &doc_ids {
@@ -602,6 +628,9 @@ pub(crate) struct ActiveSegment {
     codes: Accounted<Vec<u8>>,
     factors: Accounted<Vec<Bit4Factors>>,
     tombstones: Accounted<Vec<u32>>,
+    /// Rows that hold no vector. Their vector, code and factor slots hold
+    /// zeros and every vector reader excludes them through `vector_alive`.
+    absent: Accounted<Vec<u32>>,
 }
 
 struct CachedActiveLexical {
@@ -683,6 +712,7 @@ impl ActiveSegment {
             codes: Accounted::unaccounted_empty(),
             factors: Accounted::unaccounted_empty(),
             tombstones: Accounted::unaccounted_empty(),
+            absent: Accounted::unaccounted_empty(),
         }
     }
 
@@ -737,6 +767,13 @@ impl ActiveSegment {
         let codes = copy_accounted(accounting, &self.codes, capacities.code_count)?;
         let factors = copy_accounted(accounting, &self.factors, capacities.row_count)?;
         let tombstones = copy_accounted(accounting, &self.tombstones, self.tombstones.len())?;
+        let absent_capacity = remaining
+            .iter()
+            .filter(|document| document.absent_dims().is_some())
+            .count()
+            .checked_add(self.absent.len())
+            .ok_or(IngestError::Store(StoreError::ActiveRowOverflow))?;
+        let absent = copy_accounted(accounting, &self.absent, absent_capacity)?;
         let (lexical, counter) = self.lexical.clone_accounted(accounting)?;
         let lexical_bytes = self.lexical_bytes.as_ref().map(|_| counter);
         Ok(Self {
@@ -760,6 +797,7 @@ impl ActiveSegment {
             codes,
             factors,
             tombstones,
+            absent,
         })
     }
 
@@ -811,7 +849,7 @@ impl ActiveSegment {
         let capacities = self.appended_row_capacities(document)?;
         let row = usize::try_from(capacities.row)
             .map_err(|_| IngestError::Store(StoreError::ActiveRowOverflow))?;
-        let dims = document.vector().len();
+        let dims = row_dims(document)?;
         let row_stride = capacities.row_stride;
 
         self.row_index.insert(document.version().doc_id(), row)?;
@@ -826,20 +864,28 @@ impl ActiveSegment {
         )?;
         self.append_text_in_place(row, document.text())?;
         self.append_columns_in_place(row, document.has_columns(), document.columns())?;
-        self.vectors.extend_from_slice(document.vector())?;
         for _ in 0..row_stride {
             self.codes.push(0)?;
         }
-        let start = row
-            .checked_mul(row_stride)
-            .ok_or(IngestError::Store(StoreError::ActiveRowOverflow))?;
-        let encoded = self
-            .codes
-            .as_mut_slice()
-            .get_mut(start..)
-            .ok_or(IngestError::Store(StoreError::ActiveRowOverflow))?;
-        let factor = quantize_bit4(document.vector(), encoded).map_err(IngestError::Vector)?;
-        self.factors.push(factor)?;
+        if document.absent_dims().is_some() {
+            for _ in 0..dims {
+                self.vectors.push(0.0)?;
+            }
+            self.factors.push(ABSENT_FACTORS)?;
+            self.absent.push(capacities.row)?;
+        } else {
+            self.vectors.extend_from_slice(document.vector())?;
+            let start = row
+                .checked_mul(row_stride)
+                .ok_or(IngestError::Store(StoreError::ActiveRowOverflow))?;
+            let encoded = self
+                .codes
+                .as_mut_slice()
+                .get_mut(start..)
+                .ok_or(IngestError::Store(StoreError::ActiveRowOverflow))?;
+            let factor = quantize_bit4(document.vector(), encoded).map_err(IngestError::Vector)?;
+            self.factors.push(factor)?;
+        }
         self.dims = Some(dims);
         Ok(row)
     }
@@ -908,10 +954,10 @@ impl ActiveSegment {
         let dims = self
             .dims
             .ok_or(IngestError::Store(StoreError::ActiveRowOverflow))?;
-        if document.vector().len() != dims {
+        if row_dims(document)? != dims {
             return Err(IngestError::Store(StoreError::DimensionMismatch {
                 expected: dims,
-                actual: document.vector().len(),
+                actual: row_dims(document)?,
             }));
         }
         let old_id = self
@@ -965,11 +1011,17 @@ impl ActiveSegment {
         let vector_end = vector_start
             .checked_add(dims)
             .ok_or(IngestError::Store(StoreError::ActiveRowOverflow))?;
-        self.vectors
+        let slot = self
+            .vectors
             .as_mut_slice()
             .get_mut(vector_start..vector_end)
-            .ok_or(IngestError::Store(StoreError::ActiveRowOverflow))?
-            .copy_from_slice(document.vector());
+            .ok_or(IngestError::Store(StoreError::ActiveRowOverflow))?;
+        let absent = document.absent_dims().is_some();
+        if absent {
+            slot.fill(0.0);
+        } else {
+            slot.copy_from_slice(document.vector());
+        }
         let row_stride = dims.div_ceil(2);
         let code_start = row
             .checked_mul(row_stride)
@@ -982,7 +1034,12 @@ impl ActiveSegment {
             .as_mut_slice()
             .get_mut(code_start..code_end)
             .ok_or(IngestError::Store(StoreError::ActiveRowOverflow))?;
-        let factor = quantize_bit4(document.vector(), code).map_err(IngestError::Vector)?;
+        let factor = if absent {
+            code.fill(0);
+            ABSENT_FACTORS
+        } else {
+            quantize_bit4(document.vector(), code).map_err(IngestError::Vector)?
+        };
         *self
             .factors
             .as_mut_slice()
@@ -990,6 +1047,20 @@ impl ActiveSegment {
             .ok_or(IngestError::Store(StoreError::ActiveRowOverflow))? = factor;
         let row_u32 =
             u32::try_from(row).map_err(|_| IngestError::Store(StoreError::ActiveRowOverflow))?;
+        let listed = self
+            .absent
+            .iter()
+            .position(|candidate| *candidate == row_u32);
+        match (absent, listed) {
+            (true, None) => self.absent.push(row_u32)?,
+            (false, Some(position)) => {
+                let end = position
+                    .checked_add(1)
+                    .ok_or(IngestError::Store(StoreError::ActiveRowOverflow))?;
+                self.absent.replace_range(position..end, &[])?;
+            }
+            (true, Some(_)) | (false, None) => {}
+        }
         if let Some(position) = self
             .tombstones
             .iter()
@@ -1095,6 +1166,7 @@ impl ActiveSegment {
         let lexical_bytes = self.lexical_bytes.as_ref().map(|_| counter);
         Ok((
             Self {
+                absent: copy_accounted(accounting, &self.absent, self.absent.len())?,
                 dims: self.dims,
                 doc_ids: doc_ids_buffer,
                 row_index,
@@ -1128,6 +1200,7 @@ impl ActiveSegment {
     ) -> Result<(Self, usize), StoreError> {
         let doc_ids = lookup::set(doc_ids);
         let old_tombstones = lookup::set(&self.tombstones);
+        let old_absent = lookup::set(&self.absent);
         let removed = self
             .doc_ids
             .iter()
@@ -1159,6 +1232,11 @@ impl ActiveSegment {
             mut factors,
             mut tombstones,
         } = allocate_retained_buffers(accounting, &capacities, tracks_text, tracks_columns)?;
+        let mut absent = Accounted::try_with_capacity(
+            accounting,
+            self.absent.len(),
+            AllocationComponent::Active,
+        )?;
         let mut lexical = SegmentIndex::new();
         let mut lexical_counter = AccountedCounter::new(accounting, AllocationComponent::Active)?;
         let mut next_row = 0_u32;
@@ -1268,6 +1346,9 @@ impl ActiveSegment {
             if lookup::contains(&old_tombstones, &old_row) {
                 tombstones.push(next_row)?;
             }
+            if lookup::contains(&old_absent, &old_row) {
+                absent.push(next_row)?;
+            }
             next_row = next_row
                 .checked_add(1)
                 .ok_or(StoreError::ActiveRowOverflow)?;
@@ -1297,6 +1378,7 @@ impl ActiveSegment {
                 codes,
                 factors,
                 tombstones,
+                absent,
             },
             removed,
         ))
@@ -1307,14 +1389,15 @@ impl ActiveSegment {
         first_document: &IngestDocument,
         remaining: &[IngestDocument],
     ) -> Result<WorkingCapacities, IngestError> {
-        let dims = self.dims.unwrap_or(first_document.vector().len());
+        let first_dims = row_dims(first_document)?;
+        let dims = self.dims.unwrap_or(first_dims);
         if dims == 0 {
             return Err(IngestError::Vector(crate::quant::QuantError::EmptyVector));
         }
-        if first_document.vector().len() != dims {
+        if first_dims != dims {
             return Err(IngestError::Store(StoreError::DimensionMismatch {
                 expected: dims,
-                actual: first_document.vector().len(),
+                actual: first_dims,
             }));
         }
         let row_count = self
@@ -1394,7 +1477,7 @@ impl ActiveSegment {
         &self,
         document: &IngestDocument,
     ) -> Result<GrownCapacities, IngestError> {
-        let dims = document.vector().len();
+        let dims = row_dims(document)?;
         if let Some(expected) = self.dims
             && expected != dims
         {
@@ -1759,6 +1842,97 @@ impl ActiveSegment {
         Ok(alive)
     }
 
+    /// Whether `row` holds no vector.
+    pub(crate) fn is_vector_absent(&self, row: usize) -> bool {
+        u32::try_from(row)
+            .ok()
+            .is_some_and(|row| self.absent.contains(&row))
+    }
+
+    /// Vector data of the rows that hold a vector, in row order, plus those
+    /// rows. `None` when every row holds a vector.
+    pub(crate) fn compact_vectors(&self) -> Result<Option<CompactVectors>, StoreError> {
+        if self.absent.is_empty() {
+            return Ok(None);
+        }
+        let dims = self.dims.ok_or(StoreError::ActiveRowOverflow)?;
+        let stride = dims.div_ceil(2);
+        let rows = self.row_count();
+        let present = rows
+            .checked_sub(self.absent.len())
+            .ok_or(StoreError::ActiveRowOverflow)?;
+        let mut compact = CompactVectors::default();
+        let reserve = |needed: usize| StoreError::AllocationFailed {
+            needed: u64::try_from(needed).unwrap_or(u64::MAX),
+            component: "sealed vector compaction",
+        };
+        compact
+            .rows
+            .try_reserve_exact(present)
+            .map_err(|_| reserve(present))?;
+        compact
+            .factors
+            .try_reserve_exact(present)
+            .map_err(|_| reserve(present))?;
+        let vector_len = present
+            .checked_mul(dims)
+            .ok_or(StoreError::ActiveRowOverflow)?;
+        compact
+            .vectors
+            .try_reserve_exact(vector_len)
+            .map_err(|_| reserve(vector_len))?;
+        let code_len = present
+            .checked_mul(stride)
+            .ok_or(StoreError::ActiveRowOverflow)?;
+        compact
+            .codes
+            .try_reserve_exact(code_len)
+            .map_err(|_| reserve(code_len))?;
+        for row in 0..rows {
+            if self.is_vector_absent(row) {
+                continue;
+            }
+            let start = row.checked_mul(dims).ok_or(StoreError::ActiveRowOverflow)?;
+            let end = start
+                .checked_add(dims)
+                .ok_or(StoreError::ActiveRowOverflow)?;
+            compact.vectors.extend_from_slice(
+                self.vectors
+                    .get(start..end)
+                    .ok_or(StoreError::ActiveRowOverflow)?,
+            );
+            let start = row
+                .checked_mul(stride)
+                .ok_or(StoreError::ActiveRowOverflow)?;
+            let end = start
+                .checked_add(stride)
+                .ok_or(StoreError::ActiveRowOverflow)?;
+            compact.codes.extend_from_slice(
+                self.codes
+                    .get(start..end)
+                    .ok_or(StoreError::ActiveRowOverflow)?,
+            );
+            compact
+                .factors
+                .push(*self.factors.get(row).ok_or(StoreError::ActiveRowOverflow)?);
+            compact
+                .rows
+                .push(u32::try_from(row).map_err(|_| StoreError::ActiveRowOverflow)?);
+        }
+        Ok(Some(compact))
+    }
+
+    /// Live rows that hold a vector: the only rows a vector reader may score.
+    pub(crate) fn vector_alive(&self) -> Result<AliveSet, StoreError> {
+        let mut alive = self.alive()?;
+        for row in self.absent.iter().copied() {
+            alive
+                .tombstone(row)
+                .map_err(|_| StoreError::ActiveRowOverflow)?;
+        }
+        Ok(alive)
+    }
+
     pub(crate) fn resident_bytes(&self) -> u64 {
         self.doc_ids
             .resident_bytes()
@@ -1792,6 +1966,7 @@ impl ActiveSegment {
             .saturating_add(self.codes.resident_bytes())
             .saturating_add(self.factors.resident_bytes())
             .saturating_add(self.tombstones.resident_bytes())
+            .saturating_add(self.absent.resident_bytes())
     }
 
     pub(crate) fn tombstone_count(&self) -> u64 {
@@ -2018,7 +2193,31 @@ impl ActiveSegment {
             codes: copy_accounted(accounting, &self.codes, self.codes.len())?,
             factors: copy_accounted(accounting, &self.factors, self.factors.len())?,
             tombstones: copy_accounted(accounting, &self.tombstones, self.tombstones.len())?,
+            absent: copy_accounted(accounting, &self.absent, self.absent.len())?,
         })
+    }
+}
+
+/// Sealed vector regions of a segment whose rows do not all hold a vector.
+#[derive(Default)]
+pub(crate) struct CompactVectors {
+    pub(crate) rows: Vec<u32>,
+    pub(crate) vectors: Vec<f32>,
+    pub(crate) codes: Vec<u8>,
+    pub(crate) factors: Vec<Bit4Factors>,
+}
+
+/// Factor record stored in the slot of a row without a vector.
+const ABSENT_FACTORS: Bit4Factors = Bit4Factors::from_persisted(0.0, 0.0, 0.0);
+
+/// The dimension a row occupies: its vector length, or the declared
+/// dimension of a row without a vector.
+fn row_dims(document: &IngestDocument) -> Result<usize, IngestError> {
+    match document.absent_dims() {
+        Some(dims) => {
+            usize::try_from(dims).map_err(|_| IngestError::Store(StoreError::ActiveRowOverflow))
+        }
+        None => Ok(document.vector().len()),
     }
 }
 

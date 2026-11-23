@@ -36,8 +36,13 @@ fn visit_vectors(
         .text
         .as_deref()
         .ok_or_else(|| QueryError::Store(invalid("missing embedded source")))?;
-    let (_, mut data) =
-        unpack(doc.metadata.as_deref().unwrap_or_default()).map_err(QueryError::Store)?;
+    let row = decode_row(doc.metadata.as_deref().unwrap_or_default()).map_err(QueryError::Store)?;
+    // A pending row has no stored vector: it is never a neighbour, and as a
+    // source it has no chunk to compare.
+    if row.state != EmbeddedRowState::Ready {
+        return Ok(());
+    }
+    let mut data = row.chunks;
     if data.is_empty() {
         return Err(QueryError::Store(invalid("missing embedded chunks")));
     }

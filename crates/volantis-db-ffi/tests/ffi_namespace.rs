@@ -779,3 +779,100 @@ fn wf989_v3_namespace_spec_validation() {
         assert_eq!(open(&spec), ZeErrorCode::ZeErrInvalidArgument, "{label}");
     }
 }
+
+#[test]
+fn wf985_deferred_abi_contract() {
+    let root = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let path = root.path().as_os_str().as_encoded_bytes();
+    let cache_path = cache.path().as_os_str().as_encoded_bytes();
+    let open = |spec: &ZeEmbeddedNamespaceSpecV4| {
+        let req = ZeNamespaceOpenRequest {
+            root: path.as_ptr(),
+            root_len: path.len(),
+            name: b"toy-a".as_ptr(),
+            name_len: 5,
+            spec: &spec.v3.v2.embedded.spec,
+            open: open_settings(),
+            ..common::sized_zeroed()
+        };
+        let mut handle = 0;
+        let code = ze_namespace_open(&req, &mut handle);
+        assert_eq!(handle, 0);
+        code
+    };
+    assert_eq!(size_of::<ZeEmbeddedNamespaceSpecV4>(), 144);
+    assert_eq!(size_of::<ZeEmbeddingStatus>(), 32);
+    assert_eq!(size_of::<ZeEmbeddedReport>(), 16);
+    let rev = b"1111111111111111111111111111111111111111";
+    let sha = b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let mut valid: ZeEmbeddedNamespaceSpecV4 = common::sized_zeroed();
+    valid.v3.v2.embedded.spec.has_vector_space = 5;
+    valid.v3.v2.embedded.model = ZeTextModelRef {
+        repo: b"fixture/fake-wf985".as_ptr(),
+        repo_len: 18,
+        revision: rev.as_ptr(),
+        revision_len: rev.len(),
+        manifest_sha256: sha.as_ptr(),
+        manifest_sha256_len: sha.len(),
+        ..common::sized_zeroed()
+    };
+    valid.v3.model_cache_dir = cache_path.as_ptr();
+    valid.v3.model_cache_dir_len = cache_path.len();
+    valid.v3.offline = 1;
+    valid.document_schedule = 2;
+    // The well-formed control reaches model resolution: an offline miss in a
+    // text build, a refusal in a build without text.
+    let expected = if cfg!(feature = "text") {
+        ZeErrorCode::ZeErrNotFound
+    } else {
+        ZeErrorCode::ZeErrUnsupported
+    };
+    assert_eq!(open(&valid), expected);
+    for schedule in [0, 1] {
+        assert_eq!(
+            open(&ZeEmbeddedNamespaceSpecV4 {
+                document_schedule: schedule,
+                ..valid
+            }),
+            expected,
+            "schedule {schedule}"
+        );
+    }
+    let mut truncated = valid;
+    truncated.v3.v2.embedded.spec.abi_size = size_of::<ZeEmbeddedNamespaceSpecV3>() as u32;
+    let cases = [
+        ("truncated tag 5", truncated),
+        (
+            "unknown schedule",
+            ZeEmbeddedNamespaceSpecV4 {
+                document_schedule: 3,
+                ..valid
+            },
+        ),
+        (
+            "reserved",
+            ZeEmbeddedNamespaceSpecV4 {
+                reserved: 1,
+                ..valid
+            },
+        ),
+    ];
+    for (label, spec) in cases {
+        assert_eq!(open(&spec), ZeErrorCode::ZeErrInvalidArgument, "{label}");
+    }
+
+    // Control calls on a store without a model fail typed.
+    let (code, handle) = common::open_path(&root.path().join("plain"));
+    assert_eq!(code, ZeErrorCode::ZeOk);
+    let mut status: ZeEmbeddingStatus = common::sized_zeroed();
+    for code in [
+        ze_namespace_embedding_pause(handle),
+        ze_namespace_embedding_resume(handle),
+        ze_namespace_embedding_status(handle, &mut status),
+    ] {
+        assert_ne!(code, ZeErrorCode::ZeOk);
+        assert_ne!(code, ZeErrorCode::ZeErrPanic);
+    }
+    assert_eq!(ze_close(handle), ZeErrorCode::ZeOk);
+}

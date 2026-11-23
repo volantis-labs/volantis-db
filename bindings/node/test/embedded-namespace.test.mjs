@@ -210,3 +210,11 @@ test('WF-989 opens from the requested cache offline', {skip: !nativeMetal}, asyn
   runCase('mlx-zero');
   runCase('mlx-implicit', {ZE_MLX_CACHE_LIMIT_BYTES: '8192'});
 });
+
+test('deferred embedded namespace commits before inference', {skip: !nativeMetal}, () => {
+  runCacheCase('deferred');
+});
+
+test('deferred paused writes survive reopen', {skip: !nativeMetal}, () => {
+  runCacheCase('deferred-reopen');
+});

@@ -401,6 +401,25 @@ fn execute_pinned(
         if !matches!(graph_outcome, SealedGraphOutcome::Scan) {
             continue;
         }
+        // Scans index compact vector ordinals; rows without a vector drop out.
+        let (allow_list, row_count) = match segment
+            .vector_bitmap(&allow_list)
+            .map_err(StoreError::Segment)
+            .map_err(QueryError::Store)?
+        {
+            Some(mapped) => (
+                mapped,
+                segment
+                    .vector_count()
+                    .map_err(StoreError::Segment)
+                    .map_err(QueryError::Store)? as usize,
+            ),
+            None => (allow_list, row_count),
+        };
+        // A segment whose rows all lack a vector has nothing to score.
+        if row_count == 0 {
+            continue;
+        }
         let branch = choose_scan_branch(allow_list.cardinality());
         #[cfg(any(test, feature = "test-seams"))]
         record_selectivity_decision(
@@ -473,9 +492,10 @@ fn execute_pinned(
         append_candidates(
             local,
             source,
-            |row| {
+            |ordinal| {
                 segment
-                    .document_version(row)
+                    .vector_row(ordinal)
+                    .and_then(|row| Ok((row, segment.document_version(row)?)))
                     .map_err(StoreError::Segment)
                     .map_err(QueryError::Store)
             },
@@ -567,7 +587,8 @@ fn execute_active_filtered(
         &crate::scan::vector_fault::VectorFaultController,
     >,
 ) -> Result<(), FilteredSearchError> {
-    let alive = active.alive().map_err(QueryError::Store)?;
+    // A row without a vector is never a vector candidate.
+    let alive = active.vector_alive().map_err(QueryError::Store)?;
     let columns = active_columns(active, schema)?;
     #[cfg(any(test, feature = "test-seams"))]
     let alive = match metadata_query {
@@ -667,7 +688,7 @@ fn execute_active_filtered(
     append_candidates(
         local,
         source,
-        |row| Ok(active.document(row)),
+        |row| Ok((row, active.document(row))),
         candidates,
         full_precision || options.scan_rescore().is_some(),
         #[cfg(any(test, feature = "test-seams"))]
@@ -913,9 +934,11 @@ fn sealed_graph_filtered(
     append_candidates(
         execution.candidates,
         source,
+        // Graph segments hold a vector in every row: node id is the row.
         |row| {
             segment
                 .document_version(row)
+                .map(|version| (row, version))
                 .map_err(StoreError::Segment)
                 .map_err(QueryError::Store)
         },
@@ -2183,7 +2206,8 @@ fn score_one(
 fn append_candidates(
     local: Vec<LocalCandidate>,
     source: RowSource,
-    document: impl Fn(usize) -> Result<Option<crate::ingest::DocumentVersion>, QueryError>,
+    // Maps a scan ordinal to its document row and version.
+    document: impl Fn(usize) -> Result<(usize, Option<crate::ingest::DocumentVersion>), QueryError>,
     candidates: &mut Vec<SearchCandidate>,
     exact_score: bool,
     #[cfg(any(test, feature = "test-seams"))] vector_fault_controller: Option<
@@ -2201,11 +2225,12 @@ fn append_candidates(
         vector_fault_tier,
     )?;
     for candidate in local {
-        let local_row = u32::try_from(candidate.row)
-            .map_err(|_| QueryError::Scan(ScanError::ArithmeticOverflow))?;
+        let (row, version) = document(candidate.row)?;
+        let local_row =
+            u32::try_from(row).map_err(|_| QueryError::Scan(ScanError::ArithmeticOverflow))?;
         candidates.push(SearchCandidate::new(
             crate::ingest::GlobalRowId::new(source, local_row),
-            document(candidate.row)?,
+            version,
             candidate.score,
             exact_score,
         ));

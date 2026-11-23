@@ -85,3 +85,92 @@ impl NamespaceEmbedder for CountingModel {
         Model.query(text)
     }
 }
+
+/// WF-985 batch model: two dimensions, a gate that holds `documents`, a
+/// call log and one injectable failure. Fixed texts map to orthogonal
+/// vectors; other texts use `Model`.
+#[allow(dead_code)] // Only the deferred-embedding tests use it.
+#[derive(Default)]
+pub struct GateModel {
+    pub calls: std::sync::Mutex<Vec<Vec<String>>>,
+    pub fail: std::sync::atomic::AtomicBool,
+    gate: std::sync::Mutex<GateState>,
+    changed: std::sync::Condvar,
+}
+
+#[allow(dead_code)]
+#[derive(Default)]
+struct GateState {
+    closed: bool,
+    entered: usize,
+}
+
+#[allow(dead_code, clippy::expect_used)]
+impl GateModel {
+    pub fn close_gate(&self) {
+        self.gate.lock().expect("gate").closed = true;
+    }
+    pub fn open_gate(&self) {
+        self.gate.lock().expect("gate").closed = false;
+        self.changed.notify_all();
+    }
+    /// Waits until `count` batch calls have entered `documents`.
+    pub fn wait_entered(&self, count: usize, timeout: std::time::Duration) -> bool {
+        let gate = self.gate.lock().expect("gate");
+        let (gate, _) = self
+            .changed
+            .wait_timeout_while(gate, timeout, |state| state.entered < count)
+            .expect("gate wait");
+        gate.entered >= count
+    }
+    pub fn call_count(&self) -> usize {
+        self.calls.lock().expect("calls").len()
+    }
+    pub fn vector(text: &str) -> Vec<f32> {
+        match text {
+            "fictitious mauve sprocket" => vec![1., 0.],
+            "fictitious cyan thimble" => vec![0., 1.],
+            _ => vec![0.6, 0.8],
+        }
+    }
+}
+
+#[allow(clippy::expect_used)]
+impl NamespaceEmbedder for GateModel {
+    fn epoch(&self) -> EmbeddingEpoch {
+        Model.epoch()
+    }
+    fn document(&self, text: &str) -> Result<Vec<EmbeddedChunk>, EmbedderError> {
+        let mut out = self.documents(&[text])?;
+        out.pop()
+            .ok_or_else(|| EmbedderFailure::new("missing document").into())
+    }
+    fn documents(&self, texts: &[&str]) -> Result<Vec<Vec<EmbeddedChunk>>, EmbedderError> {
+        self.calls
+            .lock()
+            .expect("calls")
+            .push(texts.iter().map(|text| (*text).to_owned()).collect());
+        let mut gate = self.gate.lock().expect("gate");
+        gate.entered += 1;
+        self.changed.notify_all();
+        while gate.closed {
+            gate = self.changed.wait(gate).expect("gate");
+        }
+        drop(gate);
+        if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(EmbedderFailure::new("injected batch failure").into());
+        }
+        Ok(texts
+            .iter()
+            .map(|text| {
+                vec![EmbeddedChunk {
+                    bytes: 0..text.len(),
+                    vector: Self::vector(text),
+                }]
+            })
+            .collect())
+    }
+    fn query(&self, _: &str) -> Result<Vec<f32>, EmbedderError> {
+        Ok(vec![1., 0.])
+    }
+}

@@ -606,11 +606,19 @@ impl Walk<'_> {
             && let (Ok(text), Ok(metadata)) = (reader.stored_text(), reader.stored_metadata())
         {
             for row in 0..expected.row_count as usize {
-                if let Err(error) = crate::lifecycle::embedded::verify_row(
-                    text.and_then(|t| t.row(row)).flatten(),
-                    metadata.and_then(|m| m.row(row)),
-                    dims,
-                ) {
+                // The row state must agree with the sealed presence map.
+                let checked = reader
+                    .row_has_vector(row)
+                    .map_err(crate::lifecycle::StoreError::Segment)
+                    .and_then(|has_vector| {
+                        crate::lifecycle::embedded::verify_row(
+                            text.and_then(|t| t.row(row)).flatten(),
+                            metadata.and_then(|m| m.row(row)),
+                            has_vector,
+                            dims,
+                        )
+                    });
+                if let Err(error) = checked {
                     self.record(
                         FindingKind::SegmentIndexInvalid,
                         &file,
@@ -830,6 +838,7 @@ impl Walk<'_> {
                             crate::lifecycle::embedded::verify_row(
                                 text,
                                 segment.metadata(row),
+                                !segment.is_vector_absent(row),
                                 dims,
                             )
                         });
