@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
+#[cfg(unix)]
 use std::fs::File;
+#[cfg(unix)]
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -91,16 +93,20 @@ impl std::error::Error for BundleError {
     }
 }
 
+#[cfg(unix)]
 struct MappedFile {
     pointer: *mut libc::c_void,
     length: usize,
 }
 
+#[cfg(unix)]
 // SAFETY: this mapping is immutable for its complete lifetime.
 unsafe impl Send for MappedFile {}
+#[cfg(unix)]
 // SAFETY: every shared view is immutable.
 unsafe impl Sync for MappedFile {}
 
+#[cfg(unix)]
 impl MappedFile {
     fn open(path: &Path) -> Result<Self, BundleError> {
         let file = File::open(path).map_err(|source| BundleError::Io {
@@ -147,10 +153,30 @@ impl MappedFile {
     }
 }
 
+#[cfg(unix)]
 impl Drop for MappedFile {
     fn drop(&mut self) {
         // SAFETY: this owner created this exact mapping and drops it once.
         let _ = unsafe { libc::munmap(self.pointer, self.length) };
+    }
+}
+
+/// No read-only bundle mapping exists for this target yet. The owner is
+/// uninhabited, so no bundle bytes can be read on this target.
+#[cfg(not(unix))]
+enum MappedFile {}
+
+#[cfg(not(unix))]
+impl MappedFile {
+    fn open(_path: &Path) -> Result<Self, BundleError> {
+        Err(BundleError::Unsupported {
+            field: "bundle mapping target",
+            id: 0,
+        })
+    }
+
+    fn bytes(&self) -> &[u8] {
+        match *self {}
     }
 }
 

@@ -1,6 +1,7 @@
 #![allow(clippy::expect_used, clippy::indexing_slicing)]
 
 use std::collections::BTreeSet;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -8,9 +9,9 @@ use std::time::Duration;
 use tempfile::{TempDir, tempdir};
 use volantis_db::diag::SegmentHealth;
 use volantis_db::ingest::RowSource;
-use volantis_db_text::{
-    IngestOptions, Legs, QueryOptions, TextDocument, TextError, TextHit, TextStore,
-};
+#[cfg(unix)]
+use volantis_db_text::TextError;
+use volantis_db_text::{IngestOptions, Legs, QueryOptions, TextDocument, TextHit, TextStore};
 
 mod common;
 
@@ -324,6 +325,8 @@ fn open_merges_segments_left_by_earlier_sessions() {
     store.close().expect("close final session");
 }
 
+// Read-only directory modes inject the merge failure; they are Unix only.
+#[cfg(unix)]
 #[test]
 fn a_failed_merge_fails_the_ingest_before_writing() {
     for serialized in [false, true] {

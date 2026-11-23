@@ -9,19 +9,9 @@ use crate::runtime::{EmbeddingBatch, ModelRuntime, RuntimeError, RuntimeIdentity
 use crate::tower::{Architecture, TokenBatch, TowerRole, TowerSpec};
 use volantis_db::epoch::ComputeUnits;
 
-pub(crate) const MAX_EVAL_ROWS: usize = 32;
-// ZE-525 native FP16 probes on M3 Max under GPU contention: at 4,096 tokens,
-// warm evaluations took up to ~0.53 s; a cold 8 x 512 evaluation took ~2.96 s.
-// Throughput/token was flat above this budget, with contention-dependent
-// timeouts at larger shapes. An over-budget row must run alone.
-const MAX_EVAL_TOKENS: usize = 4_096;
-
-pub(crate) fn fits_eval(rows: usize, width: usize) -> bool {
-    rows == 1 || (rows <= MAX_EVAL_ROWS && rows <= MAX_EVAL_TOKENS / width.max(1))
-}
-
 #[cfg(test)]
-pub(crate) type EvalObserver = Arc<Mutex<Vec<(usize, Vec<usize>)>>>;
+use crate::runtime::limits::{EvalObserver, MAX_EVAL_TOKENS};
+use crate::runtime::limits::{MAX_EVAL_ROWS, fits_eval};
 
 /// One tower evaluated on a single owned MLX GPU stream.
 pub struct MlxRuntime {

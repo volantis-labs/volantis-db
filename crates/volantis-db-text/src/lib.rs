@@ -15,6 +15,7 @@
 extern crate self as volantis_db_text;
 
 /// Model architecture implementations.
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub mod arch;
 /// Immutable `.zem` bundle loading and validation.
 pub mod bundle;
@@ -22,6 +23,7 @@ mod epoch;
 mod error;
 mod ingest;
 mod model;
+#[cfg(target_os = "macos")]
 mod model_manifest;
 mod query;
 /// Model runtime implementations.

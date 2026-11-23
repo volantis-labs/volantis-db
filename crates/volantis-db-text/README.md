@@ -1,8 +1,19 @@
 # Volantis DB Text
 
 Local text embedding and dense (vector), lexical (BM25), or hybrid retrieval
-without supplying your own vectors. Requires macOS on Apple silicon; source
-builds need Xcode with the Metal toolchain.
+without supplying your own vectors. Models run on macOS on Apple silicon;
+source builds there need Xcode with the Metal toolchain.
+
+| Target | Builds | Model runtime |
+|---|---|---|
+| `aarch64-apple-darwin` | MLX, Core ML shim, model resolver | MLX (GPU) and Core ML |
+| `x86_64-apple-darwin` | model resolver, no MLX or Core ML | none yet: model opens return `ZE_ERR_UNSUPPORTED` |
+| `x86_64-pc-windows-msvc` | no MLX, Core ML or resolver | none yet: model opens return `ZE_ERR_UNSUPPORTED` |
+
+On Intel macOS and Windows every text-store open and embedded namespace open
+fails with `RuntimeError::UnsupportedBackend` (C: `ZE_ERR_UNSUPPORTED`) before
+any download, cache or store change. Ordinary namespaces and
+`ze_text_default_model` work. The portable CPU runtime is planned (WF-991).
 
 ```sh
 xcodebuild -downloadComponent MetalToolchain
@@ -92,6 +103,9 @@ Licensed under [GPL-3.0-only](https://www.gnu.org/licenses/gpl-3.0.html).
 enabled on hosted `macos-14`, runs every non-ignored test in both crates,
 and builds the full graph+text XCFramework to run all Swift `TextStoreTests`.
 Rust releases require these checks before publishing either crate.
+The `text-x64-macos` and `text-windows` jobs build both crates without MLX
+and run the platform contract tests (`backend_platform`, `ffi_text_platform`,
+`ffi_namespace`). These two jobs have not run yet.
 
 The dedicated real-model job runs
 `default_model::real_default_model_downloads_verifies_and_reopens_offline` and

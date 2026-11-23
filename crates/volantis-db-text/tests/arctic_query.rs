@@ -3,10 +3,14 @@
 use std::sync::Arc;
 use tempfile::tempdir;
 use volantis_db_text::bundle::Bundle;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use volantis_db_text::runtime::ModelRuntime;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use volantis_db_text::runtime::mlx::MlxRuntime;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use volantis_db_text::tower::{TokenBatch, TowerRole};
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[path = "fixtures/ze115/arctic_query_reference.rs"]
 #[allow(clippy::excessive_precision)]
 mod reference;
@@ -44,6 +48,7 @@ fn arctic_query_loads_factorized_config_from_layout_three() {
     );
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[test]
 fn arctic_query_factorized_embeddings_and_projection_match_torch() {
     let mut runtime = MlxRuntime::load(tiny_bundle(), TowerRole::Query).expect("MLX runtime");
@@ -67,12 +72,14 @@ fn arctic_query_factorized_embeddings_and_projection_match_torch() {
     }
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 struct Golden {
     original_tokens: usize,
     ids: Vec<i32>,
     vector: Vec<f32>,
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn goldens() -> [Vec<Golden>; 2] {
     let mut bytes = include_bytes!("goldens/clean71.bin").as_slice();
     fn word(bytes: &mut &[u8]) -> [u8; 4] {
@@ -104,6 +111,7 @@ fn goldens() -> [Vec<Golden>; 2] {
     roles
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn padded(cases: &[Golden]) -> TokenBatch {
     let width = cases
         .iter()
@@ -122,6 +130,7 @@ fn padded(cases: &[Golden]) -> TokenBatch {
         .expect("padded token IDs from reference tokenizer")
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn assert_pack_parity(actual: &[f32], expected: &[f32]) {
     // ModelRuntime returns projected values; TextStore applies the declared L2
     // normalization. Apply that same contract before comparing pack unit vectors.
@@ -156,6 +165,7 @@ fn assert_pack_parity(actual: &[f32], expected: &[f32]) {
     assert!(cosine >= 0.99999, "cosine {cosine}");
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[test]
 #[ignore = "requires ZE_CLEAN71_PACK, local ze-model Python dependencies, and MLX/Metal"]
 fn clean71_pair_matches_pack_fp32_goldens_with_padding_unicode_batching_and_truncation() {

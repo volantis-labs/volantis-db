@@ -1,4 +1,4 @@
-#![cfg(all(feature = "text", target_os = "macos"))]
+#![cfg(all(feature = "text", target_os = "macos", target_arch = "aarch64"))]
 mod common;
 use volantis_db_ffi::*;
 

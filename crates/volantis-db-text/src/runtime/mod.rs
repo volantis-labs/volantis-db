@@ -90,6 +90,11 @@ pub enum RuntimeError {
     UnsupportedDtype(String),
     /// The embed worker panicked while evaluating a submitted batch.
     WorkerPanicked,
+    /// This build target has no model runtime for the selected backend.
+    UnsupportedBackend {
+        /// Stable backend name.
+        backend: &'static str,
+    },
 }
 
 impl std::fmt::Display for RuntimeError {
@@ -116,6 +121,10 @@ impl std::fmt::Display for RuntimeError {
                 write!(formatter, "tensor {name} has an unsupported dtype")
             }
             Self::WorkerPanicked => formatter.write_str("embed worker panicked"),
+            Self::UnsupportedBackend { backend } => write!(
+                formatter,
+                "the {backend} model runtime is not available for this build target"
+            ),
         }
     }
 }
@@ -134,10 +143,63 @@ pub trait ModelRuntime {
     fn identity(&self) -> RuntimeIdentity;
 }
 
+/// Model runtime backend selected for one open.
+///
+/// The selection is per open, never per process, so a forced selection cannot
+/// leak into another open or a shared session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Backend {
+    /// MLX on the GPU, with Core ML for a compiled query tower.
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    Apple,
+    /// Portable CPU runtime. It is not implemented yet (WF-991).
+    #[cfg_attr(
+        all(target_os = "macos", target_arch = "aarch64", not(test)),
+        expect(
+            dead_code,
+            reason = "only tests select the CPU backend on Apple silicon until WF-991"
+        )
+    )]
+    Cpu,
+}
+
+impl Backend {
+    /// Returns the backend that serves this build target.
+    pub(crate) const fn target_default() -> Self {
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        return Self::Apple;
+        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+        return Self::Cpu;
+    }
+
+    /// Returns the stable name used in diagnostics.
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Self::Apple => "apple",
+            Self::Cpu => "cpu",
+        }
+    }
+
+    /// Fails before any model I/O when this build cannot run the backend.
+    pub(crate) fn available(self) -> Result<(), RuntimeError> {
+        match self {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Self::Apple => Ok(()),
+            // WF-991 makes the portable CPU runtime available.
+            Self::Cpu => Err(RuntimeError::UnsupportedBackend {
+                backend: self.name(),
+            }),
+        }
+    }
+}
+
 /// CoreML runtime, including the Apple Neural Engine.
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub mod coreml;
+pub(crate) mod limits;
 /// MLX GPU runtime.
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub mod mlx;
 pub(crate) mod mlx_cache;
 
@@ -167,8 +229,42 @@ mod tests {
             RuntimeError::Shape("shape".to_owned()),
             RuntimeError::UnsupportedDtype("weight".to_owned()),
             RuntimeError::WorkerPanicked,
+            RuntimeError::UnsupportedBackend { backend: "cpu" },
         ] {
             assert!(!error.to_string().is_empty());
         }
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[test]
+    fn forced_cpu_selects_unavailable_backend() {
+        use crate::{NamespaceModel, TextError};
+        let unsupported = |result: Result<NamespaceModel, TextError>| {
+            matches!(
+                result,
+                Err(TextError::Runtime(RuntimeError::UnsupportedBackend {
+                    backend: "cpu"
+                }))
+            )
+        };
+        let root = tempfile::tempdir().expect("temporary root");
+        let missing = root.path().join("fake-990-missing.zem");
+        let tiny = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/ze115/gte.zem"
+        ));
+        // The selection fails before the bundle is opened or a session starts.
+        assert!(unsupported(NamespaceModel::open_bundle_on(
+            &missing,
+            Backend::Cpu
+        )));
+        assert!(unsupported(NamespaceModel::open_bundle_on(
+            tiny,
+            Backend::Cpu
+        )));
+        // The forced selection was per open: the default is still Apple.
+        assert_eq!(Backend::target_default(), Backend::Apple);
+        let model = NamespaceModel::open_bundle(tiny).expect("default Apple backend");
+        drop(model);
     }
 }

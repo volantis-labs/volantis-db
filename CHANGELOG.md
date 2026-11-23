@@ -39,6 +39,10 @@ First release of Volantis DB.
   with zero chunks and no vector, with no model call. It is readable and
   filterable, never a dense or neighbour hit, and never pending. A space is
   real text.
+- `volantis-db-text` and the text-enabled C ABI build for Intel macOS and
+  Windows x64 without MLX or Core ML. There, every text-store open and
+  embedded namespace open returns `ZE_ERR_UNSUPPORTED` (Rust:
+  `RuntimeError::UnsupportedBackend`) before any download or store change.
 - Language APIs over one native engine: Rust crates, a versioned C ABI
   (`volantis_db.h`), Python (`volantis-db`), Node.js and TypeScript
   (`volantis-db`), and Swift (`VolantisDB` package).

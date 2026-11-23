@@ -1,16 +1,21 @@
 #![allow(clippy::expect_used)]
 
 use std::path::PathBuf;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use std::sync::Arc;
 
 use tempfile::tempdir;
 use volantis_db_text::bundle::{Bundle, BundleError};
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use volantis_db_text::runtime::ModelRuntime;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use volantis_db_text::runtime::mlx::MlxRuntime;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use volantis_db_text::tower::{TokenBatch, TowerRole};
 
 mod common;
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[path = "goldens/astra_08_embeddings.rs"]
 #[allow(clippy::excessive_precision)] // Preserve the reference generator's exact FP32 values.
 mod astra_08_embeddings;
@@ -37,6 +42,7 @@ fn legacy_model_fixtures_require_explicit_directory() {
     );
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[test]
 #[ignore = "requires ZE_TEXT_TEST_BUNDLE_DIR with original LEAF/Arctic fixtures; inference needs native MLX/Metal"]
 fn astra_08_reembedded_unicode_documents_match_reference() {
@@ -259,6 +265,7 @@ fn astra_08_ascii_tokenization_is_unchanged() {
     }
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[test]
 #[ignore = "requires ZE_TEXT_TEST_BUNDLE_DIR with original LEAF/Arctic fixtures; inference needs native MLX/Metal"]
 fn arctic_v15_batched_cls_matches_reference_across_padding_and_chunk_boundary() {
@@ -310,6 +317,7 @@ fn arctic_v15_batched_cls_matches_reference_across_padding_and_chunk_boundary() 
     }
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn assert_normalized_reference(actual: &[f32], expected: &[f32], rows: usize, row: usize) {
     assert_eq!(actual.len(), expected.len());
     let norm = actual
@@ -328,6 +336,7 @@ fn assert_normalized_reference(actual: &[f32], expected: &[f32], rows: usize, ro
     );
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[test]
 fn batched_one_dimension_truncation_matches_each_individual_row() {
     let directory = tempdir().expect("tempdir");
@@ -354,6 +363,7 @@ fn batched_one_dimension_truncation_matches_each_individual_row() {
     assert_eq!(batch.values(), expected);
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[test]
 #[ignore = "requires ZE_TEXT_TEST_BUNDLE_DIR with original LEAF/Arctic fixtures; inference needs native MLX/Metal"]
 fn bert_with_dense_head_matches_the_fp32_reference_vectors_for_mdbr_leaf_ir_to_1e_4() {
@@ -365,6 +375,7 @@ fn bert_with_dense_head_matches_the_fp32_reference_vectors_for_mdbr_leaf_ir_to_1
     bert_fixture_exercises_declared_pooling_and_mrl();
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[test]
 #[ignore = "requires ZE_TEXT_TEST_BUNDLE_DIR with original LEAF/Arctic fixtures; inference needs native MLX/Metal"]
 fn gte_matches_the_fp32_reference_vectors_for_arctic_m_v2_to_1e_4() {
@@ -393,6 +404,7 @@ fn an_unknown_architecture_id_fails_typed_at_load() {
     ));
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn matches_reference(bundle_name: &str, role: TowerRole, golden: &str) {
     let root = PathBuf::from(
         std::env::var_os("ZE_TEXT_TEST_BUNDLE_DIR")
@@ -446,6 +458,7 @@ fn matches_reference(bundle_name: &str, role: TowerRole, golden: &str) {
     );
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn bert_fixture_exercises_declared_pooling_and_mrl() {
     let directory = tempdir().expect("tempdir");
     let tokens = TokenBatch::new(vec![2, 5, 6, 3, 0], vec![1.0, 1.0, 1.0, 1.0, 0.0], 1, 5)
@@ -475,6 +488,7 @@ fn bert_fixture_exercises_declared_pooling_and_mrl() {
     assert!(runtime.embed_batch(&tokens).is_err());
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn json_string<'a>(document: &'a str, key: &str) -> &'a str {
     let marker = format!("\"{key}\": \"");
     document
@@ -484,6 +498,7 @@ fn json_string<'a>(document: &'a str, key: &str) -> &'a str {
         .expect("golden string")
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn json_i32_array(document: &str, key: &str) -> Vec<i32> {
     json_array(document, key)
         .into_iter()
@@ -491,6 +506,7 @@ fn json_i32_array(document: &str, key: &str) -> Vec<i32> {
         .collect()
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn json_f32_array(document: &str, key: &str) -> Vec<f32> {
     json_array(document, key)
         .into_iter()
@@ -498,6 +514,7 @@ fn json_f32_array(document: &str, key: &str) -> Vec<f32> {
         .collect()
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn json_array<'a>(document: &'a str, key: &str) -> Vec<&'a str> {
     let marker = format!("\"{key}\": [");
     let body = document

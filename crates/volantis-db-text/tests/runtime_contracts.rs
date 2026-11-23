@@ -1,17 +1,24 @@
 #![allow(clippy::expect_used, clippy::indexing_slicing, clippy::panic)]
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use std::sync::Arc;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use tempfile::tempdir;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use volantis_db::epoch::ComputeUnits;
-use volantis_db_text::bundle::Bundle;
-use volantis_db_text::runtime::mlx::MlxRuntime;
-use volantis_db_text::runtime::{ModelRuntime, RuntimeError};
-use volantis_db_text::tower::{TokenBatch, TowerRole};
+use volantis_db_text::runtime::RuntimeError;
+use volantis_db_text::tower::TokenBatch;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+use volantis_db_text::{
+    bundle::Bundle, runtime::ModelRuntime, runtime::mlx::MlxRuntime, tower::TowerRole,
+};
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[path = "fixtures/ze115/reference.rs"]
 #[allow(clippy::excessive_precision)]
 mod reference;
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn fixture(architecture: &str, pooling: u8, dims: u32) -> Arc<Bundle> {
     let mut bytes = match architecture {
         "bert" => include_bytes!("fixtures/ze115/bert.zem").to_vec(),
@@ -29,6 +36,7 @@ fn fixture(architecture: &str, pooling: u8, dims: u32) -> Arc<Bundle> {
     Arc::new(Bundle::open(path).expect("valid tiny transformer"))
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn tokens(rows: usize) -> TokenBatch {
     let ids = [[2, 5, 6, 3, 0], [2, 6, 3, 0, 0]];
     let masks = [[1., 1., 1., 1., 0.], [1., 1., 1., 0., 0.]];
@@ -41,6 +49,7 @@ fn tokens(rows: usize) -> TokenBatch {
     .expect("rectangular rows with distinct masks")
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[test]
 fn mixed_length_batch_matches_each_row_embedded_alone() {
     // Cross the row split with ragged inputs: the batch and individual calls
@@ -79,6 +88,7 @@ fn mixed_length_batch_matches_each_row_embedded_alone() {
     }
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[test]
 fn tiny_transformers_match_independent_cpu_reference_across_pooling_and_chunk_boundaries() {
     assert_eq!(MlxRuntime::max_eval_rows(), 32);
@@ -121,6 +131,7 @@ fn tiny_transformers_match_independent_cpu_reference_across_pooling_and_chunk_bo
     }
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[test]
 fn mlx_rejects_unsupported_placement_and_malformed_chunk_shapes() {
     let bundle = fixture("bert", 1, 3);
@@ -205,6 +216,7 @@ fn token_batches_preserve_every_row_when_padding_and_refuse_shape_loss() {
     );
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[test]
 fn mapped_model_tensor_metadata_is_rejected_with_qualified_error_context() {
     let root = tempdir().expect("root");
@@ -240,6 +252,7 @@ fn mapped_model_tensor_metadata_is_rejected_with_qualified_error_context() {
     assert!(MlxRuntime::load(clean, TowerRole::Document).is_ok());
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn rewrite_fixture(path: &std::path::Path, mut bytes: Vec<u8>) {
     let end = bytes.len() - 16;
     let digest = xxhash_rust::xxh3::xxh3_128(&bytes[..end]);

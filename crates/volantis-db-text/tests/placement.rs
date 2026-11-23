@@ -1,3 +1,4 @@
+#![cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #![allow(clippy::expect_used)]
 
 use std::path::PathBuf;

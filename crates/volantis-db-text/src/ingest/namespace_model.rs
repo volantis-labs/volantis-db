@@ -74,7 +74,14 @@ impl NamespaceModel {
 
     /// Opens an explicit local bundle with a private runtime.
     pub fn open_bundle(path: &Path) -> Result<Self, TextError> {
-        Self::acquire(path, discover_query_coreml(path), None)
+        Self::open_bundle_on(path, Backend::target_default())
+    }
+
+    /// Opens a private runtime on an explicit backend. Tests force one backend
+    /// per open; no process-wide selection exists.
+    pub(crate) fn open_bundle_on(path: &Path, backend: Backend) -> Result<Self, TextError> {
+        backend.available()?;
+        Self::acquire(path, discover_query_coreml(path), None, backend)
     }
 
     /// Validates the requested cache entry before looking up its session.
@@ -82,6 +89,9 @@ impl NamespaceModel {
         model: &crate::ModelRef,
         options: &crate::ModelOpenOptions<'_>,
     ) -> Result<Self, TextError> {
+        // No download, cache limit or session lookup happens without a runtime.
+        let backend = Backend::target_default();
+        backend.available()?;
         let path = crate::resolve_model(model, options).map_err(TextError::ModelResolution)?;
         crate::runtime::mlx_cache::configure(options.text.mlx_cache_limit_bytes)?;
         let (query, artifact) = match discover_query_coreml(&path) {
@@ -103,13 +113,14 @@ impl NamespaceModel {
             model.manifest_sha256.clone(),
             artifact,
         );
-        Self::acquire(&path, query, Some(key))
+        Self::acquire(&path, query, Some(key), backend)
     }
 
     fn acquire(
         path: &Path,
         query: Option<PathBuf>,
         key: Option<SessionKey>,
+        backend: Backend,
     ) -> Result<Self, TextError> {
         let mut registry = registry().lock().map_err(|_| registry_error())?;
         if let Some(error) = registry.pending.take() {
@@ -142,7 +153,7 @@ impl NamespaceModel {
             } else {
                 crate::runtime::mlx_cache::configure(None)?;
             }
-            let runtime = RuntimeClient::start(bundle.clone(), query)?;
+            let runtime = RuntimeClient::start(bundle.clone(), query, backend)?;
             #[cfg(any(test, feature = "test-support"))]
             STARTS.with(|count| count.set(count.get() + 1));
             let session = Arc::new(Session {
@@ -332,7 +343,7 @@ impl Session {
     }
 }
 
-use crate::runtime::mlx::{MAX_EVAL_ROWS, fits_eval};
+use crate::runtime::limits::{MAX_EVAL_ROWS, fits_eval};
 
 struct PendingChunk {
     source: usize,
@@ -392,7 +403,7 @@ impl NamespaceEmbedder for NamespaceModel {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos", target_arch = "aarch64"))]
 #[allow(clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;

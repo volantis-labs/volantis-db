@@ -661,7 +661,7 @@ fn embedded_cache_spec_checks_size_before_reading_limit() {
     full.embedded.spec.abi_reserved = 0;
     full.embedded.spec.has_vector_space = 4;
     assert_eq!(open(&full.embedded.spec), ZeErrorCode::ZeErrInvalidArgument);
-    #[cfg(not(feature = "text"))]
+    #[cfg(not(all(feature = "text", target_os = "macos", target_arch = "aarch64")))]
     {
         let rev = b"0123456789abcdef0123456789abcdef01234567";
         let sha = b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -721,8 +721,13 @@ fn wf989_v3_namespace_spec_validation() {
     valid.model_cache_dir_len = cache_path.len();
     valid.offline = 1;
     // The well-formed control proves the policy reaches resolution: the empty
-    // explicit root is an offline miss (text) or the build refuses it.
-    let expected = if cfg!(feature = "text") {
+    // explicit root is an offline miss (text with a model runtime) or the
+    // build refuses it.
+    let expected = if cfg!(all(
+        feature = "text",
+        target_os = "macos",
+        target_arch = "aarch64"
+    )) {
         ZeErrorCode::ZeErrNotFound
     } else {
         ZeErrorCode::ZeErrUnsupported
@@ -822,8 +827,12 @@ fn wf985_deferred_abi_contract() {
     valid.v3.offline = 1;
     valid.document_schedule = 2;
     // The well-formed control reaches model resolution: an offline miss in a
-    // text build, a refusal in a build without text.
-    let expected = if cfg!(feature = "text") {
+    // text build with a model runtime, a refusal in any other build.
+    let expected = if cfg!(all(
+        feature = "text",
+        target_os = "macos",
+        target_arch = "aarch64"
+    )) {
         ZeErrorCode::ZeErrNotFound
     } else {
         ZeErrorCode::ZeErrUnsupported

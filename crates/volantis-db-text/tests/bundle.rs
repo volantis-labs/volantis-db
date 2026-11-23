@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use tempfile::tempdir;
 use volantis_db_text::bundle::{Bundle, BundleError};
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use volantis_db_text::runtime::{RuntimeError, mlx::MlxRuntime};
 use volantis_db_text::tower::TowerRole;
 
@@ -91,6 +92,7 @@ fn a_bundle_with_a_corrupted_tensor_digest_is_refused_before_any_tensor_is_mappe
         bundle.verify_tower(TowerRole::Document),
         Err(BundleError::TensorDigest { .. })
     ));
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     assert!(
         matches!(MlxRuntime::load(bundle, TowerRole::Document), Err(RuntimeError::Shape(detail)) if detail.contains("tensor") && detail.contains("digest mismatch"))
     );
@@ -163,6 +165,7 @@ fn a_tower_weights_digest_must_equal_its_exact_tensor_section() {
         bundle.verify_tower(TowerRole::Document),
         Err(BundleError::WeightsDigest { .. })
     ));
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     assert!(
         matches!(MlxRuntime::load(bundle, TowerRole::Document), Err(RuntimeError::Shape(detail)) if detail.contains("weights digest mismatch"))
     );

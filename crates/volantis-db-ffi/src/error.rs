@@ -11,6 +11,7 @@ impl FfiError {
     #[cfg(feature = "text")]
     pub(crate) fn text(error: volantis_db_text::TextError) -> Self {
         use volantis_db_text::TextError;
+        use volantis_db_text::runtime::RuntimeError;
 
         let message = error.to_string();
         let code = match error {
@@ -20,11 +21,15 @@ impl FfiError {
                 volantis_db_text::ModelError::Invalid(_) => ZeErrorCode::ZeErrInvalidArgument,
                 volantis_db_text::ModelError::Download(_)
                 | volantis_db_text::ModelError::Io(_) => ZeErrorCode::ZeErrIo,
+                volantis_db_text::ModelError::UnsupportedBackend => ZeErrorCode::ZeErrUnsupported,
             },
             TextError::Bundle(_) => ZeErrorCode::ZeErrBundle,
             TextError::Runtime(
                 volantis_db_text::runtime::RuntimeError::CacheLimitConflict { .. },
             ) => ZeErrorCode::ZeErrMlxCacheLimitConflict,
+            TextError::Runtime(RuntimeError::UnsupportedBackend { .. }) => {
+                ZeErrorCode::ZeErrUnsupported
+            }
             TextError::Runtime(_) => ZeErrorCode::ZeErrModel,
             TextError::Pipeline { .. } => ZeErrorCode::ZeErrPipeline,
             TextError::DimsMismatch { .. } => ZeErrorCode::ZeErrDimensionMismatch,

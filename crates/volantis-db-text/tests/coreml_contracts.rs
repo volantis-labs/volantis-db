@@ -1,4 +1,4 @@
-#![cfg(target_os = "macos")]
+#![cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #![allow(clippy::expect_used, clippy::indexing_slicing)]
 
 use std::os::unix::ffi::OsStringExt;

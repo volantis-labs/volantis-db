@@ -22,10 +22,14 @@ crate-type = ["rlib", "staticlib"]
 volantis-db = { path = "../volantis-db", version = "=0.1.0" }
 libc.workspace = true
 xxhash-rust.workspace = true
-mlx-rs = { version = "=0.25.3", default-features = false, features = ["metal"] }
 unicode-normalization-alignments = "=0.1.12"
 unicode_categories = "=0.1.1"
 unicode-segmentation = "=1.12.0"
+
+# MLX (GPU) and the Core ML shim run on Apple silicon only. Other targets
+# build without them and report an unavailable model runtime.
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+mlx-rs = { version = "=0.25.3", default-features = false, features = ["metal"] }
 
 [build-dependencies]
 cc = "1"

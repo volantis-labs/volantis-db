@@ -2,15 +2,20 @@
 //! WF-986: two BERT towers with per-role XLM-R Unigram tokenizers and prompts.
 
 use std::path::{Path, PathBuf};
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use std::sync::Arc;
 
 use tempfile::tempdir;
 use volantis_db::lifecycle::embedded::NamespaceEmbedder;
 use volantis_db_text::NamespaceModel;
 use volantis_db_text::bundle::{Bundle, BundleError};
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use volantis_db_text::runtime::ModelRuntime;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use volantis_db_text::runtime::mlx::MlxRuntime;
-use volantis_db_text::tower::{Pooling, TokenBatch, TowerRole};
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+use volantis_db_text::tower::TowerRole;
+use volantis_db_text::tower::{Pooling, TokenBatch};
 
 #[path = "fixtures/wf986/reference.rs"]
 #[allow(dead_code, clippy::excessive_precision, clippy::unreadable_literal)]
@@ -215,6 +220,7 @@ fn role_tokens() {
     assert_ne!(document_rows(&wrong, &texts), expected_document);
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn assert_vector(actual: &[f32], expected: &[f32], context: &str) {
     assert_eq!(actual.len(), expected.len(), "{context} dimensions");
     assert!(actual.iter().all(|v| v.is_finite()), "{context} finite");
@@ -228,6 +234,7 @@ fn assert_vector(actual: &[f32], expected: &[f32], context: &str) {
     }
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 #[test]
 fn tiny_bert_unigram_vectors() {
     let directory = tempdir().expect("tempdir");

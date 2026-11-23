@@ -7,6 +7,7 @@ use super::RuntimeError;
 /// The first text runtime to set the process-wide limit wins.
 pub const DEFAULT_MLX_CACHE_LIMIT_BYTES: usize = 4 * 1024 * 1024 * 1024;
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 unsafe extern "C" {
     fn mlx_set_cache_limit(old: *mut usize, limit: usize) -> libc::c_int;
     fn mlx_clear_cache() -> libc::c_int;
@@ -14,6 +15,7 @@ unsafe extern "C" {
 
 // Configuration is pure; only loading an MLX tower applies the process policy.
 static CONFIGURED: OnceLock<usize> = OnceLock::new();
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 static APPLIED: OnceLock<Result<(), RuntimeError>> = OnceLock::new();
 
 pub(crate) fn configure(option: Option<usize>) -> Result<(), RuntimeError> {
@@ -38,6 +40,7 @@ pub(crate) fn check_explicit(option: Option<usize>) -> Result<(), RuntimeError> 
     Ok(())
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub(crate) fn apply() -> Result<(), RuntimeError> {
     configure(None)?;
     let limit = CONFIGURED
@@ -47,6 +50,7 @@ pub(crate) fn apply() -> Result<(), RuntimeError> {
     APPLIED.get_or_init(|| set_limit(limit).map(|_| ())).clone()
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn set_limit(limit: usize) -> Result<usize, RuntimeError> {
     let _call = super::mlx::mlx_calls()
         .lock()
@@ -64,12 +68,13 @@ fn set_limit(limit: usize) -> Result<usize, RuntimeError> {
     Ok(old)
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos", target_arch = "aarch64"))]
 thread_local! {
     pub(crate) static CLEAR_CALLS: std::cell::Cell<usize> = const {std::cell::Cell::new(0)};
     pub(crate) static FAIL_CLEAR: std::cell::Cell<bool> = const {std::cell::Cell::new(false)};
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub(crate) fn clear() -> Result<(), RuntimeError> {
     match APPLIED.get() {
         None => return Ok(()),
@@ -99,6 +104,12 @@ pub(crate) fn clear() -> Result<(), RuntimeError> {
     Ok(())
 }
 
+/// This target has no MLX buffer cache to clear.
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+pub(crate) fn clear() -> Result<(), RuntimeError> {
+    Ok(())
+}
+
 fn resolve_limit(option: Option<usize>, env: Option<&OsStr>) -> Result<usize, RuntimeError> {
     if let Some(limit) = option {
         return Ok(limit);
@@ -116,10 +127,11 @@ fn resolve_limit(option: Option<usize>, env: Option<&OsStr>) -> Result<usize, Ru
 #[allow(clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::bundle::Bundle;
-    use crate::runtime::ModelRuntime;
-    use crate::runtime::mlx::MlxRuntime;
-    use crate::tower::TowerRole;
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    use crate::{
+        bundle::Bundle, runtime::ModelRuntime, runtime::mlx::MlxRuntime, tower::TowerRole,
+    };
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     use std::sync::Arc;
 
     #[test]
@@ -174,6 +186,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     #[test]
     #[ignore = "requires ZE_TEXT_BUNDLE and native Metal; run this test alone"]
     fn real_bundle_cache_limit_preserves_bit_identical_vectors_for_100_chunks() {
