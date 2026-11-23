@@ -12,6 +12,10 @@ GRAPH_BUDGET_KB="${ZE_GRAPH_SIZE_BUDGET_KB:-12288}"
 # ZE-506, orchestrator decision 2026-10-19 (flagged to the owner for veto):
 # the arm64 full graph+text FFI archive is gated at 28,672 KB.
 TEXT_BUDGET_KB=28672
+# WF-992, owner decision 2026-11-23: the macOS x86_64 graph+text FFI archive
+# (pure-Rust CPU runtime, no MLX) is gated at 14,336 KB. WF-991 measured
+# 12,474 KB. The graph-only 12,288 KB and arm64 28,672 KB gates are unchanged.
+X64_TEXT_BUDGET_KB=14336
 
 if [[ ! "$BUDGET_KB" =~ ^[0-9]+$ ]]; then
     echo "error: ZE_SIZE_BUDGET_KB must be a non-negative integer, got '$BUDGET_KB'" >&2
@@ -137,15 +141,17 @@ PY_RECEIPT
 
 # CI can gate the exact prebuilt archive without rebuilding or changing features.
 case "${1:-}" in
-    --graph-archive|--text-graph-archive|--graph-core-archive|--ffi-archive|--core-archive)
+    --graph-archive|--text-graph-archive|--x64-text-graph-archive|--graph-core-archive|--ffi-archive|--core-archive)
         if [[ $# -ne 2 ]]; then
-            echo "usage: $0 [--graph-archive|--text-graph-archive|--graph-core-archive|--ffi-archive|--core-archive ARCHIVE]" >&2
+            echo "usage: $0 [--graph-archive|--text-graph-archive|--x64-text-graph-archive|--graph-core-archive|--ffi-archive|--core-archive ARCHIVE]" >&2
             exit 2
         fi
         if [[ "$1" == "--graph-archive" ]]; then
             measure_artifact "graph ffi" "$2" gate "$GRAPH_BUDGET_KB"
         elif [[ "$1" == "--text-graph-archive" ]]; then
             measure_artifact "text graph ffi" "$2" gate "$TEXT_BUDGET_KB"
+        elif [[ "$1" == "--x64-text-graph-archive" ]]; then
+            measure_artifact "x64 text graph ffi" "$2" gate "$X64_TEXT_BUDGET_KB"
         elif [[ "$1" == "--graph-core-archive" ]]; then
             measure_artifact "graph core" "$2" report
         else
@@ -171,13 +177,19 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
         "$TARGET_ROOT/size-budget-graph/release/libvolantis_db_ffi.a" gate "$GRAPH_BUDGET_KB"
 fi
 
-# The universal/Intel and non-macOS paths remain text-free. Preserve the
-# separate graph-free core/FFI and graph-only measurements above.
-if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]; then
+# Text ships on macOS only: MLX on arm64, the CPU runtime on x86_64 (WF-991).
+# Non-macOS paths remain text-free. Preserve the separate graph-free core/FFI
+# and graph-only measurements above.
+if [[ "$(uname -s)" == Darwin ]]; then
+    case "$(uname -m)" in
+        arm64) text_label="full text ffi"; text_budget_kb="$TEXT_BUDGET_KB" ;;
+        x86_64) text_label="x64 text graph ffi"; text_budget_kb="$X64_TEXT_BUDGET_KB" ;;
+        *) echo "error: no text size gate for macOS $(uname -m)" >&2; exit 2 ;;
+    esac
     cargo build --locked --release -p volantis-db-ffi --features graph-cypher,text \
         --target-dir "$TARGET_ROOT/size-budget-text"
-    measure_artifact "full text ffi" \
-        "$TARGET_ROOT/size-budget-text/release/libvolantis_db_ffi.a" gate "$TEXT_BUDGET_KB"
+    measure_artifact "$text_label" \
+        "$TARGET_ROOT/size-budget-text/release/libvolantis_db_ffi.a" gate "$text_budget_kb"
 fi
 
 CONSUMER_MANIFEST="$PROJECT_ROOT/tools/size-consumer/Cargo.toml"

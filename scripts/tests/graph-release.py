@@ -316,6 +316,27 @@ class ReleaseTests(unittest.TestCase):
         self.assertGreater(report['section_bytes'], 12288 * 1024)
         self.assertEqual(report['sha256'], self.ref(archive)['sha256'])
 
+    def test_macos_x64_text_archive_has_its_own_gate(self):
+        # WF-992 owner decision: x86_64 graph+text is gated at 14,336 KB, not
+        # at the 12,288 KB graph-only gate and not at the arm64 28,672 KB gate.
+        workflow = (self.g.ROOT / '.github/workflows/node.yml').read_text()
+        package = workflow.split('  package:', 1)[1].split('  windows-package:', 1)[0]
+        commands = [shlex.split(line.strip()) for line in package.splitlines()
+                    if line.strip().startswith('scripts/size-budget.sh ')]
+        self.assertEqual([c[1] for c in commands], ['--text-graph-archive', '--x64-text-graph-archive'])
+        script = str(self.g.ROOT / 'scripts/size-budget.sh')
+        env = dict(os.environ, CARGO_TARGET_DIR=str(self.root / 'target'))
+        for kib, code in ((12288 + 1, 0), (14336 + 1, 1)):
+            source = self.root / f'x64-{kib}.c'
+            source.write_text(f'char ze_size_fixture[{kib} * 1024 - 512] = {{1}};\n')
+            obj, archive = self.root / f'x64-{kib}.o', self.root / f'x64-{kib}.a'
+            subprocess.run(['clang', '-c', str(source), '-o', str(obj)], check=True, capture_output=True)
+            subprocess.run(['ar', 'rcs', str(archive), str(obj)], check=True, capture_output=True)
+            result = subprocess.run(['bash', script, '--x64-text-graph-archive', str(archive)],
+                                    cwd=self.g.ROOT, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+            self.assertIn(f'budget: 14336 KB', result.stdout)
+
     def test_installed_checker_requires_structured_handoff(self):
         spec = importlib.util.spec_from_file_location('installed',
             self.g.ROOT / 'scripts/release/check-installed-graph.py')

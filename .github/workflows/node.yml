@@ -88,10 +88,11 @@ jobs:
             nm -gU "target/native-archives/$t/libvolantis_db_ffi.a" | grep ' T _ze_store_graph_apply$'
             du -k "target/native-archives/$t/libvolantis_db_ffi.a"
             size "target/native-archives/$t/libvolantis_db_ffi.a"
+            # Both slices carry text: MLX on arm64, the CPU runtime on x86_64.
             if [ "$t" = aarch64-apple-darwin ]; then
               scripts/size-budget.sh --text-graph-archive "target/native-archives/$t/libvolantis_db_ffi.a"
             else
-              scripts/size-budget.sh --graph-archive "target/native-archives/$t/libvolantis_db_ffi.a"
+              scripts/size-budget.sh --x64-text-graph-archive "target/native-archives/$t/libvolantis_db_ffi.a"
             fi
           done
           python3 scripts/tests/native-packaging.py \
