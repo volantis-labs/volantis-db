@@ -15,6 +15,7 @@ public struct NamespaceSpec: Sendable {
     public var attributes: [AttributeDefinition]
     public var vectorSpace: VectorSpace?
     public var epoch: Epoch?
+    public var embeddedModel: TextModel?
 
     public init(
         attributes: [AttributeDefinition],
@@ -24,6 +25,13 @@ public struct NamespaceSpec: Sendable {
         self.attributes = attributes
         self.vectorSpace = vectorSpace
         self.epoch = epoch
+        self.embeddedModel = nil
+    }
+
+    /// The pinned model supplies the vector space and embedding epoch.
+    public init(attributes: [AttributeDefinition], embeddedModel: TextModel) {
+        self.init(attributes: attributes, vectorSpace: nil)
+        self.embeddedModel = embeddedModel
     }
 }
 
@@ -41,6 +49,15 @@ extension ZeppelinStore {
         spec: NamespaceSpec,
         options: OpenOptions = OpenOptions()
     ) async throws -> ZeppelinStore {
+        if spec.embeddedModel != nil {
+            #if ZE_TEXT
+            guard spec.vectorSpace == nil, spec.epoch == nil else {
+                throw ZeppelinError.invalidArgument
+            }
+            #else
+            throw ZeppelinError.unsupported
+            #endif
+        }
         let namespace = NamespaceReopenConfiguration(root: root, name: name, spec: spec)
         return try await open(
             configuration: ReopenConfiguration(
@@ -124,7 +141,7 @@ extension ZeppelinStore {
                             spec.normalization =
                                 configuration.spec.vectorSpace?.normalization.rawValue ?? 0
                             spec.epoch = epoch
-                            return try withUnsafePointer(to: &spec) { specPointer in
+                            func openNamespace(_ specPointer: UnsafePointer<ZeNamespaceSpec>) throws -> UInt64 {
                                 var open = ZeOpenRequest()
                                 open.abi_size = abiSize(ZeOpenRequest.self)
                                 open.access_mode = options.accessMode.rawValue
@@ -147,6 +164,10 @@ extension ZeppelinStore {
                                 try checkZeppelin(ze_namespace_open(&request, &handle))
                                 return handle
                             }
+
+                            return try withUnsafeNamespaceSpec(
+                                &spec, model: configuration.spec.embeddedModel, openNamespace
+                            )
                         }
 
                         if let epoch = configuration.spec.epoch {
@@ -158,4 +179,29 @@ extension ZeppelinStore {
             }
         }
     }
+}
+
+private func withUnsafeNamespaceSpec<Result>(
+    _ spec: inout ZeNamespaceSpec,
+    model: TextModel?,
+    _ body: (UnsafePointer<ZeNamespaceSpec>) throws -> Result
+) throws -> Result {
+    if let model {
+        #if ZE_TEXT
+        return try model.withUnsafeModelRef { modelRef in
+            var embedded = ZeEmbeddedNamespaceSpec()
+            embedded.spec = spec
+            embedded.spec.abi_size = abiSize(ZeEmbeddedNamespaceSpec.self)
+            embedded.spec.has_vector_space = 2
+            embedded.model = modelRef
+            // The C entry point reads the sized extension from its prefix.
+            return try withUnsafePointer(to: &embedded) { pointer in
+                try body(UnsafeRawPointer(pointer).assumingMemoryBound(to: ZeNamespaceSpec.self))
+            }
+        }
+        #else
+        throw ZeppelinError.unsupported
+        #endif
+    }
+    return try withUnsafePointer(to: &spec, body)
 }

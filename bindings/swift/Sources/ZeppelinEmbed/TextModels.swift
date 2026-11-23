@@ -1,4 +1,5 @@
 #if ZE_TEXT
+import CZeppelinEmbed
 import Foundation
 
 public struct TextDocument: Sendable {
@@ -11,7 +12,6 @@ public struct TextDocument: Sendable {
     }
 }
 
-public enum TextLegs: Int32, Sendable { case dense = 0, lexical = 1, hybrid = 2 }
 public enum TextChunkPolicy: Sendable {
     case rejectOverlong
     case tokens(max: Int, overlap: Int)
@@ -49,6 +49,10 @@ public struct TextQueryResult: Sendable {
     public let embeddingEpoch: UInt64
     public let tokenizerEpoch: UInt64
 }
+#endif
+
+public enum TextLegs: Int32, Sendable { case dense = 0, lexical = 1, hybrid = 2 }
+
 /// Immutable model reference: repository, 40-hex revision, and 64-hex manifest pin.
 public struct TextModel: Sendable {
     /// Published immutable default model pair.
@@ -61,6 +65,27 @@ public struct TextModel: Sendable {
     public let manifestSHA256: String
     public init(repo: String, revision: String, manifestSHA256: String) {
         self.repo = repo; self.revision = revision; self.manifestSHA256 = manifestSHA256
+    }
+}
+
+#if ZE_TEXT
+extension TextModel {
+    func withUnsafeModelRef<Result>(_ body: (ZeTextModelRef) throws -> Result) rethrows -> Result {
+        try Array(repo.utf8).withUnsafeBufferPointer { repo in
+            try Array(revision.utf8).withUnsafeBufferPointer { revision in
+                try Array(manifestSHA256.utf8).withUnsafeBufferPointer { pin in
+                    var model = ZeTextModelRef()
+                    model.abi_size = abiSize(ZeTextModelRef.self)
+                    model.repo = repo.baseAddress
+                    model.repo_len = repo.count
+                    model.revision = revision.baseAddress
+                    model.revision_len = revision.count
+                    model.manifest_sha256 = pin.baseAddress
+                    model.manifest_sha256_len = pin.count
+                    return try body(model)
+                }
+            }
+        }
     }
 }
 

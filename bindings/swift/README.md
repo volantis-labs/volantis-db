@@ -299,6 +299,64 @@ are text-free. Its dynamic `ZeppelinEmbedGraph.framework` carries
 artifact validation, also set `ZE_USE_LOCAL_XCFRAMEWORK=1`; the package selects
 `target/xcframework-graph-cypher/ZeppelinEmbedGraph.xcframework`.
 
+### Embedded text namespaces
+
+Use the full graph + text XCFramework (`ZE_ENABLE_GRAPH=1`) on macOS 14+
+arm64. Core and graph-only builds throw `ZeppelinError.unsupported` for
+embedded namespace operations.
+
+`NamespaceSpec(attributes:embeddedModel:)` accepts a pinned `TextModel`.
+The model supplies the vector space and embedding epoch. Supplying an
+explicit vector space or epoch as well is an error. Namespace open resolves
+the model through the standard model cache, and reopen uses the same
+model pins. Send text with an empty vector to `ZeppelinStore.upsert`.
+
+```swift
+let spec = NamespaceSpec(
+    attributes: [AttributeDefinition(id: 1, name: "meeting", type: .u64, nullable: false)],
+    embeddedModel: .default
+)
+let notes = try await ZeppelinStore.openNamespace(root: rootURL, name: "notes", spec: spec)
+let noteID = DocumentID(high: 0, low: 1)
+_ = try await notes.upsert([
+    IngestDocument(id: noteID, revision: 1, timestamp: 10, vector: [],
+                   text: transcript, attributes: [1: .u64(7)])
+])
+let hits = try await notes.queryEmbedded("delivery dates", leg: .hybrid, k: 5,
+                                        filter: .eq(1, .u64(7)))
+```
+
+`queryEmbedded` ranks chunks using exact squared L2 with `.dense`, BM25
+with `.lexical`, or reciprocal rank fusion with `.hybrid`. The limit
+`k` is 1–4096. Each `EmbeddedHit` includes the document ID, revision,
+timestamp, attributes, zero-based chunk, text and score. The half-open
+`byteStart..<byteEnd` range indexes the source's UTF-8 bytes.
+
+```swift
+let source = NeighbourSource(id: noteID, chunk: 0)
+let nearest = try await notes.nearestChunks(source, options: NeighbourOptions(k: 5))
+let groups = try await notes.nearestChunksBatch(
+    [NeighbourSource(id: noteID), source],
+    options: NeighbourOptions(threshold: -0.25, filter: .eq(1, .u64(7)))
+)
+```
+
+Nearest-chunk search uses persisted document vectors. Omit `chunk` to
+score each candidate against the closest chunk in the whole source.
+Each `ChunkNeighbour` has an ID, zero-based chunk and negative squared L2
+score, with zero for an exact match. Ties sort by ID and chunk. Source
+document chunks are excluded unless `includeSource` is true. Batch results
+preserve input order, duplicate sources and empty groups. An unknown
+source ID or chunk throws `ZeppelinError.notFound`.
+
+`NeighbourOptions.k` limits results to 1–4096 per source. With only a
+`threshold`, the result contains every score strictly above it. Omitting
+both returns up to 10 hits per source. All chunk searches support a
+`filter`, half-open `timestampRange` and `eligibleIds` before ranking.
+An empty eligibility list selects zero hits. Supply either a
+`cancellationToken` or a nonzero relative `deadlineNanoseconds`.
+Cancellation and timeout throw typed errors without partial results.
+
 ### TextStore
 
 `TextStore` is available from the release with `ZE_ENABLE_GRAPH=1` on macOS 14+

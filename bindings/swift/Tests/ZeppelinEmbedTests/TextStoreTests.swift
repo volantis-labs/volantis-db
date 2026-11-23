@@ -126,8 +126,11 @@ final class TextStoreTests: XCTestCase {
         let model = TextModel(repo: "fixture/tiny", revision: String(repeating: "a", count: 40),
             manifestSHA256: String(repeating: "0", count: 64))
         do {
+            // The process-wide MLX cache limit is fixed by the first text open in this process,
+            // so pass the configured limit (ZE_MLX_CACHE_LIMIT_BYTES or 4 GiB), as Node and Python do.
+            let limit = ProcessInfo.processInfo.environment["ZE_MLX_CACHE_LIMIT_BYTES"].flatMap(UInt64.init) ?? (UInt64(4) << 30)
             _ = try await TextStore.open(at: root.appendingPathComponent("store"), model: model,
-                cacheDirectory: root.appendingPathComponent("cache"), offline: true, mlxCacheLimitBytes: 0)
+                cacheDirectory: root.appendingPathComponent("cache"), offline: true, mlxCacheLimitBytes: limit)
             XCTFail("offline cache miss must fail")
         } catch { XCTAssertEqual(error as? ZeppelinError, .notFound) }
     }
