@@ -467,3 +467,10 @@ prepare the lexical assembly and prefix vocabulary, including record-only
 namespaces. Repeated calls reuse preparation; mutations invalidate it.
 Optional `cancel_token` and `deadline_ns` controls are mutually exclusive.
 A cancelled call may retain a complete assembly and can be retried.
+
+### Required API check
+
+The binding suite checks its public API against the
+[E17 API table](../fixtures/required_api_v1.json). Graph and text rows apply to
+builds that ship those capabilities. Python 0.1.0 has the owner-approved graph
+exclusion. The temporary E17 gap list is empty and CI rejects new entries.

@@ -875,3 +875,10 @@ results. An unknown source ID or chunk produces `ZE_ERR_NOT_FOUND`.
 C callers pass one or more `ZeNeighbourSource` entries to `ze_nearest_chunks`.
 The result contains a flat array grouped by zero-based input `source_index`.
 Release it with `ze_neighbour_result_free`. Set `k = 0` for an omitted limit.
+
+### Required API check
+
+The binding suite checks its public API against the
+[E17 API table](../fixtures/required_api_v1.json). Graph and text rows apply to
+builds that ship those capabilities. Python 0.1.0 has the owner-approved graph
+exclusion. The temporary E17 gap list is empty and CI rejects new entries.

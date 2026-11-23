@@ -8,6 +8,7 @@ on:
       - 'crates/zeppelin-embed-ffi/**'
       - 'crates/zeppelin-embed/**'
       - 'bindings/swift/**'
+      - 'bindings/fixtures/required_api_v1.json'
       - 'Package.swift'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -70,11 +71,11 @@ jobs:
           rustup component add rust-src llvm-tools-preview --toolchain nightly-2026-07-01
       - name: Build full graph+text XCFramework
         run: scripts/xcframework/build.sh --artifact graph-cypher
-      - name: Run all Swift TextStoreTests against the full XCFramework
+      - name: Run Swift text and required API tests against the full XCFramework
         env:
           ZE_USE_LOCAL_XCFRAMEWORK: '1'
           ZE_ENABLE_GRAPH: '1'
-        run: swift test --scratch-path target/swift-text-ci --jobs 3 --filter TextStoreTests
+        run: swift test --scratch-path target/swift-text-ci --jobs 3 --filter 'TextStoreTests|RequiredAPITests'
 
   real-model:
     name: Pinned HF model verification and tokenizer parity (arm64, no MLX)

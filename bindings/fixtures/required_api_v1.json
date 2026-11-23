@@ -1,0 +1,393 @@
+{
+  "source": "Binding survey of volantis-db, 2026-11-22, with the E17 owner decisions and Zeppelin public names.",
+  "rows": {
+    "S1": {
+      "feature": "Open, close, state, stats",
+      "build": "core",
+      "node": ["Store.constructor", "Store.close", "Store.state", "Store.stats"],
+      "python": ["open", "Store.close", "Store.state", "Store.stats"],
+      "swift": ["ZeppelinStore.open(at:options:)", "ZeppelinStore.close()", "ZeppelinStore.state()", "ZeppelinStore.stats()"],
+      "rust": ["Store::open", "Store::close", "Store::state", "Store::stats"],
+      "c": ["ze_open", "ze_close", "ze_state", "ze_stats"]
+    },
+    "S2": {
+      "feature": "Read-only snapshot and snapshot copy",
+      "build": "survey",
+      "node": ["Store.openSnapshot", "Store.snapshot"],
+      "python": [],
+      "swift": [],
+      "rust": ["Store::open_snapshot", "Store::write_snapshot"],
+      "c": ["ze_open_snapshot", "ze_snapshot"]
+    },
+    "S3": {
+      "feature": "Epochs: open, current, drop, identity, switch alias",
+      "build": "survey",
+      "node": [],
+      "python": ["open_with_epoch", "epoch_identity", "Store.epoch_current", "Store.epoch_drop", "Store.epoch_switch_alias"],
+      "swift": ["ZeppelinStore.openWithEpoch", "ZeppelinStore.epochIdentity", "ZeppelinStore.currentEpoch", "ZeppelinStore.dropEpoch", "ZeppelinStore.switchAlias"],
+      "rust": ["OpenOptions::with_epoch", "Store::epoch_identity", "Store::switch_epoch_alias", "Store::drop_epoch", "EpochIdentity::of"],
+      "c": ["ze_open_with_epoch", "ze_epoch_current", "ze_epoch_drop", "ze_epoch_identity", "ze_epoch_switch_alias"]
+    },
+    "S4": {
+      "feature": "Open for inspection and report migrations",
+      "build": "survey",
+      "node": ["openInspection", "Store.migrations"],
+      "python": [],
+      "swift": [],
+      "rust": ["Store::open_for_inspection", "Store::open_migrations"],
+      "c": ["ze_open_inspection", "ze_open_migrations"]
+    },
+    "S5": {
+      "feature": "Batch ingest with vectors, text, metadata and timestamps; attribute writes through upsert",
+      "build": "core",
+      "node": ["Store.ingest", "Document.text", "Document.metadata", "Document.timestamp", "Store.upsert", "UpsertDocument.attributes"],
+      "python": ["Store.ingest:texts", "Store.ingest:metadata", "Store.ingest:timestamps", "Store.upsert", "StoredDocument.attributes"],
+      "swift": ["ZeppelinStore.ingest(_:)", "IngestDocument.text", "IngestDocument.metadata", "IngestDocument.timestamp", "ZeppelinStore.upsert(_:)", "IngestDocument.attributes"],
+      "rust": ["Store::ingest", "IngestDocument"],
+      "c": ["ze_ingest", "ze_upsert"]
+    },
+    "S6": {
+      "feature": "Upsert and conditional upsert",
+      "build": "core",
+      "node": ["Store.upsert", "UpsertDocument.expectedRevision"],
+      "python": ["Store.upsert", "UpsertDocument:expected_revision"],
+      "swift": ["ZeppelinStore.upsert(_:)", "ZeppelinStore.upsert(conditional:)"],
+      "rust": ["Store::ingest", "IngestDocument::with_expected_revision"],
+      "c": ["ze_upsert", "ze_upsert_conditional"]
+    },
+    "S7": {
+      "feature": "Delete, conditional delete and delete by filter",
+      "build": "core",
+      "node": ["Store.delete", "DeleteTarget", "Store.deleteWhere"],
+      "python": ["Store.delete", "DeleteTarget:expected_revision", "Store.delete_where"],
+      "swift": ["ZeppelinStore.delete(_:)", "ZeppelinStore.delete(conditional:)", "ZeppelinStore.deleteWhere(_:)"],
+      "rust": ["Store::delete", "DeleteBatch::conditional", "Store::delete_matching"],
+      "c": ["ze_delete", "ze_delete_conditional", "ze_delete_where"]
+    },
+    "S8": {
+      "feature": "Get documents by ID",
+      "build": "core",
+      "node": ["Store.get"],
+      "python": ["Store.get"],
+      "swift": ["ZeppelinStore.get(_:fields:)"],
+      "rust": ["Store::get_documents"],
+      "c": ["ze_get"]
+    },
+    "S9": {
+      "feature": "Scan and attribute-ordered scan",
+      "build": "core",
+      "node": ["Store.scan", "ScanRequest.order", "AttributeScanOrder"],
+      "python": ["Store.scan:order", "AttributeScanOrder"],
+      "swift": ["ZeppelinStore.scan(after:limit:order:fields:timestampRange:filter:cancellationToken:deadlineNanoseconds:)", "AttributeScanOrder"],
+      "rust": ["Store::scan_documents", "ScanOrder"],
+      "c": ["ze_scan", "ze_scan_ordered"]
+    },
+    "S10": {
+      "feature": "Count and grouped count",
+      "build": "core",
+      "node": ["Store.count", "GroupedCountRequest.groupBy"],
+      "python": ["Store.count:group_by", "CountGroupBy"],
+      "swift": ["ZeppelinStore.count(filter:timestampRange:)", "ZeppelinStore.count(groupBy:filter:timestampRange:)"],
+      "rust": ["Store::count_documents", "Store::count_documents_grouped"],
+      "c": ["ze_count", "ze_count_grouped"]
+    },
+    "S11": {
+      "feature": "Dense and filtered vector search",
+      "build": "core",
+      "node": ["Store.search", "Store.searchFiltered"],
+      "python": ["Store.search:filter"],
+      "swift": ["ZeppelinStore.search(vector:options:)", "ZeppelinStore.search(vector:filter:options:)"],
+      "rust": ["Store::search", "Store::search_filtered"],
+      "c": ["ze_search", "ze_search_filtered"]
+    },
+    "S12": {
+      "feature": "Structured lexical and hybrid query with tier, filter and prefix options",
+      "build": "core",
+      "node": ["Store.query", "QueryRequest.text", "QueryRequest.vector", "QueryRequest.tier", "QueryRequest.filter", "QueryRequest.lastAsPrefix"],
+      "python": ["Store.query:text", "Store.query:vector", "Store.query:tier", "Store.query:filter", "Store.query:last_as_prefix"],
+      "swift": ["ZeppelinStore.query(vector:text:eligibleIds:filter:timestampRange:options:)", "QueryOptions.tier", "QueryOptions.lastAsPrefix"],
+      "rust": ["Store::search_lexical_structured_filtered", "Store::search_hybrid_structured"],
+      "c": ["ze_query", "ze_query_v2", "ze_query_filtered"]
+    },
+    "S13": {
+      "feature": "Snippets and highlight source ranges",
+      "build": "core",
+      "node": ["QueryRequest.snippetBytes", "QueryHit.snippet", "Snippet.highlights", "SnippetHighlight.sourceByteStart", "SnippetHighlight.sourceByteEnd"],
+      "python": ["Store.query:snippet_bytes", "QueryHit.snippet", "Snippet:highlights", "SnippetHighlight:source_byte_start", "SnippetHighlight:source_byte_end"],
+      "swift": ["QueryOptions.snippetBytes", "QueryHit.snippet", "Snippet.highlights", "SnippetHighlight.sourceByteRange"],
+      "rust": ["Store::search_lexical_filtered_with_snippets", "Store::search_hybrid_structured_with_snippets"],
+      "c": ["ze_query_with_snippets", "ze_query_snippet_source_ranges"]
+    },
+    "S14": {
+      "feature": "Typed attribute filters and eligible IDs",
+      "build": "core",
+      "node": ["Filter", "AttributeValue", "QueryRequest.eligibleIds"],
+      "python": ["Filter.eq", "Filter.in_", "Filter.range_", "Filter.not_", "AttributeValue", "Store.query:eligible_ids"],
+      "swift": ["Filter.eq", "Filter.in", "Filter.range", "Filter.not", "AttributeValue", "QueryOptions"],
+      "rust": ["QueryFilter", "AttributeValue"],
+      "c": ["ZeQueryFilter", "ZeAttributeValue"]
+    },
+    "S15": {
+      "feature": "Declare and read back typed schema",
+      "build": "core",
+      "node": ["openNamespace", "NamespaceSpec.attributes", "Store.schema", "AttributeDefinition"],
+      "python": ["open_namespace", "NamespaceSpec.attributes", "Store.schema", "AttributeDefinition"],
+      "swift": ["ZeppelinStore.openNamespace(root:name:spec:options:)", "NamespaceSpec.attributes", "ZeppelinStore.schema()", "AttributeDefinition"],
+      "rust": ["OpenOptions::with_schema", "Store::schema", "Schema"],
+      "c": ["ze_namespace_open", "ze_schema_column"]
+    },
+    "S16": {
+      "feature": "Seal, merge sealed and budgeted maintenance",
+      "build": "core",
+      "node": ["Store.seal", "Store.merge", "Store.maintain", "MaintainBudget"],
+      "python": ["Store.seal", "Store.merge", "Store.maintain:wall_time_ns", "Store.maintain:bytes"],
+      "swift": ["ZeppelinStore.seal(cancellationToken:)", "ZeppelinStore.merge(cancellationToken:)", "ZeppelinStore.maintain(wallTimeNanoseconds:bytes:)"],
+      "rust": ["Store::seal", "Store::merge_sealed", "Store::maintain"],
+      "c": ["ze_seal", "ze_merge_sealed", "ze_maintain"]
+    },
+    "S17": {
+      "feature": "Purge, await physical purge, retention and partition drop",
+      "build": "core",
+      "node": ["Store.purge", "Store.awaitPurge", "Store.applyRetention", "Store.dropPartition"],
+      "python": ["Store.purge", "Store.await_physical_purge", "Store.apply_retention", "Store.drop_partition"],
+      "swift": ["ZeppelinStore.purge(_:)", "ZeppelinStore.awaitPhysicalPurge(_:)", "ZeppelinStore.applyRetention(window:now:)", "ZeppelinStore.dropPartition(from:to:)"],
+      "rust": ["Store::purge", "Store::await_physical_purge", "Store::apply_retention", "Store::drop_partition"],
+      "c": ["ze_purge", "ze_await_physical_purge", "ze_apply_retention", "ze_drop_partition"]
+    },
+    "S18": {
+      "feature": "Reindex text and warm lexical",
+      "build": "survey",
+      "node": ["Store.reindexText", "Store.warmLexical"],
+      "python": ["Store.warm_lexical"],
+      "swift": ["ZeppelinStore.warmLexical"],
+      "rust": ["Store::reindex_text", "Store::warm_lexical"],
+      "c": ["ze_reindex_text", "ze_warm_lexical"]
+    },
+    "S19": {
+      "feature": "Verify store integrity",
+      "build": "core",
+      "node": ["verify", "VerifyReport"],
+      "python": ["verify", "VerifyReport"],
+      "swift": ["ZeppelinStore.verify(at:)", "VerifyReport"],
+      "rust": ["verify_store"],
+      "c": ["ze_verify"]
+    },
+    "S20": {
+      "feature": "Cancellation tokens and deadlines",
+      "build": "core",
+      "node": ["CancellationToken.cancel", "QueryRequest.cancelToken", "QueryRequest.deadlineNs"],
+      "python": ["CancelToken.cancel", "CancelToken.close", "Store.query:cancel_token", "Store.query:deadline_ns"],
+      "swift": ["ZeppelinCancellationToken.create()", "ZeppelinCancellationToken.cancel()", "ZeppelinCancellationToken.free()", "QueryOptions.cancellationToken", "QueryOptions.deadlineNanoseconds"],
+      "rust": ["CancelToken", "Deadline"],
+      "c": ["ze_cancel_token_create", "ze_cancel_token_cancel", "ze_cancel_token_free", "ZeQueryRequestV2"]
+    },
+    "S21": {
+      "feature": "Typed errors with stable codes and ABI version",
+      "build": "core",
+      "node": ["ZeppelinError.code", "ZeppelinError.errorCode", "ABI_VERSION"],
+      "python": ["ZeppelinError.code", "ZeppelinError.code_name", "ABI_VERSION"],
+      "swift": ["ZeppelinError.rawValue", "ZeppelinStore.lastErrorMessage()", "ZeppelinStore.abiVersion"],
+      "rust": ["StoreError"],
+      "c": ["ze_error_code_name", "ze_last_error_message", "ze_abi_version"]
+    },
+    "N1": {
+      "feature": "Open a namespace and choose its tokenizer",
+      "build": "core",
+      "node": ["openNamespace", "NamespaceSpec.tokenizerProfile"],
+      "python": ["open_namespace", "NamespaceSpec.tokenizer_profile"],
+      "swift": ["ZeppelinStore.openNamespace(root:name:spec:options:)", "NamespaceSpec.tokenizerProfile"],
+      "rust": ["Store::open", "OpenOptions::with_tokenizer"],
+      "c": ["ze_namespace_open", "ze_namespace_open_with_tokenizer"]
+    },
+    "N2": {
+      "feature": "List namespaces",
+      "build": "core",
+      "node": ["listNamespaces"],
+      "python": ["list_namespaces"],
+      "swift": ["ZeppelinStore.listNamespaces(root:)"],
+      "rust": ["list_namespaces"],
+      "c": ["ze_namespace_list"]
+    },
+    "N3": {
+      "feature": "Atomic multi-namespace batch and live batch",
+      "build": "core",
+      "node": ["namespaceBatch", "namespaceBatchLive"],
+      "python": ["namespace_batch", "namespace_batch_live"],
+      "swift": ["ZeppelinStore.namespaceBatch(root:participants:)", "ZeppelinStore.namespaceBatchLive(root:participants:)"],
+      "rust": ["namespace_batch", "namespace_batch_live"],
+      "c": ["ze_namespace_batch", "ze_namespace_batch_live"]
+    },
+    "N4": {
+      "feature": "Declare a cascade and delete across it",
+      "build": "core",
+      "node": ["declareCascade", "deleteCascade"],
+      "python": ["declare_cascade", "delete_cascade"],
+      "swift": ["ZeppelinStore.declareCascade(root:participants:declaration:)", "ZeppelinStore.deleteCascade(root:participants:)"],
+      "rust": ["namespace_declare_cascade", "namespace_delete_cascade"],
+      "c": ["ze_namespace_declare_cascade", "ze_namespace_delete_cascade"]
+    },
+    "E1": {
+      "feature": "Embedded namespace declaration, upsert text and query by text",
+      "build": "text",
+      "node": ["openNamespace", "NamespaceSpec.embeddedModel", "Store.upsert", "UpsertDocument.text", "Store.queryEmbedded"],
+      "python": ["open_namespace", "NamespaceSpec.embedded_model", "Store.upsert", "StoredDocument.text", "Store.query_embedded"],
+      "swift": ["ZeppelinStore.openNamespace(root:name:spec:options:)", "NamespaceSpec.embeddedModel", "ZeppelinStore.upsert(_:)", "ZeppelinStore.queryEmbedded(_:leg:k:eligibleIds:filter:timestampRange:cancellationToken:deadlineNanoseconds:)"],
+      "rust": ["Store::open_embedded", "Store::query_embedded"],
+      "c": ["ze_namespace_open", "ze_upsert", "ze_query_embedded"]
+    },
+    "E2": {
+      "feature": "Nearest stored chunks, single and batch",
+      "build": "text",
+      "node": ["Store.nearestChunks", "Store.nearestChunksBatch"],
+      "python": ["Store.nearest_chunks", "Store.nearest_chunks_batch"],
+      "swift": ["ZeppelinStore.nearestChunks(_:options:)", "ZeppelinStore.nearestChunksBatch(_:options:)"],
+      "rust": ["Store::nearest_chunks", "Store::nearest_chunks_batch"],
+      "c": ["ze_nearest_chunks"]
+    },
+    "T1": {
+      "feature": "Open local or pinned repository model, offline mode and default model",
+      "build": "text",
+      "node": ["TextStore.open", "TextStore.openModel", "TextStore.defaultModel", "TextModelOptions.offline"],
+      "python": ["open_text", "open_model:offline", "DEFAULT_MODEL_REF"],
+      "swift": ["TextStore.open(at:bundle:options:mlxCacheLimitBytes:)", "TextStore.open(at:model:cacheDirectory:offline:options:mlxCacheLimitBytes:progress:)", "TextModel.default"],
+      "rust": ["TextStore::open", "TextStore::open_model", "TextStore::open_default_model"],
+      "c": ["ze_text_open", "ze_text_open_v2", "ze_text_open_model", "ze_text_open_model_v2", "ze_text_default_model"]
+    },
+    "T2": {
+      "feature": "Text ingest and v2 maintenance budgets",
+      "build": "text",
+      "node": ["TextStore.ingest", "TextIngestOptions.maintenanceWallTimeNs", "TextIngestOptions.maintenanceBytes"],
+      "python": ["Store.ingest_text:maintenance_wall_time_ns", "Store.ingest_text:maintenance_bytes"],
+      "swift": ["TextStore.ingest(_:options:deadlineNanoseconds:)", "TextIngestOptions.maintenanceWallTimeNanoseconds", "TextIngestOptions.maintenanceBytes"],
+      "rust": ["TextStore::ingest_text_controlled"],
+      "c": ["ze_text_ingest", "ze_text_ingest_v2"]
+    },
+    "T3": {
+      "feature": "Text query with legs, k, tier, deadline and outcome",
+      "build": "text",
+      "node": ["TextStore.query", "TextQueryOptions.legs", "TextQueryOptions.k", "TextQueryOptions.tier", "TextQueryOptions.deadlineNs", "TextQueryResult.diagnostics", "TextQueryResult.timings", "TextQueryResult.backend"],
+      "python": ["Store.query_text:legs", "Store.query_text:k", "Store.query_text:tier", "Store.query_text:deadline_ns", "TextQueryResult.diagnostics"],
+      "swift": ["TextStore.query(_:legs:k:tier:deadlineNanoseconds:)", "TextQueryResult.hits"],
+      "rust": ["TextStore::query_text_with_diagnostics_controlled"],
+      "c": ["ze_text_query", "ze_text_query_v2"]
+    },
+    "T4": {
+      "feature": "Delete text documents",
+      "build": "text",
+      "node": ["TextStore.delete"],
+      "python": ["Store.delete_text"],
+      "swift": ["TextStore.delete(_:)"],
+      "rust": ["TextStore::delete_text"],
+      "c": ["ze_text_delete"]
+    },
+    "T5": {
+      "feature": "Text maintenance with a budget",
+      "build": "text",
+      "node": ["TextStore.maintain", "TextMaintainBudget"],
+      "python": ["Store.maintain:wall_time_ns", "Store.maintain:bytes"],
+      "swift": ["TextStore.maintain(wallTimeNanoseconds:byteBudget:)"],
+      "rust": ["TextStore::maintain", "TextStore::maintain_to_completion"],
+      "c": ["ze_text_maintain", "ze_text_maintain_budgeted"]
+    },
+    "T6": {
+      "feature": "Text health and observed compute units",
+      "build": "text",
+      "node": ["TextStore.health", "TextStore.observedComputeUnits"],
+      "python": ["Store.health", "Store.observed_compute_units"],
+      "swift": ["TextStore.health()", "TextStore.observedComputeUnits()"],
+      "rust": ["TextStore::health", "TextStore::observed_compute_units"],
+      "c": ["ze_text_health", "ze_text_observed_compute_units"]
+    },
+    "T7": {
+      "feature": "MLX cache limit at open",
+      "build": "text",
+      "node": ["TextOpenOptions.mlxCacheLimitBytes"],
+      "python": ["open_text:mlx_cache_limit_bytes", "open_model:mlx_cache_limit_bytes"],
+      "swift": ["TextStore.open(at:bundle:options:mlxCacheLimitBytes:)", "TextStore.open(at:model:cacheDirectory:offline:options:mlxCacheLimitBytes:progress:)"],
+      "rust": ["TextOpenOptions::with_mlx_cache_limit_bytes"],
+      "c": ["ze_text_open_v2", "ze_text_open_model_v2"]
+    },
+    "G1": {
+      "feature": "Enable graph and create with relationship types",
+      "build": "graph",
+      "node": ["Store.enableGraph", "Store.constructor", "StoreRelationshipOptions.relationshipTypes"],
+      "python": ["Store.enable_graph"],
+      "swift": ["ZeppelinStore.enableGraph()", "ZeppelinStore.open(at:relationshipTypes:maxResidentBytes:readerDrainTimeoutMilliseconds:)"],
+      "rust": ["Store::enable_graph"],
+      "c": ["ze_store_enable_graph", "ze_store_create_with_relationship_types"]
+    },
+    "G2": {
+      "feature": "Apply node and relationship mutations",
+      "build": "graph",
+      "node": ["Store.graphApply", "GraphMutation"],
+      "python": ["Store.graph_apply"],
+      "swift": ["ZeppelinStore.graphApply(_:interruption:)", "GraphBatch"],
+      "rust": ["Store::graph_apply"],
+      "c": ["ze_store_graph_apply", "ze_store_graph_apply_v2"]
+    },
+    "G3": {
+      "feature": "Cypher with row limit",
+      "build": "graph",
+      "node": ["Store.cypher", "GraphQueryOptions.maxRows"],
+      "python": ["Store.cypher"],
+      "swift": ["ZeppelinStore.cypher(_:parameters:controls:options:)", "GraphControls.rowLimit"],
+      "rust": ["execute_graph_statement"],
+      "c": ["ze_store_cypher", "ze_store_cypher_with_row_limit"]
+    },
+    "G4": {
+      "feature": "Structured graph query",
+      "build": "graph",
+      "node": ["Store.graphQuery", "GraphPlan"],
+      "python": ["Store.graph_query"],
+      "swift": ["ZeppelinStore.graphQuery(_:parameters:options:interruption:)", "GraphPlan"],
+      "rust": ["Store::graph_query"],
+      "c": ["ze_store_graph_query"]
+    },
+    "G5": {
+      "feature": "Get nodes and relationships",
+      "build": "graph",
+      "node": ["Store.graphGetNodes", "Store.graphGetRelationships"],
+      "python": ["Store.get_nodes", "Store.get_relationships"],
+      "swift": ["ZeppelinStore.getNodes(_:fields:limits:interruption:)", "ZeppelinStore.getRelationships(_:limits:interruption:)"],
+      "rust": ["Store::get_nodes", "Store::get_relationships"],
+      "c": ["ze_store_get_nodes", "ze_store_get_relationships"]
+    },
+    "G6": {
+      "feature": "Graph resources, maintenance and policy",
+      "build": "graph",
+      "node": ["Store.graphResources", "Store.graphMaintain", "Store.graphSetMaintenancePolicy"],
+      "python": ["Store.graph_resources"],
+      "swift": ["ZeppelinStore.graphResources()", "ZeppelinStore.graphMaintain(interruption:)", "ZeppelinStore.graphSetMaintenancePolicy(_:)"],
+      "rust": ["Store::graph_resources", "Store::graph_maintain_cycle", "Store::set_graph_maintenance_policy"],
+      "c": ["ze_store_graph_resources", "ze_store_graph_maintain", "ze_store_set_graph_maintenance_policy"]
+    },
+    "G7": {
+      "feature": "Graph node text indexed in the graph write",
+      "build": "graph",
+      "node": ["GraphNodeWrite.text", "Store.graphApply", "Store.query"],
+      "python": [],
+      "swift": ["GraphNodeImage.text", "ZeppelinStore.graphApply(_:interruption:)", "ZeppelinStore.query(vector:text:eligibleIds:filter:timestampRange:options:)"],
+      "rust": ["Store::graph_apply", "Store::search_lexical"],
+      "c": ["ze_store_graph_apply_v2", "ze_query"]
+    },
+    "A1": {
+      "feature": "Language-specific asynchronous API",
+      "build": "survey",
+      "node": ["Store.openAsync", "Store.queryAsync"],
+      "python": [],
+      "swift": ["ZeppelinStore"],
+      "rust": [],
+      "c": []
+    }
+  },
+  "allowed_gaps": {
+    "node": {},
+    "python": {},
+    "swift": {}
+  },
+  "build_exclusions": {
+    "python": {
+      "graph": "Owner decision 2026-11-22, option b. Python 0.1.0 ships without graph."
+    }
+  }
+}

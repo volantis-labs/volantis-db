@@ -525,3 +525,10 @@ The installed check also needs the full C SDK release artifact under
 `target/macos-sdk-graph-cypher`; it exercises the Swift API outside the checkout,
 including the existing missing-metallib negative control. The Swift HTTP test
 uses a local Python fixture server and needs permission to listen on loopback.
+
+### Required API check
+
+The binding suite checks its public API against the
+[E17 API table](../fixtures/required_api_v1.json). Graph and text rows apply to
+builds that ship those capabilities. Python 0.1.0 has the owner-approved graph
+exclusion. The temporary E17 gap list is empty and CI rejects new entries.
