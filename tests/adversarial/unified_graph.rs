@@ -388,6 +388,56 @@ fn embedded_batch(
         });
     }
     coverage.hit("storage-durability.embedded-batch.neighbour-visibility");
+    // WF-988: an empty member makes no model call and commits with zero
+    // chunks, but an encoder fault in another member still publishes nothing.
+    let empty = DocId::new(u128::MAX - u128::from(seed) - 1);
+    for (other, expected) in [("!fail", false), ("", true)] {
+        let batch = [("first", ""), ("second", other)]
+            .into_iter()
+            .map(|(name, source)| NamespaceMutation {
+                name: name.into(),
+                options: options.clone(),
+                deletes: vec![],
+                delete_where: None,
+                upserts: vec![
+                    IngestDocument::new(DocumentVersion::new(empty, Revision::new(1)), vec![])
+                        .with_text(source),
+                ],
+            })
+            .collect();
+        match namespace_batch(root.path(), batch) {
+            Ok(_) if expected => {}
+            Err(StoreError::Embedding(_)) if !expected => {}
+            other => return Err(format!("unexpected empty-member outcome {other:?}").into()),
+        }
+        for name in ["first", "second"] {
+            let store = Store::open(root.path().join(name), options.clone())?;
+            let rows = store.get_documents(&[empty], DocumentFields::ALL)?;
+            match rows.as_slice() {
+                [Some(row)] if expected && row.vector.is_none() => {}
+                [None] if !expected => {}
+                other => {
+                    return Err(
+                        format!("empty member crossed the atomic boundary: {other:?}").into(),
+                    );
+                }
+            }
+            // A live empty row is still not a neighbour source.
+            match store.nearest_chunks(
+                empty,
+                None,
+                &NeighbourOptions::default(),
+                QueryControl::Cancel(CancelToken::new()),
+            ) {
+                Err(QueryError::Store(StoreError::NeighbourSourceNotFound {
+                    id: missing,
+                    chunk: None,
+                })) if missing == empty => {}
+                other => return Err(format!("empty member as a source: {other:?}").into()),
+            }
+        }
+    }
+    coverage.hit("storage-durability.embedded-batch.empty-member");
     Ok(())
 }
 

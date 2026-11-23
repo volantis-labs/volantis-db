@@ -163,7 +163,7 @@ fn execute_live(
                     if p.mutation
                         .upserts
                         .iter()
-                        .any(|document| document.absent_dims().is_some())
+                        .any(crate::ingest::IngestDocument::is_pending_embedding)
                     {
                         p.store.embedding.notify();
                     }

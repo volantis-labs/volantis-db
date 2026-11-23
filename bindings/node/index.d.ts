@@ -241,6 +241,11 @@ export interface UpsertDocument {
   readonly expectedRevision?: ExpectedRevision;
   readonly timestamp?: bigint;
   readonly vector?: Float32Array;
+  /**
+   * On an embedded namespace, omitted text and `''` store the row with zero
+   * chunks and no vector, with no model call. Any other text, including one
+   * space, is embedded.
+   */
   readonly text?: string;
   readonly metadata?: Uint8Array;
   readonly attributes?: readonly AttributeValue[];

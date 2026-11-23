@@ -245,3 +245,87 @@ test('WF-987 release model in an embedded namespace', {skip: !nativeMetal || !pr
     rmSync(root, {recursive: true, force: true});
   }
 });
+
+test('WF-988 empty embedded rows', {skip: !nativeMetal}, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'wf988-'));
+  const original = process.env.ZE_MODEL_CACHE;
+  let store;
+  try {
+    const bytes = readFileSync(new URL('../../../crates/volantis-db-text/tests/fixtures/ze115/gte.zem', import.meta.url));
+    const real = readFileSync(new URL('../../../tests/fixtures/wf988/real-source.txt', import.meta.url), 'utf8');
+    const sha = data => createHash('sha256').update(data).digest('hex');
+    const manifest = Buffer.from(JSON.stringify({format: 1, name: 'tiny', bundle: 'tiny.zem', query_coreml: null,
+      files: [{path: 'tiny.zem', size: bytes.length, sha256: sha(bytes)}]}));
+    const revision = '0123456789abcdef0123456789abcdef01234567';
+    process.env.ZE_MODEL_CACHE = join(root, 'cache');
+    const entry = join(process.env.ZE_MODEL_CACHE, 'fixture%2Ftiny', revision);
+    mkdirSync(entry, {recursive: true});
+    writeFileSync(join(entry, 'volantis-model.json'), manifest);
+    writeFileSync(join(entry, 'tiny.zem'), bytes);
+    const spec = {embeddedModel: {repo: 'fixture/tiny', revision, manifestSha256: sha(manifest)},
+      attributes: [{id: 1, name: 'fake_group', type: 'u64', nullable: false}]};
+    store = await openNamespaceAsync(root, 'notes', spec, options);
+    store.enableGraph();
+    const attributes = [{id: 1, type: 'u64', value: 988n}];
+    const filter = {op: 'eq', attributeId: 1, values: attributes};
+    const metadata = Buffer.from('FAKE-988-meta');
+    const row = (id, rev, text) => ({id, revision: rev, timestamp: 98800n, attributes, metadata,
+      ...(text === undefined ? {} : {text})});
+    const [omitted, zero, control] = [98801n, 98802n, 98803n];
+    const fields = {vector: true, text: true, metadata: true, attributes: true};
+    const assertEmpty = (id, rev) => {
+      const [doc] = store.get([id], fields).documents;
+      assert.equal(doc.revision, rev);
+      assert.equal(doc.timestamp, 98800n);
+      assert.deepEqual(doc.attributes, attributes);
+      assert.deepEqual(Buffer.from(doc.metadata), metadata);
+      assert.equal(doc.vector, undefined);
+      assert.equal(doc.text, undefined);  // '' crosses the C ABI as absent text
+      assert.equal(store.get([id], {vector: true}).documents[0].vector, undefined);
+    };
+    // Sync and async writes, with omitted text and the empty string.
+    store.upsert([row(omitted, 1n), row(zero, 1n, '')]);
+    await store.upsertAsync([row(omitted, 2n, ''), row(zero, 2n)]);
+    assertEmpty(omitted, 2n);
+    assertEmpty(zero, 2n);
+    assert.deepEqual(store.scan({filter, fields}).documents.map(doc => doc.id), [omitted, zero]);
+
+    // Populate the control and one empty id, then clear that id again.
+    await store.upsertAsync([row(control, 1n, real), row(zero, 3n, real)]);
+    const vector = store.get([control], {vector: true}).documents[0].vector;
+    assert.ok(vector instanceof Float32Array && vector.length > 0);
+    assert.ok(store.get([zero], {vector: true}).documents[0].vector instanceof Float32Array);
+    store.upsert([row(zero, 4n, '')]);
+    assertEmpty(zero, 4n);
+    assert.deepEqual(store.scan({filter, fields}).documents.map(doc => doc.id).sort(), [omitted, zero, control]);
+
+    // k exceeds the live vector count: only the control can rank.
+    assert.deepEqual(store.search(vector, 64).map(hit => hit.id), [control]);
+    for (const leg of ['dense', 'lexical', 'hybrid']) {
+      const hits = store.queryEmbedded({text: 'FAKE-988-copper', leg, k: 64});
+      assert.ok(hits.length > 0, leg);
+      assert.ok(hits.every(hit => hit.id === control), leg);
+      assert.deepEqual(store.queryEmbedded({text: 'FAKE-988-copper', leg, k: 64, eligibleIds: [omitted, zero]}), [], leg);
+    }
+    const id = value => value.toString(16).padStart(32, '0');
+    for (const call of ["vector_search('FAKE-988-copper',64,'exact')", "hybrid_search('FAKE-988-copper',64,'exact')"]) {
+      assert.deepEqual(store.cypher('CALL ze.' + call + ' YIELD node RETURN ze.node_id(node)').rows, [[id(control)]], call);
+    }
+
+    // Neighbours: empty candidates add nothing; an empty source is not found.
+    assert.deepEqual(store.nearestChunks(control, {k: 64, eligibleIds: [omitted, zero]}), []);
+    const own = store.nearestChunks(control, {k: 64, includeSource: true});
+    assert.ok(own.length > 0 && own.every(hit => hit.id === control));
+    for (const source of [omitted, {id: zero, chunk: 0}]) {
+      assert.throws(() => store.nearestChunks(source), {code: 'ZE_ERR_NOT_FOUND'});
+    }
+    await assert.rejects(store.nearestChunksBatchAsync([control, omitted]), {code: 'ZE_ERR_NOT_FOUND'});
+    const backup = join(root, 'backup');
+    await store.backupAsync(backup);
+    assert.deepEqual(verify(backup).findings, []);
+  } finally {
+    store?.close();
+    if (original === undefined) delete process.env.ZE_MODEL_CACHE; else process.env.ZE_MODEL_CACHE = original;
+    rmSync(root, {recursive: true, force: true});
+  }
+});

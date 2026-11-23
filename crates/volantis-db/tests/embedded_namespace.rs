@@ -817,7 +817,8 @@ fn same_text_reuse_preserves_revision_order_and_atomic_failure() {
         a(4, "target").with_expected_revision(ExpectedRevision::Absent),
         reuse_doc(59602, 2, "!fail"),
         IngestDocument::new(a(4, "target").version(), vec![1., 0.]).with_text("target"),
-        IngestDocument::new(a(4, "target").version(), vec![]),
+        // WF-988: missing text is valid; missing text with a caller vector is not.
+        IngestDocument::new(a(4, "target").version(), vec![1., 0.]),
     ] {
         assert!(
             store
@@ -2005,4 +2006,500 @@ fn wf985_ack_comparison_once() {
             model.0.call_count(),
         );
     }
+}
+
+// WF-988: rows with missing or zero-byte text commit with zero chunks.
+const WF988_REAL: &str = include_str!("../../../tests/fixtures/wf988/real-source.txt");
+const WF988_META: &[u8] = b"FAKE-988-meta";
+const WF988_TS: i64 = 98800;
+const WF988_GROUP: ColumnId = ColumnId::new(1);
+
+fn wf988_schema() -> Schema {
+    Schema::new(vec![ColumnDefinition::new(
+        WF988_GROUP,
+        "fake_group",
+        ColumnType::U64,
+        false,
+    )])
+    .expect("schema")
+}
+
+/// `None` omits the text; `Some("")` is an explicit zero-byte source.
+fn wf988_doc(id: u128, rev: u64, text: Option<&str>) -> IngestDocument {
+    let doc = IngestDocument::new(
+        DocumentVersion::new(DocId::new(id), Revision::new(rev)),
+        vec![],
+    )
+    .with_timestamp(WF988_TS)
+    .with_metadata(WF988_META.to_vec())
+    .with_columns(vec![(WF988_GROUP, PredicateValue::U64(988))]);
+    match text {
+        Some(text) => doc.with_text(text),
+        None => doc,
+    }
+}
+
+/// Live IDs that match `fake_group = 988`, through a typed predicate scan.
+fn wf988_scan_ids(store: &Store) -> Vec<u128> {
+    let predicate = Predicate::Eq {
+        column: WF988_GROUP,
+        value: PredicateValue::U64(988),
+    };
+    let page = store
+        .scan_documents(
+            DocumentScanRequest::new(64, DocumentFields::ALL, running()).with_predicate(&predicate),
+        )
+        .expect("predicate scan");
+    assert!(page.continuation.is_none());
+    let mut ids = page
+        .documents
+        .iter()
+        .map(|doc| doc.doc_id.get())
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids
+}
+
+/// Checks the fields of one live empty row at `rev`.
+fn wf988_assert_empty(store: &Store, id: u128, rev: u64, stage: &str) {
+    let row = reuse_row(store, id).expect("live empty row");
+    assert_eq!(row.revision, Revision::new(rev), "{stage}: {id} revision");
+    assert_eq!(row.timestamp, WF988_TS, "{stage}: {id} timestamp");
+    assert_eq!(row.metadata.as_deref(), Some(WF988_META), "{stage}: {id}");
+    assert_eq!(
+        row.attributes,
+        Some(vec![(WF988_GROUP, PredicateValue::U64(988))]),
+        "{stage}: {id} attributes"
+    );
+    assert_eq!(row.vector, None, "{stage}: {id} vector");
+    assert_eq!(row.text.as_deref().unwrap_or_default(), "", "{stage}: {id}");
+    let vector_only = store
+        .get_documents(&[DocId::new(id)], DocumentFields::VECTOR)
+        .expect("vector projection")
+        .pop()
+        .flatten()
+        .expect("live row");
+    assert_eq!(vector_only.vector, None, "{stage}: {id} vector projection");
+}
+
+fn wf988_hit_ids(
+    store: &Store,
+    leg: EmbeddedLeg,
+    eligible: Option<&[DocId]>,
+) -> Vec<(u128, usize)> {
+    let filter = eligible.map(|ids| QueryFilter::eligible(store.schema(), ids));
+    let report = store
+        .query_embedded_report("FAKE-988-copper", leg, 4096, filter.as_ref(), running())
+        .expect("embedded query");
+    assert_eq!(report.pending_rows, 0, "empty rows are never pending");
+    let mut hits = report
+        .hits
+        .iter()
+        .map(|hit| {
+            assert_eq!(hit.state, EmbeddedRowState::Ready);
+            (hit.version.doc_id().get(), hit.chunk)
+        })
+        .collect::<Vec<_>>();
+    hits.sort_unstable();
+    hits
+}
+
+#[test]
+fn wf988_empty_rows_skip_inference() {
+    let root = tempdir().expect("root");
+    let model = Arc::new(RecordingModel::default());
+    let options = OpenOptions::new()
+        .with_schema(wf988_schema())
+        .with_embedder(model.clone())
+        .expect("model");
+    let store = Store::open(root.path(), options).expect("open");
+    store
+        .ingest(IngestBatch::new(vec![
+            wf988_doc(98801, 1, None),
+            wf988_doc(98802, 1, Some("")),
+        ]))
+        .expect("empty-only write");
+    assert!(
+        model.0.lock().expect("calls").is_empty(),
+        "an empty-only write makes no document call"
+    );
+    wf988_assert_empty(&store, 98801, 1, "omitted");
+    wf988_assert_empty(&store, 98802, 1, "zero-byte");
+    assert_eq!(
+        reuse_row(&store, 98801).expect("live").text,
+        None,
+        "omitted text stays absent"
+    );
+    assert_eq!(
+        reuse_row(&store, 98802).expect("live").text.as_deref(),
+        Some(""),
+        "zero-byte text stays zero bytes"
+    );
+    assert_eq!(wf988_scan_ids(&store), vec![98801, 98802]);
+
+    store
+        .ingest(IngestBatch::new(vec![
+            wf988_doc(98801, 2, Some("")),
+            wf988_doc(98803, 1, Some(WF988_REAL)),
+            wf988_doc(98802, 2, None),
+        ]))
+        .expect("mixed write");
+    assert_eq!(
+        *model.0.lock().expect("calls"),
+        vec![vec![WF988_REAL.to_owned()]],
+        "a mixed batch submits only the real source"
+    );
+    wf988_assert_empty(&store, 98801, 2, "mixed");
+    wf988_assert_empty(&store, 98802, 2, "mixed");
+    assert!(reuse_row(&store, 98803).expect("live").vector.is_some());
+    assert_eq!(wf988_scan_ids(&store), vec![98801, 98802, 98803]);
+
+    // A space is one byte of real input.
+    store
+        .ingest(IngestBatch::new(vec![wf988_doc(98802, 3, Some(" "))]))
+        .expect("space write");
+    assert_eq!(
+        *model.0.lock().expect("calls"),
+        vec![vec![WF988_REAL.to_owned()], vec![" ".to_owned()]]
+    );
+    assert!(reuse_row(&store, 98802).expect("live").vector.is_some());
+}
+
+#[test]
+fn wf988_empty_revision_transitions() {
+    let root = tempdir().expect("root");
+    let model = Arc::new(RecordingModel::default());
+    let options = OpenOptions::new()
+        .with_schema(wf988_schema())
+        .with_embedder(model.clone())
+        .expect("model");
+    let store = Store::open(root.path(), options).expect("open");
+    let id = 98801;
+    store
+        .ingest(IngestBatch::new(vec![wf988_doc(id, 1, None)]))
+        .expect("revision 1 empty");
+    store
+        .ingest(IngestBatch::new(vec![wf988_doc(id, 2, Some(WF988_REAL))]))
+        .expect("revision 2 text");
+    let at_two = store.open_snapshot().expect("snapshot at revision 2");
+    store
+        .ingest(IngestBatch::new(vec![wf988_doc(id, 3, Some(""))]))
+        .expect("revision 3 empty");
+    assert_eq!(
+        *model.0.lock().expect("calls"),
+        vec![vec![WF988_REAL.to_owned()]]
+    );
+    for leg in [
+        EmbeddedLeg::Dense,
+        EmbeddedLeg::Lexical,
+        EmbeddedLeg::Hybrid,
+    ] {
+        assert_eq!(
+            wf988_hit_ids(&at_two, leg, None),
+            vec![(id, 0), (id, 1)],
+            "the old snapshot keeps both chunks"
+        );
+        assert_eq!(wf988_hit_ids(&store, leg, None), vec![], "no chunk now");
+    }
+    assert_eq!(wf985_dense_ids(&at_two, 10), vec![id]);
+    assert_eq!(wf985_dense_ids(&store, 10), Vec::<u128>::new());
+    drop(at_two);
+    wf988_assert_empty(&store, id, 3, "revision 3");
+
+    let expected = reuse_row(&store, id);
+    for bad in [
+        wf988_doc(id, 4, Some(WF988_REAL))
+            .with_expected_revision(ExpectedRevision::Exactly(Revision::new(2))),
+        wf988_doc(id, 2, None),
+    ] {
+        assert!(store.ingest(IngestBatch::new(vec![bad])).is_err());
+        assert_eq!(reuse_row(&store, id), expected, "revision 3 is kept");
+    }
+    // Text, then empty, then the same text in one ordered batch: the last
+    // revision cannot reuse chunks across the empty predecessor.
+    store
+        .ingest(IngestBatch::new(vec![
+            wf988_doc(id, 5, Some(WF988_REAL)),
+            wf988_doc(id, 6, None),
+            wf988_doc(id, 7, Some(WF988_REAL)),
+        ]))
+        .expect("ordered batch");
+    assert_eq!(
+        model.0.lock().expect("calls").last(),
+        Some(&vec![WF988_REAL.to_owned(), WF988_REAL.to_owned()])
+    );
+    assert_eq!(
+        reuse_row(&store, id).expect("live").revision,
+        Revision::new(7)
+    );
+    assert_eq!(
+        wf988_hit_ids(&store, EmbeddedLeg::Dense, None),
+        vec![(id, 0), (id, 1)]
+    );
+    // Text to empty to text across writes on the same id.
+    store
+        .ingest(IngestBatch::new(vec![wf988_doc(id, 8, None)]))
+        .expect("revision 8 empty");
+    assert_eq!(wf988_hit_ids(&store, EmbeddedLeg::Dense, None), vec![]);
+    let calls = model.0.lock().expect("calls").len();
+    store
+        .ingest(IngestBatch::new(vec![wf988_doc(id, 9, Some(WF988_REAL))]))
+        .expect("revision 9 text");
+    assert_eq!(model.0.lock().expect("calls").len(), calls + 1);
+    assert_eq!(
+        wf988_hit_ids(&store, EmbeddedLeg::Dense, None),
+        vec![(id, 0), (id, 1)]
+    );
+    // The neighbour contract on an empty source.
+    store
+        .ingest(IngestBatch::new(vec![wf988_doc(id, 10, Some(""))]))
+        .expect("revision 10 empty");
+    for chunk in [None, Some(0)] {
+        assert!(matches!(
+            store.nearest_chunks(DocId::new(id), chunk, &NeighbourOptions::default(), running()),
+            Err(QueryError::Store(StoreError::NeighbourSourceNotFound { id: missing, chunk: ordinal }))
+                if missing == DocId::new(98801) && ordinal == chunk
+        ));
+    }
+}
+
+#[test]
+fn wf988_empty_row_survives_storage() {
+    let root = tempdir().expect("root");
+    let path = root.path().join("store");
+    let model = Arc::new(namespace_model::GateModel::default());
+    let open = |schedule| {
+        let options = OpenOptions::new()
+            .with_schema(wf988_schema())
+            .with_embedder(model.clone())
+            .expect("model")
+            .with_document_schedule(schedule);
+        Arc::new(Store::open(&path, options).expect("open"))
+    };
+    let eligible = |ids: &[u128]| ids.iter().map(|id| DocId::new(*id)).collect::<Vec<_>>();
+    let check = |store: &Store, stage: &str| {
+        for (id, rev) in [(98801, 1), (98802, 1), (98804, 1)] {
+            wf988_assert_empty(store, id, rev, stage);
+        }
+        assert_eq!(
+            wf988_scan_ids(store),
+            vec![98801, 98802, 98803, 98804, 98805],
+            "{stage}: filtered scan"
+        );
+        // k exceeds the live vector count: phantom hits would show here.
+        assert_eq!(wf985_dense_ids(store, 64), vec![98803, 98805], "{stage}");
+        for leg in [
+            EmbeddedLeg::Dense,
+            EmbeddedLeg::Lexical,
+            EmbeddedLeg::Hybrid,
+        ] {
+            assert_eq!(
+                wf988_hit_ids(store, leg, Some(&eligible(&[98801, 98802, 98804]))),
+                vec![],
+                "{stage}: only empty rows are eligible"
+            );
+            let mixed = wf988_hit_ids(store, leg, Some(&eligible(&[98801, 98803])));
+            assert!(
+                mixed.iter().all(|(id, _)| *id == 98803),
+                "{stage}: {mixed:?}"
+            );
+            let all = wf988_hit_ids(store, leg, None);
+            assert!(
+                all.iter().all(|(id, _)| [98803, 98805].contains(id)),
+                "{stage}: {all:?}"
+            );
+            if leg == EmbeddedLeg::Dense {
+                assert_eq!(all, vec![(98803, 0), (98805, 0)], "{stage}");
+            }
+        }
+        for (id, chunk) in [(98801, None), (98802, Some(0)), (98804, None)] {
+            assert!(
+                matches!(
+                    store.nearest_chunks(DocId::new(id), chunk, &NeighbourOptions::default(), running()),
+                    Err(QueryError::Store(StoreError::NeighbourSourceNotFound { id: missing, chunk: ordinal }))
+                        if missing == DocId::new(id) && ordinal == chunk
+                ),
+                "{stage}: empty source {id}"
+            );
+        }
+        let neighbours = store
+            .nearest_chunks(
+                DocId::new(98803),
+                None,
+                &NeighbourOptions::default(),
+                running(),
+            )
+            .expect("neighbours")
+            .iter()
+            .map(|hit| hit.id.get())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            neighbours,
+            vec![98805],
+            "{stage}: empty candidates add nothing"
+        );
+    };
+    let verify = |stage: &str| {
+        let report = volantis_db::verify::verify_store(&path).expect("verify");
+        assert!(report.is_clean(), "{stage}: {report:?}");
+    };
+
+    let store = open(DocumentSchedule::Immediate);
+    store
+        .ingest(IngestBatch::new(vec![
+            wf988_doc(98801, 1, None),
+            wf988_doc(98802, 1, Some("")),
+        ]))
+        .expect("all-empty write");
+    store.seal().expect("all-empty segment");
+    store
+        .ingest(IngestBatch::new(vec![
+            wf988_doc(98803, 1, Some(WF985_MAUVE)),
+            wf988_doc(98804, 1, None),
+            wf988_doc(98805, 1, Some(WF985_CYAN)),
+        ]))
+        .expect("mixed write");
+    assert_eq!(
+        *model.calls.lock().expect("calls"),
+        vec![vec![WF985_MAUVE.to_owned(), WF985_CYAN.to_owned()]]
+    );
+    check(&store, "active");
+    store.close().expect("close");
+    drop(store);
+    verify("unsealed WAL");
+
+    let store = open(DocumentSchedule::Immediate);
+    check(&store, "WAL replay");
+    store.seal().expect("mixed segment");
+    check(&store, "sealed");
+    assert_eq!(store.snapshot().expect("snapshot").segments().len(), 2);
+    store.close().expect("close");
+    drop(store);
+    verify("sealed");
+
+    let store = open(DocumentSchedule::Immediate);
+    check(&store, "sealed reopen");
+    store.merge_sealed().expect("merge");
+    assert_eq!(store.snapshot().expect("snapshot").segments().len(), 1);
+    check(&store, "merged");
+    store.close().expect("close");
+    drop(store);
+    verify("merged");
+    let reader = Store::open(
+        &path,
+        OpenOptions::read_only()
+            .with_embedder(model.clone())
+            .expect("model"),
+    )
+    .expect("read-only");
+    check(&reader, "read-only");
+    drop(reader);
+    assert_eq!(model.call_count(), 1, "reads make no document call");
+
+    // Deferred schedule: empty rows are never pending; empty to text is.
+    let store = open(DocumentSchedule::Paused);
+    store
+        .ingest(IngestBatch::new(vec![wf988_doc(98806, 1, Some(""))]))
+        .expect("paused empty write");
+    assert_eq!(store.embedding_status().expect("status").pending, 0);
+    store
+        .ingest(IngestBatch::new(vec![
+            wf988_doc(98801, 2, Some(WF985_MAUVE)),
+            wf988_doc(98803, 2, None),
+        ]))
+        .expect("paused transitions");
+    assert_eq!(store.embedding_status().expect("status").pending, 1);
+    let report = store
+        .query_embedded_report("fictitious", EmbeddedLeg::Lexical, 10, None, running())
+        .expect("report");
+    assert_eq!(report.pending_rows, 1);
+    assert!(
+        wf985_hits(&report)
+            .iter()
+            .all(|hit| *hit == (98801, EmbeddedRowState::Pending)
+                || *hit == (98805, EmbeddedRowState::Ready)),
+        "{report:?}"
+    );
+    assert_eq!(
+        wf985_dense_ids(&store, 64),
+        vec![98805],
+        "text to empty drops the vector"
+    );
+    store.close().expect("close");
+    drop(store);
+    verify("paused");
+
+    let store = open(DocumentSchedule::Paused);
+    assert_eq!(store.embedding_status().expect("status").pending, 1);
+    store.seal().expect("seal pending and empty rows");
+    assert_eq!(store.embedding_status().expect("status").pending, 1);
+    store.close().expect("close");
+    drop(store);
+    let store = open(DocumentSchedule::Background);
+    store.attach_embedding_worker().expect("attach");
+    assert_eq!(
+        store
+            .wait_embedding_idle(WF985_WAIT)
+            .expect("drain")
+            .pending,
+        0
+    );
+    assert_eq!(wf985_dense_ids(&store, 64), vec![98801, 98805]);
+    for (id, rev) in [(98802, 1), (98803, 2), (98804, 1)] {
+        wf988_assert_empty(&store, id, rev, "drained");
+    }
+    assert_eq!(
+        model.calls.lock().expect("calls").last(),
+        Some(&vec![WF985_MAUVE.to_owned()]),
+        "the worker embeds only the pending row"
+    );
+    assert_eq!(model.call_count(), 2);
+    store.close().expect("close");
+    drop(store);
+    verify("drained");
+}
+
+/// A graph-linked document embeds at write time; empty text still commits
+/// with no vector and no model call, and dense search skips it.
+#[cfg(feature = "graph-cypher")]
+#[test]
+fn wf988_graph_linked_empty_rows() {
+    use volantis_db::property_graph::{staging::*, *};
+    let root = tempdir().expect("namespace");
+    let model = Arc::new(namespace_model::GateModel::default());
+    let options = OpenOptions::new()
+        .with_schema(wf988_schema())
+        .with_embedder(model.clone())
+        .expect("model");
+    let store = Store::open(root.path(), options).expect("open");
+    store.enable_graph().expect("graph");
+    let image = CanonicalContents::node(&mut [], &mut [], None, None).expect("image");
+    let writes = [StructuredWrite {
+        key: ApplicationKey::new(EntityKind::Node, "wf988", "linked").expect("key"),
+        revision: GraphRevision::new(1).expect("revision"),
+        operation: StructuredOperation::Create,
+        image: Some(WriteImage::Node(&image)),
+    }];
+    let docs = [GraphNodeDocument {
+        item_index: 0,
+        document: wf988_doc(98801, 1, None),
+    }];
+    store
+        .graph_apply(GraphBatch::with_node_documents(&writes, &docs), &running())
+        .expect("linked empty write");
+    assert_eq!(model.call_count(), 0);
+    wf988_assert_empty(&store, 98801, 1, "linked empty");
+    store
+        .ingest(IngestBatch::new(vec![
+            wf988_doc(98801, 2, Some(WF985_MAUVE)),
+            wf988_doc(98803, 1, Some(WF985_CYAN)),
+        ]))
+        .expect("linked text");
+    assert_eq!(wf985_vector(&store, 98801), Some(vec![1., 0.]));
+    store
+        .ingest(IngestBatch::new(vec![wf988_doc(98801, 3, Some(""))]))
+        .expect("linked text to empty");
+    wf988_assert_empty(&store, 98801, 3, "linked cleared");
+    assert_eq!(model.call_count(), 1);
+    assert_eq!(wf985_dense_ids(&store, 64), vec![98803]);
 }

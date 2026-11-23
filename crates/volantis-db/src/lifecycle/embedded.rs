@@ -69,7 +69,8 @@ pub enum EmbeddedRowState {
     Ready = 0,
     /// The source is committed; it has no chunks and no vector yet.
     Pending = 1,
-    /// Reserved for WF-988: complete with zero chunks and no vector.
+    /// The source is missing or zero bytes: complete with zero chunks and no
+    /// vector. The worker never embeds it and it never counts as pending.
     Empty = 2,
 }
 
@@ -110,9 +111,10 @@ pub struct EmbeddedReport {
 pub(crate) const EPOCH_TAG: &[u8] = b"ZEEMBED1";
 /// Ready row: `ROW_TAG, caller_len:u32, caller, (start:u32, end:u32, f32[dims])+`.
 const ROW_TAG: &[u8] = b"ZECHUNK1";
-/// Row that is not ready: `STATE_TAG, state:u32, token:[u8; 16], caller_len:u32,
-/// caller`. The token identifies one admission, so a purge and reinsert of
-/// the same id, revision and text gets a different token.
+/// Row that is not ready (pending or empty): `STATE_TAG, state:u32,
+/// token:[u8; 16], caller_len:u32, caller`. The token identifies one
+/// admission, so a purge and reinsert of the same id, revision and text gets a
+/// different token.
 const STATE_TAG: &[u8] = b"ZESTATE1";
 const TOKEN_LEN: usize = 16;
 
@@ -138,7 +140,8 @@ pub(crate) fn decode_row(input: &[u8]) -> Result<EmbeddedRow<'_>, StoreError> {
         .ok_or_else(|| invalid("missing embedded row header"))?;
     let state = match word(&mut data)? {
         1 => EmbeddedRowState::Pending,
-        // Ready rows use ROW_TAG; Empty is reserved until WF-988 adds it.
+        2 => EmbeddedRowState::Empty,
+        // Ready rows use ROW_TAG.
         other => return Err(invalid(format!("unsupported embedded row state {other}"))),
     };
     let (_, rest) = data
@@ -156,7 +159,8 @@ pub(crate) fn decode_row(input: &[u8]) -> Result<EmbeddedRow<'_>, StoreError> {
     })
 }
 
-fn pending_row(caller: &[u8]) -> Result<Vec<u8>, StoreError> {
+/// Packs a pending or empty row.
+fn state_row(state: EmbeddedRowState, caller: &[u8]) -> Result<Vec<u8>, StoreError> {
     let mut packed = Vec::new();
     let size = caller
         .len()
@@ -166,7 +170,7 @@ fn pending_row(caller: &[u8]) -> Result<Vec<u8>, StoreError> {
         .try_reserve_exact(size)
         .map_err(|_| invalid("embedded row allocation failed"))?;
     packed.extend_from_slice(STATE_TAG);
-    put_word(&mut packed, EmbeddedRowState::Pending as usize)?;
+    put_word(&mut packed, state as usize)?;
     packed.extend_from_slice(&admission_token());
     put_word(&mut packed, caller.len())?;
     packed.extend_from_slice(caller);
@@ -246,16 +250,31 @@ fn read_chunk<'a>(
     Ok((range, vector))
 }
 
+/// Whether an embedded upsert has no source to embed: text is omitted or
+/// zero bytes. Any other text, including one space, is real input.
+fn is_empty_source(text: Option<&str>) -> bool {
+    text.is_none_or(str::is_empty)
+}
+
 /// Checks one stored embedded row. A ready row holds chunks and a vector; a
-/// pending row holds neither.
+/// pending row holds neither; an empty row holds neither and has no text.
 pub(crate) fn verify_row(
     source: Option<&str>,
     metadata: Option<&[u8]>,
     has_vector: bool,
     dims: usize,
 ) -> Result<(), StoreError> {
-    let source = source.ok_or_else(|| invalid("missing embedded source"))?;
     let row = decode_row(metadata.unwrap_or_default())?;
+    if row.state == EmbeddedRowState::Empty {
+        if !is_empty_source(source) {
+            return Err(invalid("empty embedded row holds text"));
+        }
+        if has_vector {
+            return Err(invalid("empty embedded row holds a vector"));
+        }
+        return Ok(());
+    }
+    let source = source.ok_or_else(|| invalid("missing embedded source"))?;
     if row.state != EmbeddedRowState::Ready {
         if has_vector {
             return Err(invalid("pending embedded row holds a vector"));
@@ -573,14 +592,12 @@ impl Store {
                     "embedded upsert requires text without a caller vector",
                 ));
             }
-            if doc.text().is_none() {
-                return Err(invalid("embedded upsert requires text"));
-            }
         }
         enum Source {
             Encode,
             Stored,
             Earlier(usize),
+            Empty,
         }
         let mut sources = Vec::new();
         let mut generation = None;
@@ -611,8 +628,12 @@ impl Store {
                             .map(|(revision, _)| revision)
                             .or_else(|| row.as_ref().map(|r| r.revision));
                         // Only a ready predecessor has chunks to reuse; a
-                        // pending one gives a new pending admission.
-                        let source = if let Some((_, index)) = prior {
+                        // pending one gives a new pending admission. An empty
+                        // source needs no chunks, but still advances the
+                        // latest revision of its id in this batch.
+                        let source = if is_empty_source(doc.text()) {
+                            Source::Empty
+                        } else if let Some((_, index)) = prior {
                             Source::Earlier(index)
                         } else if let Some(row) = row
                             && row.text.as_deref() == doc.text()
@@ -643,14 +664,18 @@ impl Store {
         let mut pending = Vec::new();
         let mut texts = Vec::new();
         for (index, doc) in documents.iter().enumerate() {
+            // Classified by text, so it also holds when reuse is off.
+            if is_empty_source(doc.text()) {
+                continue;
+            }
             match sources.get(index) {
                 Some(Source::Stored) => continue,
                 Some(Source::Earlier(previous)) => {
                     let previous = documents
                         .get(*previous)
                         .ok_or(StoreError::ActiveRowOverflow)?;
-                    // Reuse a ready earlier row of this batch. A deferred
-                    // earlier row has no chunks to copy.
+                    // Reuse a ready earlier row of this batch. A deferred or
+                    // empty earlier row has no chunks to copy.
                     if previous.text() == doc.text() && !defer {
                         continue;
                     }
@@ -667,16 +692,29 @@ impl Store {
             );
         }
         let dims = self.embedded_dims()?;
+        let absent_dims =
+            u32::try_from(dims).map_err(|_| invalid("embedding dimensions exceed u32"))?;
+        // An empty source is complete now, with no chunks, no vector and no
+        // model call, on every schedule.
+        let complete_empty = |doc: &mut IngestDocument| -> Result<bool, StoreError> {
+            if !is_empty_source(doc.text()) {
+                return Ok(false);
+            }
+            let packed = state_row(EmbeddedRowState::Empty, doc.metadata())?;
+            doc.set_vector_absent(absent_dims, packed);
+            Ok(true)
+        };
         if defer {
+            for doc in documents.iter_mut() {
+                complete_empty(doc)?;
+            }
             // Commit the source now; the background worker embeds it later.
-            let dims =
-                u32::try_from(dims).map_err(|_| invalid("embedding dimensions exceed u32"))?;
             for index in pending {
                 let doc = documents
                     .get_mut(index)
                     .ok_or(StoreError::ActiveRowOverflow)?;
-                let packed = pending_row(doc.metadata())?;
-                doc.set_vector_absent(dims, packed);
+                let packed = state_row(EmbeddedRowState::Pending, doc.metadata())?;
+                doc.set_vector_absent(absent_dims, packed);
             }
             return Ok(generation
                 .filter(|_| {
@@ -701,6 +739,9 @@ impl Store {
         for index in 0..documents.len() {
             let (prior, remaining) = documents.split_at_mut(index);
             let doc = remaining.first_mut().ok_or(StoreError::ActiveRowOverflow)?;
+            if complete_empty(doc)? {
+                continue;
+            }
             let text = doc
                 .text()
                 .ok_or_else(|| invalid("missing embedded source"))?;
@@ -831,12 +872,16 @@ impl Store {
                 | DocumentFields::CHUNKS;
             let page = self.embedded_page(fields, cursor, filter, &control)?;
             for doc in page.documents {
+                let row = decode_row(doc.metadata.as_deref().unwrap_or_default())
+                    .map_err(QueryError::Store)?;
+                // An empty row has no chunk: it is never a candidate.
+                if row.state == EmbeddedRowState::Empty {
+                    continue;
+                }
                 let source = doc
                     .text
                     .as_deref()
                     .ok_or_else(|| error("missing embedded source"))?;
-                let row = decode_row(doc.metadata.as_deref().unwrap_or_default())
-                    .map_err(QueryError::Store)?;
                 if row.state == EmbeddedRowState::Pending {
                     pending_rows = pending_rows.saturating_add(1);
                     if leg != EmbeddedLeg::Dense {
@@ -1009,4 +1054,45 @@ fn same_text_reuse_rejects_corrupt_chunks() {
     malformed = suffix;
     malformed[8..12].copy_from_slice(&f32::INFINITY.to_le_bytes());
     assert!(pack(&malformed).is_err());
+}
+
+#[cfg(test)]
+#[test]
+#[allow(clippy::expect_used, clippy::indexing_slicing)]
+fn wf988_validates_empty_envelope() {
+    // ZESTATE1, state 2 (empty), admission token, caller_len 3, caller.
+    let empty = [
+        b"ZESTATE1\x02\0\0\0".as_slice(),
+        &[0x5a; 16],
+        b"\x03\0\0\0FAK",
+    ]
+    .concat();
+    let row = decode_row(&empty).expect("complete empty row");
+    assert_eq!(row.state, EmbeddedRowState::Empty);
+    assert_eq!((row.caller, row.chunks), (b"FAK".as_slice(), [].as_slice()));
+    for source in [None, Some("")] {
+        assert!(verify_row(source, Some(&empty), false, 2).is_ok());
+        // An empty row never holds a parent vector.
+        assert!(verify_row(source, Some(&empty), true, 2).is_err());
+    }
+    // An empty row with real text, a short caller length or chunk bytes.
+    assert!(verify_row(Some("x"), Some(&empty), false, 2).is_err());
+    assert!(verify_row(None, Some(&empty[..empty.len() - 1]), false, 2).is_err());
+    let chunked = [empty.as_slice(), &[0, 0, 0, 0, 0, 0, 0, 0]].concat();
+    assert!(verify_row(None, Some(&chunked), false, 2).is_err());
+    // A ready row keeps the strict checks: nonempty text without chunks.
+    let ready = b"ZECHUNK1\x03\0\0\0FAK";
+    assert!(verify_row(Some("x"), Some(ready), true, 2).is_err());
+    assert!(verify_row(None, Some(ready), true, 2).is_err());
+    // A pending row still needs its source text.
+    let pending = [b"ZESTATE1\x01\0\0\0".as_slice(), &[0x5a; 16], b"\0\0\0\0"].concat();
+    assert!(verify_row(Some("x"), Some(&pending), false, 2).is_ok());
+    assert!(verify_row(None, Some(&pending), false, 2).is_err());
+    // The engine packs the same layout with no model call.
+    let packed = state_row(EmbeddedRowState::Empty, b"FAK").expect("pack");
+    assert_eq!(packed.len(), empty.len());
+    assert_eq!(
+        decode_row(&packed).expect("decode").state,
+        EmbeddedRowState::Empty
+    );
 }

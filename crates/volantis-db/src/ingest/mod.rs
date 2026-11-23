@@ -181,6 +181,13 @@ impl IngestDocument {
     pub(crate) const fn absent_dims(&self) -> Option<u32> {
         self.absent_dims
     }
+    /// Whether this row waits for the background worker. An empty row also
+    /// has no vector, but it is complete.
+    pub(crate) fn is_pending_embedding(&self) -> bool {
+        use crate::lifecycle::embedded::{EmbeddedRowState, decode_row};
+        self.absent_dims.is_some()
+            && decode_row(&self.metadata).is_ok_and(|row| row.state == EmbeddedRowState::Pending)
+    }
     pub(crate) fn clear_metadata_presence(&mut self) {
         self.metadata_present = false;
     }
@@ -425,7 +432,7 @@ impl IngestBatch {
     pub(crate) fn has_pending(&self) -> bool {
         self.documents
             .iter()
-            .any(|document| document.absent_dims().is_some())
+            .any(IngestDocument::is_pending_embedding)
     }
 }
 

@@ -20195,6 +20195,17 @@ mod unified_store {
     }
 
     #[test]
+    fn mixed_batch_keeps_embedded_members_atomic() {
+        let mut coverage = super::adversarial::coverage::CoverageRegistry::default();
+        super::adversarial::unified_graph::run(
+            super::adversarial::unified_graph::Operation::MixedBatch,
+            358,
+            &mut coverage,
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn document_delete_obeys_restrict_and_removes_the_isolated_node_after_reopen() {
         let mut coverage = super::adversarial::coverage::CoverageRegistry::default();
         super::adversarial::unified_graph::run(
