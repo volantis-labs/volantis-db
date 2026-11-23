@@ -1,8 +1,7 @@
-//! WF-990: a text build without MLX keeps its C ABI and refuses model work.
-#![cfg(all(
-    feature = "text",
-    not(all(target_os = "macos", target_arch = "aarch64"))
-))]
+//! WF-990: a text build without a model runtime keeps its C ABI and refuses
+//! model work. Since WF-991, Intel macOS runs the CPU runtime, so this applies
+//! to text builds off macOS (Windows) only.
+#![cfg(all(feature = "text", not(target_os = "macos")))]
 
 mod common;
 use std::mem::size_of;
@@ -149,7 +148,7 @@ fn write_plain_row(handle: ZeHandle) {
 }
 
 #[test]
-fn text_opens_return_unsupported_on_x64() {
+fn text_opens_return_unsupported_off_macos() {
     let root = tempfile::tempdir().expect("temporary root");
     let cache = root.path().join("cache");
     std::fs::create_dir(&cache).expect("private empty cache");

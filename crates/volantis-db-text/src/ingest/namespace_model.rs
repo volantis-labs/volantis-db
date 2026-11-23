@@ -13,8 +13,10 @@ enum QueryArtifact {
     External(PathBuf),
 }
 
+/// Repository, revision, manifest, query artifact and backend. A forced
+/// backend never shares a session with another backend.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct SessionKey(String, String, String, QueryArtifact);
+struct SessionKey(String, String, String, QueryArtifact, Backend);
 
 #[cfg(any(test, feature = "test-support"))]
 thread_local! { static STARTS: std::cell::Cell<usize> = const {std::cell::Cell::new(0)}; }
@@ -81,7 +83,15 @@ impl NamespaceModel {
     /// per open; no process-wide selection exists.
     pub(crate) fn open_bundle_on(path: &Path, backend: Backend) -> Result<Self, TextError> {
         backend.available()?;
-        Self::acquire(path, discover_query_coreml(path), None, backend)
+        Self::acquire(path, query_coreml(path, backend), None, backend)
+    }
+
+    /// Opens a private session on the portable fp32 CPU runtime, also where
+    /// another backend is the default. Parity tests compare the backends.
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn open_bundle_cpu(path: &Path) -> Result<Self, TextError> {
+        Self::open_bundle_on(path, Backend::Cpu)
     }
 
     /// Validates the requested cache entry before looking up its session.
@@ -89,12 +99,20 @@ impl NamespaceModel {
         model: &crate::ModelRef,
         options: &crate::ModelOpenOptions<'_>,
     ) -> Result<Self, TextError> {
+        Self::open_model_on(model, options, Backend::target_default())
+    }
+
+    /// Opens a pinned model on an explicit backend.
+    pub(crate) fn open_model_on(
+        model: &crate::ModelRef,
+        options: &crate::ModelOpenOptions<'_>,
+        backend: Backend,
+    ) -> Result<Self, TextError> {
         // No download, cache limit or session lookup happens without a runtime.
-        let backend = Backend::target_default();
         backend.available()?;
         let path = crate::resolve_model(model, options).map_err(TextError::ModelResolution)?;
         crate::runtime::mlx_cache::configure(options.text.mlx_cache_limit_bytes)?;
-        let (query, artifact) = match discover_query_coreml(&path) {
+        let (query, artifact) = match query_coreml(&path, backend) {
             None => (None, QueryArtifact::Mlx),
             Some(query) if query == path.with_extension("mlmodelc") => {
                 (Some(query), QueryArtifact::PinnedSibling)
@@ -112,6 +130,7 @@ impl NamespaceModel {
             model.revision.clone(),
             model.manifest_sha256.clone(),
             artifact,
+            backend,
         );
         Self::acquire(&path, query, Some(key), backend)
     }
@@ -131,7 +150,7 @@ impl NamespaceModel {
         } else {
             let bundle = Arc::new(Bundle::open(path)?);
             let mut epoch = embedding_epoch(&bundle);
-            if let Some(SessionKey(repo, revision, manifest, _)) = &key {
+            if let Some(SessionKey(repo, revision, manifest, _, _)) = &key {
                 // Length framing preserves the bundle's alignment digest and prevents
                 // a different repository, revision or manifest from reopening the rows.
                 let mut bytes = b"ZEMREF01".to_vec();
@@ -996,5 +1015,262 @@ mod tests {
         }
         println!("minimum cosine {minimum:.10}");
         assert!(minimum >= 0.99999);
+    }
+}
+
+/// WF-991: the CPU runtime under the unchanged namespace model layer.
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::indexing_slicing)]
+mod wf991_tests {
+    use super::*;
+    use volantis_db::ingest::{IngestBatch, IngestDocument};
+    use volantis_db::lifecycle::embedded::{DocumentSchedule, EmbeddedLeg};
+    use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl, Store};
+
+    #[allow(dead_code, clippy::excessive_precision, clippy::unreadable_literal)]
+    mod reference {
+        include!("../../tests/fixtures/wf986/reference.rs");
+    }
+
+    const PAIR: &[u8] = include_bytes!("../../tests/fixtures/wf986/pair.zem");
+
+    fn sha256(path: &Path) -> String {
+        let output = std::process::Command::new("shasum")
+            .args(["-a", "256"])
+            .arg(path)
+            .output()
+            .expect("hash fixture");
+        assert!(output.status.success());
+        String::from_utf8(output.stdout).expect("UTF-8")[..64].to_owned()
+    }
+
+    /// Writes the WF-986 tiny BERT pair into an offline pinned cache entry.
+    fn pinned_pair(root: &Path) -> (crate::ModelRef, crate::ModelOpenOptions<'static>) {
+        let revision = "9".repeat(40);
+        let entry = root.join("fixture%2Ffake-wf991").join(&revision);
+        std::fs::create_dir_all(&entry).expect("cache entry");
+        let bundle = entry.join("tiny.zem");
+        std::fs::write(&bundle, PAIR).expect("bundle");
+        let manifest = entry.join("volantis-model.json");
+        std::fs::write(
+            &manifest,
+            format!(
+                r#"{{"format":1,"name":"tiny","bundle":"tiny.zem","query_coreml":null,"files":[{{"path":"tiny.zem","size":{},"sha256":"{}"}}]}}"#,
+                PAIR.len(),
+                sha256(&bundle)
+            ),
+        )
+        .expect("manifest");
+        let pin = crate::ModelRef {
+            repo: "fixture/fake-wf991".to_owned(),
+            revision,
+            manifest_sha256: sha256(&manifest),
+        };
+        let options = crate::ModelOpenOptions {
+            cache_dir: Some(root.to_owned()),
+            offline: true,
+            ..Default::default()
+        };
+        (pin, options)
+    }
+
+    fn assert_close(actual: &[f32], expected: &[f32], context: &str) {
+        assert_eq!(actual.len(), expected.len(), "{context}");
+        for (a, e) in actual.iter().zip(expected) {
+            assert!(
+                (a - e).abs() < 2.0e-5,
+                "{context}: {actual:?} != {expected:?}"
+            );
+        }
+    }
+
+    fn document(id: u128, revision: u64, text: &str) -> IngestDocument {
+        IngestDocument::new(
+            DocumentVersion::new(DocId::new(id), Revision::new(revision)),
+            vec![],
+        )
+        .with_text(text)
+    }
+
+    fn take_shapes(model: &NamespaceModel) -> Vec<(usize, Vec<usize>)> {
+        std::mem::take(
+            &mut *model
+                .session()
+                .expect("session")
+                .runtime
+                .observer
+                .lock()
+                .expect("observer"),
+        )
+    }
+
+    #[test]
+    fn wf991_cpu_namespace_round_trip() {
+        let root = tempfile::tempdir().expect("root");
+        let (pin, options) = pinned_pair(root.path());
+        let starts = STARTS.get();
+        let first = NamespaceModel::open_model_on(&pin, &options, Backend::Cpu).expect("CPU lease");
+        let second =
+            NamespaceModel::open_model_on(&pin, &options, Backend::Cpu).expect("second lease");
+        assert_eq!(STARTS.get() - starts, 1, "two leases share one CPU session");
+        let session = first.session().expect("session");
+        let loads = Arc::clone(&session.runtime.document_loads);
+        assert!(Arc::ptr_eq(
+            &loads,
+            &second.session().expect("peer").runtime.document_loads
+        ));
+        assert_eq!(session.runtime.query_backend.runtime.name, "cpu-fp32");
+        assert!(!session.runtime.query_backend.runtime.gpu);
+
+        // Production query path on the CPU equals the fp64 PyTorch oracle.
+        for (row, (name, text, _)) in reference::QUERY_CASES.iter().enumerate() {
+            let vector = second.query(text).expect("query");
+            assert_close(&vector, &reference::QUERY_VECTORS[row], name);
+        }
+        assert_eq!(loads.load(Ordering::Relaxed), 0);
+
+        // Upserts through the core store: one ragged 10-row batch (ZE-597).
+        let model = Arc::new(first);
+        let store =
+            Store::open_embedded(root.path().join("store"), OpenOptions::new(), model.clone())
+                .expect("embedded store");
+        let mut seen = std::collections::BTreeSet::new();
+        let fits = reference::DOCUMENT_CASES
+            .iter()
+            .enumerate()
+            .filter(|(_, case)| case.2.len() < reference::DOCUMENT_MAX_TOKENS)
+            .filter(|(_, case)| !case.1.trim().is_empty() && seen.insert(case.1))
+            .take(10)
+            .collect::<Vec<_>>();
+        assert_eq!(fits.len(), 10);
+        take_shapes(&model);
+        store
+            .ingest(IngestBatch::new(
+                fits.iter()
+                    .map(|(row, case)| document(60_100 + *row as u128, 1, case.1))
+                    .collect(),
+            ))
+            .expect("10-row upsert");
+        assert_eq!(take_shapes(&model), vec![(10, vec![10])], "one batch");
+        assert_eq!(loads.load(Ordering::Relaxed), 1);
+        let documents = model
+            .documents(&fits.iter().map(|(_, case)| case.1).collect::<Vec<_>>())
+            .expect("document vectors");
+        for ((row, (name, text, _)), chunks) in fits.iter().zip(&documents) {
+            assert_eq!(chunks.len(), 1, "{name}");
+            assert_eq!(chunks[0].bytes, 0..text.len(), "{name}");
+            assert_close(&chunks[0].vector, &reference::DOCUMENT_VECTORS[*row], name);
+        }
+        take_shapes(&model);
+
+        // Same-text upsert reuses the stored chunks: no document call (ZE-596).
+        let (row, case) = fits[0];
+        store
+            .ingest(IngestBatch::new(vec![document(
+                60_100 + row as u128,
+                2,
+                case.1,
+            )]))
+            .expect("same-text upsert");
+        assert!(
+            take_shapes(&model).is_empty(),
+            "same text made a document call"
+        );
+
+        // Dense query over the stored CPU vectors finds the exact text first.
+        let report = store
+            .query_embedded_report(
+                case.1,
+                EmbeddedLeg::Dense,
+                3,
+                None,
+                QueryControl::Cancel(CancelToken::new()),
+            )
+            .expect("dense report");
+        assert!(!report.hits.is_empty());
+        store.close().expect("close store");
+        assert_eq!(loads.load(Ordering::Relaxed), 1);
+
+        // A forced CPU open never shares a session with the target default.
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        {
+            let apple = NamespaceModel::open_model(&pin, &options).expect("Apple lease");
+            assert_eq!(
+                STARTS.get() - starts,
+                2,
+                "Apple open starts its own session"
+            );
+            assert_eq!(
+                apple
+                    .session()
+                    .expect("Apple")
+                    .runtime
+                    .query_backend
+                    .runtime
+                    .name,
+                "mlx-c"
+            );
+        }
+        drop(model);
+        drop(second);
+        let registry = registry().lock().expect("registry");
+        assert!(
+            !registry
+                .pinned
+                .keys()
+                .any(|key| key.0 == "fixture/fake-wf991" && key.4 == Backend::Cpu),
+            "the last CPU lease released the session"
+        );
+    }
+
+    #[test]
+    fn wf991_cpu_runs_deferred_worker() {
+        let root = tempfile::tempdir().expect("root");
+        let bundle = root.path().join("pair.zem");
+        std::fs::write(&bundle, PAIR).expect("bundle");
+        let model = Arc::new(NamespaceModel::open_bundle_on(&bundle, Backend::Cpu).expect("CPU"));
+        let options = OpenOptions::new()
+            .with_embedder(model.clone())
+            .expect("model")
+            .with_document_schedule(DocumentSchedule::Background);
+        let store = Arc::new(Store::open(root.path().join("store"), options).expect("store"));
+        store.attach_embedding_worker().expect("worker");
+        let texts = [
+            "Fake tulip ZQ986",
+            "Fiktive Glühbirne ZQ986",
+            "Balise fictive ZQ986",
+        ];
+        store
+            .ingest(IngestBatch::new(
+                texts
+                    .iter()
+                    .zip(60_101_u128..)
+                    .map(|(text, id)| document(id, 1, text))
+                    .collect(),
+            ))
+            .expect("pending rows");
+        let status = store
+            .wait_embedding_idle(std::time::Duration::from_secs(60))
+            .expect("worker drains");
+        assert_eq!(status.pending, 0, "{status:?}");
+        // Every row is ready and the dense leg finds all of them.
+        let report = store
+            .query_embedded_report(
+                texts[0],
+                EmbeddedLeg::Dense,
+                3,
+                None,
+                QueryControl::Cancel(CancelToken::new()),
+            )
+            .expect("dense report");
+        assert_eq!(report.pending_rows, 0);
+        let mut ids = report
+            .hits
+            .iter()
+            .map(|hit| hit.version.doc_id().get())
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        assert_eq!(ids, vec![60_101, 60_102, 60_103]);
+        store.close().expect("close");
     }
 }

@@ -1,5 +1,7 @@
-//! WF-990: a target without MLX fails every model open before model I/O.
-#![cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+//! WF-990: a target without a model runtime fails every model open before
+//! model I/O. Since WF-991, every macOS target has one (MLX or the fp32 CPU
+//! runtime), so this applies to targets off macOS only.
+#![cfg(not(target_os = "macos"))]
 #![allow(clippy::expect_used, clippy::panic)]
 
 use std::cell::Cell;
@@ -86,14 +88,8 @@ fn unsupported_backend_precedes_model_io() {
     assert!(is_empty(&cache), "a rejected open touched the model cache");
     assert_eq!(progress_calls.get(), 0, "a rejected open reported progress");
 
-    // Direct resolution needs no runtime: macOS resolves, other targets refuse.
+    // Direct resolution needs no runtime; it is refused off macOS too.
     let resolved = resolve_model(&model, &options(1));
-    #[cfg(target_os = "macos")]
-    assert!(
-        matches!(resolved, Err(ModelError::OfflineMiss)),
-        "{resolved:?}"
-    );
-    #[cfg(not(target_os = "macos"))]
     assert!(
         matches!(resolved, Err(ModelError::UnsupportedBackend)),
         "{resolved:?}"

@@ -1,19 +1,25 @@
 # Volantis DB Text
 
 Local text embedding and dense (vector), lexical (BM25), or hybrid retrieval
-without supplying your own vectors. Models run on macOS on Apple silicon;
-source builds there need Xcode with the Metal toolchain.
+without supplying your own vectors. Models run on macOS. Source builds on
+Apple silicon need Xcode with the Metal toolchain.
 
 | Target | Builds | Model runtime |
 |---|---|---|
 | `aarch64-apple-darwin` | MLX, Core ML shim, model resolver | MLX (GPU) and Core ML |
-| `x86_64-apple-darwin` | model resolver, no MLX or Core ML | none yet: model opens return `ZE_ERR_UNSUPPORTED` |
+| `x86_64-apple-darwin` | model resolver, fp32 CPU runtime | CPU (`cpu-fp32`), BERT towers |
 | `x86_64-pc-windows-msvc` | no MLX, Core ML or resolver | none yet: model opens return `ZE_ERR_UNSUPPORTED` |
 
-On Intel macOS and Windows every text-store open and embedded namespace open
-fails with `RuntimeError::UnsupportedBackend` (C: `ZE_ERR_UNSUPPORTED`) before
-any download, cache or store change. Ordinary namespaces and
-`ze_text_default_model` work. The portable CPU runtime is planned (WF-991).
+Intel macOS runs both BERT towers of the default model on the CPU in fp32. It
+reads the same FP16 `.zem` as Apple silicon and widens one weight tile at a
+time (F16C with AVX2 and FMA when the CPU has them, else portable Rust), so it
+keeps no fp32 copy of a tower. A store keeps the epoch of the bundle, not of
+the backend, so stores move between Apple silicon and Intel Macs. The CPU
+runtime does not run GTE or ArcticQuery towers and never loads a Core ML
+artifact. On Windows every text-store open and embedded namespace open fails
+with `RuntimeError::UnsupportedBackend` (C: `ZE_ERR_UNSUPPORTED`) before any
+download, cache or store change; ordinary namespaces and
+`ze_text_default_model` work.
 
 ```sh
 xcodebuild -downloadComponent MetalToolchain
@@ -103,9 +109,10 @@ Licensed under [GPL-3.0-only](https://www.gnu.org/licenses/gpl-3.0.html).
 enabled on hosted `macos-14`, runs every non-ignored test in both crates,
 and builds the full graph+text XCFramework to run all Swift `TextStoreTests`.
 Rust releases require these checks before publishing either crate.
-The `text-x64-macos` and `text-windows` jobs build both crates without MLX
-and run the platform contract tests (`backend_platform`, `ffi_text_platform`,
-`ffi_namespace`). These two jobs have not run yet.
+The `text-x64-macos` job builds both crates without MLX and runs every
+non-ignored text test and `ffi_namespace` on the CPU runtime. The
+`text-windows` job runs the platform contract tests (`backend_platform`,
+`ffi_text_platform`, `ffi_namespace`).
 
 The dedicated real-model job runs
 `default_model::real_default_model_downloads_verifies_and_reopens_offline` and
@@ -130,6 +137,7 @@ models; substituting the published FP16 default would invalidate the assertions.
 | Release smoke (MLX, all legs) and FP16 e5 pair layout | HF cache or `WF987_RELEASE` (a `ze-model release` folder) | `cargo test --locked -p volantis-db-text --test release -- --ignored` |
 | e5 pair tokens and FP16 parity against the pack fp32 goldens (cosine >= 0.999 per row) | `E5_PACK`, `E5_BUNDLE` (the release `.zem`), `E5_PRECISION=fp16` | `cargo test --locked -p volantis-db-text --test e5_pair pack_ -- --ignored` |
 | 30,001-document maintenance | Unsandboxed MLX runtime | `cargo test --locked -p volantis-db-text --test text_api -- --ignored` |
+| CPU runtime against MLX on both towers (cosine >= 0.9999 per row, same chunk spans), CPU/MLX store reopen, CPU weight storage | `WF991_BUNDLE` (the release `.zem`); optional `WF991_PACK` for a report-only golden comparison | `cargo test --locked --release -p volantis-db-text --test wf991_parity -- --ignored --test-threads=1 --skip wf991_reopen_phase` and `cargo test --locked --release -p volantis-db-text --lib wf991_weight_storage -- --ignored` |
 
 `model_cache::measure_large_cache_open` is an ignored manual benchmark, not a
 correctness gate: `cargo test --locked -p volantis-db-text --test model_cache measure_large_cache_open -- --ignored --exact`.

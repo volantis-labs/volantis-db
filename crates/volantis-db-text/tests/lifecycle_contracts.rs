@@ -109,16 +109,29 @@ fn discovered_broken_coreml_artifact_fails_open_without_silent_backend_fallback(
     common::write_symmetric_fixture_bundle(&model);
     std::fs::create_dir(model.with_extension("mlmodelc")).expect("invalid empty CoreML artifact");
     let result = TextStore::open(root.path().join("store"), &model, Default::default());
+    #[cfg(target_arch = "aarch64")]
     assert!(
         matches!(result, Err(TextError::Runtime(volantis_db_text::runtime::RuntimeError::Mlx(detail))) if !detail.is_empty()),
         "present invalid artifact must fail open"
     );
+    // WF-991: the CPU backend never runs CoreML, so it never reads the artifact.
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let cpu = result.expect("the CPU backend does not load CoreML artifacts");
+        assert_eq!(cpu.query_backend().runtime.name, "cpu-fp32");
+        cpu.close().expect("join CPU worker");
+    }
     // The failed initialization releases the writer. Removing the invalid artifact
     // permits a new open with the explicitly absent-CoreML policy.
     std::fs::remove_dir(model.with_extension("mlmodelc")).expect("remove invalid fixture");
     let clean = TextStore::open(root.path().join("store"), &model, Default::default())
         .expect("clean reopen after initialization error");
-    assert_eq!(clean.query_backend().runtime.name, "mlx-c");
+    let expected = if cfg!(target_arch = "aarch64") {
+        "mlx-c"
+    } else {
+        "cpu-fp32"
+    };
+    assert_eq!(clean.query_backend().runtime.name, expected);
     clean.close().expect("join clean worker");
 }
 

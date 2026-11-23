@@ -243,7 +243,13 @@ fn astra_00_detailed_text_query_preserves_hits_and_reports_its_boundaries() {
         assert_eq!(report.embedding_calls, usize::from(legs != Legs::Lexical));
         assert_eq!(report.backend.is_some(), legs != Legs::Lexical);
         if let Some(backend) = report.backend {
-            assert_eq!(backend.runtime.name, "mlx-c");
+            // MLX on Apple silicon; the fp32 CPU runtime on other targets.
+            let expected = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+                "mlx-c"
+            } else {
+                "cpu-fp32"
+            };
+            assert_eq!(backend.runtime.name, expected);
             assert_eq!(backend.observed_compute_units, None);
             assert!(report.query_tokens > 0);
         } else {

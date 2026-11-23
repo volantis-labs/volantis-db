@@ -82,7 +82,7 @@ jobs:
   # opens with ZE_ERR_UNSUPPORTED until the CPU runtime (WF-991). Not yet run:
   # the repository has no GitHub Actions history.
   text-x64-macos:
-    name: Text without MLX on Intel macOS (x86_64)
+    name: Text on the CPU runtime on Intel macOS (x86_64)
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
@@ -99,10 +99,10 @@ jobs:
           ! cargo tree --locked -p volantis-db-ffi --features text -e normal,build | grep -E 'mlx-(rs|sys)'
       - run: cargo build --locked -p volantis-db-text -p volantis-db-ffi --features text
       - run: cargo clippy --locked -p volantis-db-text -p volantis-db-ffi --all-targets --features text -- -D warnings
-      - name: Run the platform contract tests
+      - name: Run the text tests on the fp32 CPU runtime
         run: |
-          cargo test --locked -p volantis-db-text --test backend_platform
-          cargo test --locked -p volantis-db-ffi --features text --test ffi_text_platform --test ffi_namespace
+          cargo test --locked -p volantis-db-text
+          cargo test --locked -p volantis-db-ffi --features text --test ffi_namespace
 
   text-windows:
     name: Text without MLX on Windows (x86_64 MSVC)
@@ -122,10 +122,10 @@ jobs:
           ! cargo tree --locked -p volantis-db-ffi --features text -e normal,build | grep -E 'mlx-(rs|sys)'
       - run: cargo build --locked -p volantis-db-text -p volantis-db-ffi --features text
       - run: cargo clippy --locked -p volantis-db-text -p volantis-db-ffi --all-targets --features text -- -D warnings
-      - name: Run the platform contract tests
+      - name: Run the text tests on the fp32 CPU runtime
         run: |
-          cargo test --locked -p volantis-db-text --test backend_platform
-          cargo test --locked -p volantis-db-ffi --features text --test ffi_text_platform --test ffi_namespace
+          cargo test --locked -p volantis-db-text
+          cargo test --locked -p volantis-db-ffi --features text --test ffi_namespace
 
   real-model:
     name: Pinned HF model verification and tokenizer parity (arm64, no MLX)

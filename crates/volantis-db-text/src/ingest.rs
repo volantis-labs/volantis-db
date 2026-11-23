@@ -11,9 +11,10 @@ use crate::bundle::Bundle;
 use crate::epoch::{document_epoch, embedding_epoch};
 use crate::error::TextError;
 use crate::query::{Legs, QueryBackend, QueryOptions, TextHit, TextQueryOutcome, TextQueryTimings};
-use crate::runtime::{Backend, EmbeddingBatch, RuntimeError};
+use crate::runtime::cpu::CpuRuntime;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-use crate::runtime::{ModelRuntime, mlx::MlxRuntime};
+use crate::runtime::mlx::MlxRuntime;
+use crate::runtime::{Backend, EmbeddingBatch, ModelRuntime, RuntimeError};
 use crate::tower::{TokenBatch, TowerRole};
 use volantis_db::epoch::{EpochIdentity, Normalization, StoreEpoch};
 use volantis_db::fts::index::DEFAULT_FIELD;
@@ -357,7 +358,7 @@ impl TextStore {
         crate::runtime::mlx_cache::configure(options.mlx_cache_limit_bytes)?;
         let runtime = RuntimeClient::start(
             Arc::clone(&bundle),
-            discover_query_coreml(&bundle_path),
+            query_coreml(&bundle_path, backend),
             backend,
         )?;
         let warm_cancel = CancelToken::new();
@@ -1717,6 +1718,14 @@ fn encode_chunk_id(id: u128, chunk: u32) -> Result<DocId, TextError> {
 /// directory counts. `ZE_QUERY_COREML` overrides the path; the fixed sequence
 /// length comes from the compiled model's input description.
 /// `ZE_QUERY_COREML=off` forces MLX.
+/// Returns the CoreML query artifact for an open on `backend`. Only the Apple
+/// backend runs CoreML; the CPU backend ignores any artifact.
+fn query_coreml(bundle_path: &std::path::Path, backend: Backend) -> Option<std::path::PathBuf> {
+    (backend != Backend::Cpu)
+        .then(|| discover_query_coreml(bundle_path))
+        .flatten()
+}
+
 fn discover_query_coreml(bundle_path: &std::path::Path) -> Option<std::path::PathBuf> {
     let model = match std::env::var("ZE_QUERY_COREML") {
         Ok(value) if value == "off" => return None,
@@ -1902,24 +1911,76 @@ fn check_runtime_control(
     Ok(())
 }
 
-/// Which backend evaluates the query tower.
-///
-/// CoreML on the Apple Neural Engine is the default when a compiled
-/// model sits beside the bundle: at batch one the tower is bound by
-/// Metal dispatch count, so CoreML is far faster and far steadier while
-/// returning the same vectors. MLX is used when no compiled model is
-/// present.
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-enum QueryRuntime {
+/// One tower on the backend selected for this open.
+enum TowerRuntime {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     Mlx(Box<MlxRuntime>),
+    Cpu(Box<CpuRuntime>),
+}
+
+impl TowerRuntime {
+    fn load(bundle: &Arc<Bundle>, role: TowerRole, backend: Backend) -> Result<Self, TextError> {
+        match backend {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Backend::Apple => Ok(Self::Mlx(Box::new(MlxRuntime::load(
+                Arc::clone(bundle),
+                role,
+            )?))),
+            Backend::Cpu => Ok(Self::Cpu(Box::new(CpuRuntime::load(
+                Arc::clone(bundle),
+                role,
+            )?))),
+        }
+    }
+
+    fn backend(&self) -> QueryBackend {
+        match self {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Self::Mlx(runtime) => tower_backend(runtime.identity()),
+            Self::Cpu(runtime) => tower_backend(runtime.identity()),
+        }
+    }
+
+    fn embed_controlled(
+        &mut self,
+        tokens: &TokenBatch,
+        checkpoint: &mut impl FnMut() -> Result<(), TextError>,
+    ) -> Result<EmbeddingBatch, TextError> {
+        match self {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Self::Mlx(runtime) => runtime.embed_batch_controlled(tokens, checkpoint),
+            Self::Cpu(runtime) => runtime.embed_batch_controlled(tokens, checkpoint),
+        }
+    }
+
+    #[cfg(test)]
+    fn set_observer(&mut self, observer: Option<crate::runtime::limits::EvalObserver>) {
+        match self {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            Self::Mlx(runtime) => runtime.observer = observer,
+            Self::Cpu(runtime) => runtime.observer = observer,
+        }
+    }
+}
+
+/// Which runtime evaluates the query tower.
+///
+/// On Apple silicon, CoreML on the Apple Neural Engine is the default when a
+/// compiled model sits beside the bundle: at batch one the tower is bound by
+/// Metal dispatch count, so CoreML is far faster and far steadier while
+/// returning the same vectors. Otherwise the query tower runs on the backend
+/// selected for the open (MLX, or the CPU). The CPU backend never uses CoreML.
+enum QueryRuntime {
+    Tower(TowerRuntime),
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     CoreMl(Box<crate::runtime::coreml::CoreMlRuntime>),
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 impl QueryRuntime {
     fn backend(&self) -> QueryBackend {
         match self {
-            Self::Mlx(runtime) => mlx_backend(runtime),
+            Self::Tower(runtime) => runtime.backend(),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             Self::CoreMl(runtime) => QueryBackend {
                 runtime: runtime.identity(),
                 requested_compute_units: runtime.requested_compute_units(),
@@ -1935,7 +1996,8 @@ impl QueryRuntime {
         checkpoint: &mut impl FnMut() -> Result<(), TextError>,
     ) -> Result<EmbeddingBatch, TextError> {
         match self {
-            Self::Mlx(runtime) => runtime.embed_batch_controlled(tokens, checkpoint),
+            Self::Tower(runtime) => runtime.embed_controlled(tokens, checkpoint),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             Self::CoreMl(runtime) => {
                 checkpoint()?;
                 let padded = crate::runtime::coreml::pad_query(tokens, runtime.sequence())?;
@@ -1948,22 +2010,20 @@ impl QueryRuntime {
     }
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 enum DocumentTower {
     Unloaded,
-    Loaded(Box<MlxRuntime>),
+    Loaded(TowerRuntime),
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 enum RuntimeSet {
-    Symmetric(Box<MlxRuntime>),
+    Symmetric(TowerRuntime),
     Pair {
+        backend: Backend,
         document: DocumentTower,
         query: QueryRuntime,
     },
 }
 
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 impl RuntimeSet {
     /// Loads the towers for one worker on that worker's thread.
     fn load(
@@ -1972,26 +2032,20 @@ impl RuntimeSet {
         backend: Backend,
         document_loads: &AtomicUsize,
     ) -> Result<Self, TextError> {
-        match backend {
-            Backend::Apple => {}
-            // WF-991 adds the portable CPU towers here.
-            Backend::Cpu => {
-                return Err(TextError::Runtime(RuntimeError::UnsupportedBackend {
-                    backend: backend.name(),
-                }));
-            }
-        }
+        backend.available()?;
+        // CoreML is an Apple query runtime; the CPU backend never loads it.
+        let query_coreml = query_coreml.filter(|_| backend != Backend::Cpu);
         if bundle.is_symmetric() && query_coreml.is_none() {
-            let document = MlxRuntime::load(Arc::clone(bundle), TowerRole::Document)?;
+            let document = TowerRuntime::load(bundle, TowerRole::Document, backend)?;
             document_loads.fetch_add(1, Ordering::Relaxed);
-            return Ok(Self::Symmetric(Box::new(document)));
+            return Ok(Self::Symmetric(document));
         }
-        let dims = bundle.query_tower().embedding.dims as usize;
         let query = match query_coreml {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             // A present but unloadable artifact is a hard error.
             Some(path) => crate::runtime::coreml::CoreMlRuntime::load(
                 &path,
-                dims,
+                bundle.query_tower().embedding.dims as usize,
                 crate::runtime::coreml::ComputeUnits::CpuAndNeuralEngine,
             )
             .and_then(|runtime| {
@@ -2004,11 +2058,16 @@ impl RuntimeSet {
                 }
                 Ok(QueryRuntime::CoreMl(Box::new(runtime)))
             })?,
-            None => MlxRuntime::load(Arc::clone(bundle), TowerRole::Query)
-                .map(Box::new)
-                .map(QueryRuntime::Mlx)?,
+            #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+            Some(_) => {
+                return Err(TextError::Runtime(RuntimeError::UnsupportedBackend {
+                    backend: "coreml",
+                }));
+            }
+            None => QueryRuntime::Tower(TowerRuntime::load(bundle, TowerRole::Query, backend)?),
         };
         Ok(Self::Pair {
+            backend,
             document: DocumentTower::Unloaded,
             query,
         })
@@ -2023,13 +2082,13 @@ impl RuntimeSet {
             ..
         } = self
         {
-            runtime.observer = (role == TowerRole::Document).then(|| observer.clone());
+            runtime.set_observer((role == TowerRole::Document).then(|| observer.clone()));
         }
     }
 
     fn query_backend(&self) -> QueryBackend {
         match self {
-            Self::Symmetric(runtime) => mlx_backend(runtime),
+            Self::Symmetric(runtime) => runtime.backend(),
             Self::Pair { query, .. } => query.backend(),
         }
     }
@@ -2039,12 +2098,14 @@ impl RuntimeSet {
         bundle: &Arc<Bundle>,
         document_loads: &AtomicUsize,
     ) -> Result<(), TextError> {
-        if let Self::Pair { document, .. } = self
+        if let Self::Pair {
+            backend, document, ..
+        } = self
             && matches!(document, DocumentTower::Unloaded)
         {
             bundle.verify_tower(TowerRole::Document)?;
-            let runtime = MlxRuntime::load(Arc::clone(bundle), TowerRole::Document)?;
-            *document = DocumentTower::Loaded(Box::new(runtime));
+            *document =
+                DocumentTower::Loaded(TowerRuntime::load(bundle, TowerRole::Document, *backend)?);
             document_loads.fetch_add(1, Ordering::Relaxed);
         }
         Ok(())
@@ -2059,11 +2120,13 @@ impl RuntimeSet {
     ) -> Result<EmbeddingBatch, TextError> {
         let mut checkpoint = || check_runtime_control(closed, control);
         match self {
-            Self::Symmetric(runtime) => runtime.embed_batch_controlled(tokens, &mut checkpoint),
-            Self::Pair { document, query } => match role {
+            Self::Symmetric(runtime) => runtime.embed_controlled(tokens, &mut checkpoint),
+            Self::Pair {
+                document, query, ..
+            } => match role {
                 TowerRole::Document => match document {
                     DocumentTower::Loaded(runtime) => {
-                        runtime.embed_batch_controlled(tokens, &mut checkpoint)
+                        runtime.embed_controlled(tokens, &mut checkpoint)
                     }
                     DocumentTower::Unloaded => Err(TextError::Pipeline {
                         stage: "document load",
@@ -2076,52 +2139,7 @@ impl RuntimeSet {
     }
 }
 
-/// No model runtime exists for this target yet (WF-991), so no set can exist.
-#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-enum RuntimeSet {}
-
-#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-impl RuntimeSet {
-    fn load(
-        _bundle: &Arc<Bundle>,
-        _query_coreml: Option<std::path::PathBuf>,
-        backend: Backend,
-        _document_loads: &AtomicUsize,
-    ) -> Result<Self, TextError> {
-        match backend {
-            // WF-991 adds the portable CPU towers here.
-            Backend::Cpu => Err(TextError::Runtime(RuntimeError::UnsupportedBackend {
-                backend: backend.name(),
-            })),
-        }
-    }
-
-    fn query_backend(&self) -> QueryBackend {
-        match *self {}
-    }
-
-    fn load_document(
-        &mut self,
-        _bundle: &Arc<Bundle>,
-        _document_loads: &AtomicUsize,
-    ) -> Result<(), TextError> {
-        match *self {}
-    }
-
-    fn embed_controlled(
-        &mut self,
-        _role: TowerRole,
-        _tokens: &TokenBatch,
-        _closed: &AtomicBool,
-        _control: Option<&QueryControl>,
-    ) -> Result<EmbeddingBatch, TextError> {
-        match *self {}
-    }
-}
-
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-fn mlx_backend(runtime: &MlxRuntime) -> QueryBackend {
-    let identity = runtime.identity();
+fn tower_backend(identity: crate::runtime::RuntimeIdentity) -> QueryBackend {
     QueryBackend {
         runtime: identity,
         requested_compute_units: if identity.gpu {
@@ -2135,7 +2153,7 @@ fn mlx_backend(runtime: &MlxRuntime) -> QueryBackend {
 }
 
 struct RuntimeClient {
-    #[cfg(all(test, target_os = "macos", target_arch = "aarch64"))]
+    #[cfg(test)]
     observer: crate::runtime::limits::EvalObserver,
     document_loads: Arc<AtomicUsize>,
     query_backend: QueryBackend,
@@ -2182,9 +2200,9 @@ impl RuntimeClient {
         let closed = Arc::new(AtomicBool::new(false));
         let worker_closed = Arc::clone(&closed);
         let document_loads = Arc::new(AtomicUsize::new(0));
-        #[cfg(all(test, target_os = "macos", target_arch = "aarch64"))]
+        #[cfg(test)]
         let observer = Arc::new(Mutex::new(Vec::new()));
-        #[cfg(all(test, target_os = "macos", target_arch = "aarch64"))]
+        #[cfg(test)]
         let worker_observer = observer.clone();
         let worker_loads = Arc::clone(&document_loads);
         #[cfg(test)]
@@ -2210,7 +2228,7 @@ impl RuntimeClient {
                     if role == TowerRole::Document {
                         runtimes.load_document(&bundle, &worker_loads)?;
                     }
-                    #[cfg(all(test, target_os = "macos", target_arch = "aarch64"))]
+                    #[cfg(test)]
                     runtimes.observe(role, &worker_observer);
                     runtimes.embed_controlled(role, tokens, &worker_closed, control)
                 });
@@ -2237,7 +2255,7 @@ impl RuntimeClient {
             }
         };
         Ok(Self {
-            #[cfg(all(test, target_os = "macos", target_arch = "aarch64"))]
+            #[cfg(test)]
             observer,
             document_loads,
             query_backend,

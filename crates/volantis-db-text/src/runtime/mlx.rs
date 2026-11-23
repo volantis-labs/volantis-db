@@ -11,7 +11,8 @@ use volantis_db::epoch::ComputeUnits;
 
 #[cfg(test)]
 use crate::runtime::limits::{EvalObserver, MAX_EVAL_TOKENS};
-use crate::runtime::limits::{MAX_EVAL_ROWS, fits_eval};
+use crate::runtime::limits::{MAX_EVAL_ROWS, next_eval_chunk};
+use crate::runtime::tensors::{required_tensor_names, tensor_prefix};
 
 /// One tower evaluated on a single owned MLX GPU stream.
 pub struct MlxRuntime {
@@ -146,11 +147,7 @@ impl MlxRuntime {
             TowerRole::Query => bundle.query_tower(),
         }
         .clone();
-        let prefix = match role {
-            TowerRole::Document => "document/",
-            TowerRole::Query if bundle.is_symmetric() => "document/",
-            TowerRole::Query => "query/",
-        };
+        let prefix = tensor_prefix(&bundle, role);
         let mut tensors = BTreeMap::new();
         for name in required_tensor_names(&tower) {
             let qualified = format!("{prefix}{name}");
@@ -287,58 +284,6 @@ impl MlxRuntime {
     }
 }
 
-/// Greedily retain caller order, padding only to this evaluation's longest row.
-fn next_eval_chunk(tokens: &TokenBatch, start: usize) -> Result<TokenBatch, RuntimeError> {
-    let expected = tokens
-        .rows
-        .checked_mul(tokens.tokens_per_row)
-        .ok_or_else(|| RuntimeError::Shape("token batch shape overflow".to_owned()))?;
-    if tokens.tokens_per_row == 0 || start >= tokens.rows || tokens.token_ids.len() != expected {
-        return Err(RuntimeError::Shape(
-            "token batch chunk is truncated".to_owned(),
-        ));
-    }
-    if tokens.attention_mask.len() != expected {
-        return Err(RuntimeError::Shape(
-            "attention chunk is truncated".to_owned(),
-        ));
-    }
-    let mut rows = 0;
-    let mut width = 1;
-    for mask in tokens
-        .attention_mask
-        .chunks_exact(tokens.tokens_per_row)
-        .skip(start)
-        .take(MAX_EVAL_ROWS)
-    {
-        // Keep masked holes and token positions; remove only trailing padding.
-        let row_width = mask
-            .iter()
-            .rposition(|value| *value != 0.0)
-            .map_or(1, |position| position + 1);
-        let next_width = width.max(row_width);
-        if !fits_eval(rows + 1, next_width) {
-            break;
-        }
-        rows += 1;
-        width = next_width;
-    }
-    let mut token_ids = Vec::with_capacity(rows * width);
-    let mut attention_mask = Vec::with_capacity(rows * width);
-    for (ids, mask) in tokens
-        .token_ids
-        .chunks_exact(tokens.tokens_per_row)
-        .zip(tokens.attention_mask.chunks_exact(tokens.tokens_per_row))
-        .skip(start)
-        .take(rows)
-    {
-        token_ids.extend(ids.iter().take(width).copied());
-        attention_mask.extend(mask.iter().take(width).copied());
-    }
-    TokenBatch::new(token_ids, attention_mask, rows, width)
-        .map_err(|detail| RuntimeError::Shape(detail.to_owned()))
-}
-
 impl ModelRuntime for MlxRuntime {
     fn embed_batch(&mut self, tokens: &TokenBatch) -> Result<EmbeddingBatch, RuntimeError> {
         let _call = mlx_calls()
@@ -429,74 +374,6 @@ impl Drop for MlxRuntime {
         self.tensors.clear();
         self.stream.take();
     }
-}
-
-fn required_tensor_names(tower: &TowerSpec) -> Vec<String> {
-    let mut names = vec!["embeddings.word_embeddings.weight".to_owned()];
-    if tower.architecture == Architecture::ArcticQuery {
-        if tower.config.embedding_rank != tower.config.hidden {
-            names.push("embeddings.embedding_projection.weight".to_owned());
-        }
-        if tower.config.output_dimension != tower.config.hidden {
-            names.push("output_projection.weight".to_owned());
-        }
-    }
-    if tower.config.type_vocab > 0 {
-        names.push("embeddings.token_type_embeddings.weight".to_owned());
-    }
-    if tower.architecture == Architecture::Bert {
-        names.push("embeddings.position_embeddings.weight".to_owned());
-    }
-    names.push("embeddings.LayerNorm.weight".to_owned());
-    names.push("embeddings.LayerNorm.bias".to_owned());
-    for layer in 0..tower.config.layer_count {
-        match tower.architecture {
-            Architecture::Bert => {
-                for suffix in [
-                    "attention.self.query.weight",
-                    "attention.self.query.bias",
-                    "attention.self.key.weight",
-                    "attention.self.key.bias",
-                    "attention.self.value.weight",
-                    "attention.self.value.bias",
-                    "attention.output.dense.weight",
-                    "attention.output.dense.bias",
-                    "attention.output.LayerNorm.weight",
-                    "attention.output.LayerNorm.bias",
-                    "intermediate.dense.weight",
-                    "intermediate.dense.bias",
-                    "output.dense.weight",
-                    "output.dense.bias",
-                    "output.LayerNorm.weight",
-                    "output.LayerNorm.bias",
-                ] {
-                    names.push(format!("encoder.layer.{layer}.{suffix}"));
-                }
-            }
-            Architecture::Gte | Architecture::ArcticQuery => {
-                for suffix in [
-                    "attention.qkv_proj.weight",
-                    "attention.qkv_proj.bias",
-                    "attention.o_proj.weight",
-                    "attention.o_proj.bias",
-                    "attn_ln.weight",
-                    "attn_ln.bias",
-                    "mlp.up_gate_proj.weight",
-                    "mlp.down_proj.weight",
-                    "mlp.down_proj.bias",
-                    "mlp_ln.weight",
-                    "mlp_ln.bias",
-                ] {
-                    names.push(format!("encoder.layer.{layer}.{suffix}"));
-                }
-            }
-        }
-    }
-    if tower.config.dense_out > 0 {
-        names.push("dense.weight".to_owned());
-        names.push("dense.bias".to_owned());
-    }
-    names
 }
 
 #[cfg(test)]

@@ -40,9 +40,12 @@ First release of Volantis DB.
   filterable, never a dense or neighbour hit, and never pending. A space is
   real text.
 - `volantis-db-text` and the text-enabled C ABI build for Intel macOS and
-  Windows x64 without MLX or Core ML. There, every text-store open and
-  embedded namespace open returns `ZE_ERR_UNSUPPORTED` (Rust:
-  `RuntimeError::UnsupportedBackend`) before any download or store change.
+  Windows x64 without MLX or Core ML. Intel macOS runs both BERT towers of
+  the default model on a pure-Rust fp32 CPU runtime (`cpu-fp32`) from the
+  same FP16 bundle and with the same store epoch, so stores move between
+  Apple silicon and Intel Macs. On Windows every text-store open and embedded namespace open returns
+  `ZE_ERR_UNSUPPORTED` (Rust: `RuntimeError::UnsupportedBackend`) before any
+  download or store change.
 - Language APIs over one native engine: Rust crates, a versioned C ABI
   (`volantis_db.h`), Python (`volantis-db`), Node.js and TypeScript
   (`volantis-db`), and Swift (`VolantisDB` package).
