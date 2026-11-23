@@ -799,7 +799,9 @@ limits, download size, and measured performance.
 `openNamespace` and `openNamespaceAsync` accept an `embeddedModel` with
 `repo`, `revision` and `manifestSha256`. Use the same pinned spec when reopening
 the namespace or naming it in a namespace batch. The model supplies the vector
-dimensions. A text-enabled build and the resolved model are required.
+dimensions. A multi-row upsert batches new and changed text across rows and
+chunks before committing. Rows eligible for same-text vector reuse skip inference.
+A text-enabled build and the resolved model are required.
 
 ```js
 const spec = {

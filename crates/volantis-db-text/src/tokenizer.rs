@@ -152,47 +152,54 @@ impl ModelTokenizer {
                 "a token batch needs at least one row and two special-token slots".to_owned(),
             ));
         }
-        let mut rows = Vec::with_capacity(texts.len());
+        let rows = texts
+            .iter()
+            .map(|text| self.encode_row(text, max_tokens))
+            .collect::<Vec<_>>();
+        self.pack_rows(rows.iter().map(Vec::as_slice))
+    }
+
+    pub(crate) fn encode_row(&self, text: &str, max_tokens: usize) -> Vec<u32> {
         let body_limit = max_tokens.saturating_sub(2);
-        for text in texts {
-            let mut tokens = match self.kind {
-                TokenizerKind::WordPiece => self.model_input(text),
-                TokenizerKind::Unigram if self.precompiled.is_some() => self.model_input(text),
-                TokenizerKind::Unigram => self.unigram(&self.normalize(text)),
-            };
-            tokens.truncate(body_limit);
-            let mut row = Vec::with_capacity(tokens.len().saturating_add(2));
-            row.push(self.cls);
-            row.extend(tokens);
-            row.push(self.sep);
-            rows.push(row);
-        }
-        let width = rows.iter().map(Vec::len).max().unwrap_or(2);
-        let capacity = texts
-            .len()
+        let mut tokens = match self.kind {
+            TokenizerKind::WordPiece => self.model_input(text),
+            TokenizerKind::Unigram if self.precompiled.is_some() => self.model_input(text),
+            TokenizerKind::Unigram => self.unigram(&self.normalize(text)),
+        };
+        tokens.truncate(body_limit);
+        let mut row = Vec::with_capacity(tokens.len().saturating_add(2));
+        row.push(self.cls);
+        row.extend(tokens);
+        row.push(self.sep);
+        row
+    }
+
+    pub(crate) fn pack_rows<'a>(
+        &self,
+        rows: impl ExactSizeIterator<Item = &'a [u32]> + Clone,
+    ) -> Result<TokenBatch, RuntimeError> {
+        let count = rows.len();
+        let width = rows.clone().map(<[u32]>::len).max().unwrap_or(0);
+        let capacity = count
             .checked_mul(width)
-            .ok_or_else(|| RuntimeError::Tokenization("token batch size overflow".to_owned()))?;
+            .ok_or_else(|| RuntimeError::Tokenization("token batch size overflow".into()))?;
         let mut ids = Vec::with_capacity(capacity);
         let mut mask = Vec::with_capacity(capacity);
-        for mut row in rows {
-            for id in &row {
+        let pad = i32::try_from(self.pad)
+            .map_err(|_| RuntimeError::Tokenization("padding id exceeds i32".into()))?;
+        for row in rows {
+            for id in row {
                 ids.push(
-                    i32::try_from(*id).map_err(|_| {
-                        RuntimeError::Tokenization("token id exceeds i32".to_owned())
-                    })?,
+                    i32::try_from(*id)
+                        .map_err(|_| RuntimeError::Tokenization("token id exceeds i32".into()))?,
                 );
                 mask.push(1.0);
             }
-            while row.len() < width {
-                row.push(self.pad);
-                ids.push(i32::try_from(self.pad).map_err(|_| {
-                    RuntimeError::Tokenization("padding id exceeds i32".to_owned())
-                })?);
-                mask.push(0.0);
-            }
+            ids.extend(std::iter::repeat_n(pad, width - row.len()));
+            mask.extend(std::iter::repeat_n(0.0, width - row.len()));
         }
-        TokenBatch::new(ids, mask, texts.len(), width)
-            .map_err(|detail| RuntimeError::Tokenization(detail.to_owned()))
+        TokenBatch::new(ids, mask, count, width)
+            .map_err(|detail| RuntimeError::Tokenization(detail.into()))
     }
 
     fn normalize(&self, text: &str) -> String {

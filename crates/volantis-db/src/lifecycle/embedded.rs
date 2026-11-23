@@ -15,6 +15,10 @@ pub trait NamespaceEmbedder: Send + Sync {
     fn epoch(&self) -> EmbeddingEpoch;
     /// Chunk and embed the complete source revision.
     fn document(&self, text: &str) -> Result<Vec<EmbeddedChunk>, EmbedderError>;
+    /// Embed pending sources in order, returning one ordered chunk list per source.
+    fn documents(&self, texts: &[&str]) -> Result<Vec<Vec<EmbeddedChunk>>, EmbedderError> {
+        texts.iter().map(|text| self.document(text)).collect()
+    }
     /// Embed a query using the query tower.
     fn query(&self, text: &str) -> Result<Vec<f32>, EmbedderError>;
 }
@@ -396,6 +400,41 @@ impl Store {
                 generation = Some(admitted.generation);
             }
         }
+        let mut pending = Vec::new();
+        let mut texts = Vec::new();
+        for (index, doc) in documents.iter().enumerate() {
+            match sources.get(index) {
+                Some(Source::Stored) => continue,
+                Some(Source::Earlier(previous)) => {
+                    if documents
+                        .get(*previous)
+                        .ok_or(StoreError::ActiveRowOverflow)?
+                        .text()
+                        == doc.text()
+                    {
+                        continue;
+                    }
+                    *sources
+                        .get_mut(index)
+                        .ok_or(StoreError::ActiveRowOverflow)? = Source::Encode;
+                }
+                _ => {}
+            }
+            pending.push(index);
+            texts.push(
+                doc.text()
+                    .ok_or_else(|| invalid("missing embedded source"))?,
+            );
+        }
+        let encoded = if texts.is_empty() {
+            Vec::new()
+        } else {
+            model.documents(&texts).map_err(StoreError::Embedding)?
+        };
+        if encoded.len() != pending.len() {
+            return Err(invalid("document encoder returned wrong document count"));
+        }
+        let mut encoded = pending.into_iter().zip(encoded);
         let mut reused = false;
         for index in 0..documents.len() {
             let (prior, remaining) = documents.split_at_mut(index);
@@ -410,21 +449,22 @@ impl Store {
                 }
                 Some(Source::Earlier(index)) => {
                     let previous = prior.get(*index).ok_or(StoreError::ActiveRowOverflow)?;
-                    if previous.text() == Some(text) {
-                        let (vector, packed) = repack(
-                            text,
-                            previous.metadata(),
-                            doc.metadata(),
-                            self.embedded_dims()?,
-                        )?;
-                        doc.set_embedded(vector, packed);
-                        reused = true;
-                        continue;
-                    }
+                    let (vector, packed) = repack(
+                        text,
+                        previous.metadata(),
+                        doc.metadata(),
+                        self.embedded_dims()?,
+                    )?;
+                    doc.set_embedded(vector, packed);
+                    reused = true;
+                    continue;
                 }
                 _ => {}
             }
-            let chunks = model.document(text).map_err(StoreError::Embedding)?;
+            let (_, chunks) = encoded
+                .next()
+                .filter(|(position, _)| *position == index)
+                .ok_or_else(|| invalid("missing encoded document"))?;
             let first = chunks
                 .first()
                 .ok_or_else(|| invalid("document encoder returned no chunks"))?;

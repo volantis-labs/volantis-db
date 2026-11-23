@@ -1626,25 +1626,11 @@ fn append_embedded(
     output: &mut Vec<IngestDocument>,
     chunks: &mut usize,
 ) -> Result<(), TextError> {
-    if embedded.rows() != job_chunks.len() {
-        return Err(TextError::DimsMismatch {
-            declared: u32::try_from(job_chunks.len()).unwrap_or(u32::MAX),
-            actual: embedded.rows(),
-        });
-    }
-    let dims = embedded.dims();
-    let values = embedded.into_values();
-    for (row, chunk) in job_chunks.iter().enumerate() {
-        let start = row
-            .checked_mul(dims)
-            .ok_or(TextError::InvalidInput("embedding row offset overflow"))?;
-        let end = start
-            .checked_add(dims)
-            .ok_or(TextError::InvalidInput("embedding row end overflow"))?;
-        let vector = values
-            .get(start..end)
-            .ok_or(TextError::InvalidInput("embedding row is truncated"))?
-            .to_vec();
+    for (chunk, row) in job_chunks
+        .iter()
+        .zip(embedding_rows(&embedded, job_chunks.len())?)
+    {
+        let vector = row.to_vec();
         output.push(
             IngestDocument::new(
                 DocumentVersion::new(
@@ -1658,6 +1644,20 @@ fn append_embedded(
         *chunks = chunks.saturating_add(1);
     }
     Ok(())
+}
+
+// EmbeddingBatch validates rows * dims and the backing length at construction.
+fn embedding_rows(
+    batch: &EmbeddingBatch,
+    count: usize,
+) -> Result<std::slice::ChunksExact<'_, f32>, TextError> {
+    if batch.rows() != count {
+        return Err(TextError::DimsMismatch {
+            declared: u32::try_from(count).unwrap_or(u32::MAX),
+            actual: batch.rows(),
+        });
+    }
+    Ok(batch.values().chunks_exact(batch.dims()))
 }
 
 fn normalize_batch(
@@ -2026,6 +2026,8 @@ fn mlx_backend(runtime: &MlxRuntime) -> QueryBackend {
 }
 
 struct RuntimeClient {
+    #[cfg(test)]
+    observer: crate::runtime::mlx::EvalObserver,
     document_loads: Arc<AtomicUsize>,
     query_backend: QueryBackend,
     #[cfg(target_os = "macos")]
@@ -2051,6 +2053,10 @@ impl RuntimeClient {
         let closed = Arc::new(AtomicBool::new(false));
         let worker_closed = Arc::clone(&closed);
         let document_loads = Arc::new(AtomicUsize::new(0));
+        #[cfg(test)]
+        let observer = Arc::new(Mutex::new(Vec::new()));
+        #[cfg(test)]
+        let worker_observer = observer.clone();
         let worker_loads = Arc::clone(&document_loads);
         let thread = std::thread::Builder::new()
             .name("ze-text-embed".to_owned())
@@ -2100,6 +2106,11 @@ impl RuntimeClient {
                     if role == TowerRole::Document {
                         runtimes.load_document(&bundle, &worker_loads)?;
                     }
+                    #[cfg(test)]
+                    match &mut runtimes {
+                        RuntimeSet::Symmetric(runtime) | RuntimeSet::Pair {document: DocumentTower::Loaded(runtime), ..} => runtime.observer = (role == TowerRole::Document).then(|| worker_observer.clone()),
+                        _ => {}
+                    }
                     runtimes.embed_controlled(role, tokens, &worker_closed, control)
                 });
             })
@@ -2112,6 +2123,8 @@ impl RuntimeClient {
             detail: "thread closed before reporting initialization".to_owned(),
         })??;
         Ok(Self {
+            #[cfg(test)]
+            observer,
             document_loads,
             query_backend,
             #[cfg(target_os = "macos")]

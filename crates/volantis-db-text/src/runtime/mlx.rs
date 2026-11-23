@@ -9,15 +9,24 @@ use crate::runtime::{EmbeddingBatch, ModelRuntime, RuntimeError, RuntimeIdentity
 use crate::tower::{Architecture, TokenBatch, TowerRole, TowerSpec};
 use volantis_db::epoch::ComputeUnits;
 
-const MAX_EVAL_ROWS: usize = 32;
+pub(crate) const MAX_EVAL_ROWS: usize = 32;
 // ZE-525 native FP16 probes on M3 Max under GPU contention: at 4,096 tokens,
 // warm evaluations took up to ~0.53 s; a cold 8 x 512 evaluation took ~2.96 s.
 // Throughput/token was flat above this budget, with contention-dependent
 // timeouts at larger shapes. An over-budget row must run alone.
 const MAX_EVAL_TOKENS: usize = 4_096;
 
+pub(crate) fn fits_eval(rows: usize, width: usize) -> bool {
+    rows == 1 || (rows <= MAX_EVAL_ROWS && rows <= MAX_EVAL_TOKENS / width.max(1))
+}
+
+#[cfg(test)]
+pub(crate) type EvalObserver = Arc<Mutex<Vec<(usize, Vec<usize>)>>>;
+
 /// One tower evaluated on a single owned MLX GPU stream.
 pub struct MlxRuntime {
+    #[cfg(test)]
+    pub(crate) observer: Option<EvalObserver>,
     tower: TowerSpec,
     tensors: BTreeMap<String, Array>,
     stream: Option<Stream>,
@@ -215,6 +224,8 @@ impl MlxRuntime {
         };
         let stream = Stream::new_with_device(&device);
         Ok(Self {
+            #[cfg(test)]
+            observer: None,
             tower,
             tensors,
             stream: Some(stream),
@@ -261,15 +272,26 @@ impl MlxRuntime {
             .checked_mul(dims)
             .ok_or_else(|| RuntimeError::Shape("embedding output size overflow".to_owned()))?;
         let mut values = Vec::with_capacity(capacity);
+        #[cfg(test)]
+        let mut evaluations = Vec::new();
         let mut start = 0_usize;
         while start < tokens.rows {
             checkpoint()?;
             let chunk = next_eval_chunk(tokens, start)?;
             let end = start.saturating_add(chunk.rows);
+            #[cfg(test)]
+            evaluations.push(chunk.rows);
             let result = self.eval_chunk(&chunk);
             checkpoint()?;
             values.extend(result?.into_values());
             start = end;
+        }
+        #[cfg(test)]
+        if let Some(observer) = &self.observer {
+            observer
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push((tokens.rows, evaluations));
         }
         EmbeddingBatch::new(values, tokens.rows, dims).map_err(Into::into)
     }
@@ -305,7 +327,7 @@ fn next_eval_chunk(tokens: &TokenBatch, start: usize) -> Result<TokenBatch, Runt
             .rposition(|value| *value != 0.0)
             .map_or(1, |position| position + 1);
         let next_width = width.max(row_width);
-        if rows > 0 && rows + 1 > MAX_EVAL_TOKENS / next_width {
+        if !fits_eval(rows + 1, next_width) {
             break;
         }
         rows += 1;

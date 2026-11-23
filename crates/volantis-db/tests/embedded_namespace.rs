@@ -1092,3 +1092,163 @@ fn same_text_reuse_race_rechecks_publication() {
         }
     }
 }
+
+#[derive(Default)]
+struct RecordingModel(std::sync::Mutex<Vec<Vec<String>>>);
+impl NamespaceEmbedder for RecordingModel {
+    fn epoch(&self) -> volantis_db::epoch::EmbeddingEpoch {
+        Model.epoch()
+    }
+    fn query(&self, text: &str) -> Result<Vec<f32>, volantis_db::epoch::EmbedderError> {
+        Model.query(text)
+    }
+    fn document(
+        &self,
+        text: &str,
+    ) -> Result<Vec<EmbeddedChunk>, volantis_db::epoch::EmbedderError> {
+        self.0.lock().expect("calls").push(vec![text.into()]);
+        Model.document(text)
+    }
+    fn documents(
+        &self,
+        texts: &[&str],
+    ) -> Result<Vec<Vec<EmbeddedChunk>>, volantis_db::epoch::EmbedderError> {
+        self.0
+            .lock()
+            .expect("calls")
+            .push(texts.iter().map(|s| s.to_string()).collect());
+        let mut chunks = Model.documents(texts)?;
+        match texts.last().copied() {
+            Some("too few") => {
+                chunks.pop();
+            }
+            Some("too many") => chunks.push(Model.document("extra")?),
+            Some("empty") => chunks.last_mut().expect("last").clear(),
+            Some("bad span") => {
+                chunks
+                    .last_mut()
+                    .and_then(|c| c.first_mut())
+                    .expect("chunk")
+                    .bytes = 0..100
+            }
+            Some("nonfinite") => {
+                chunks
+                    .last_mut()
+                    .and_then(|c| c.first_mut())
+                    .expect("chunk")
+                    .vector = vec![f32::NAN, 0.]
+            }
+            _ => {}
+        }
+        Ok(chunks)
+    }
+}
+
+#[test]
+fn ze597_dispatches_only_rows_that_need_inference() {
+    let root = tempdir().expect("root");
+    let model = Arc::new(RecordingModel::default());
+    let store =
+        Store::open_embedded(root.path(), OpenOptions::new(), model.clone()).expect("store");
+    store
+        .ingest(IngestBatch::new(vec![reuse_doc(1, 1, "target")]))
+        .expect("seed");
+    model.0.lock().expect("calls").clear();
+    for rev in [2, 3] {
+        store
+            .ingest(IngestBatch::new(
+                [(2, "bronze"), (1, "target"), (3, "zeppelin")]
+                    .map(|(id, text)| {
+                        reuse_doc(id, rev, text).with_metadata(b"FAKE-597-v2".to_vec())
+                    })
+                    .to_vec(),
+            ))
+            .expect("write");
+        for id in 1..=3 {
+            let row = reuse_row(&store, id).expect("live");
+            assert_eq!(row.revision, Revision::new(rev));
+            assert_eq!(row.metadata.as_deref(), Some(b"FAKE-597-v2".as_slice()));
+            assert_eq!(
+                row.vector,
+                Some(if id == 1 { vec![1., 0.] } else { vec![0., 1.] })
+            );
+        }
+    }
+    assert!(matches!(
+        store.ingest(IngestBatch::new(vec![])),
+        Err(IngestError::EmptyBatch)
+    ));
+    assert_eq!(
+        *model.0.lock().expect("calls"),
+        vec![vec!["bronze", "zeppelin"]]
+    );
+}
+
+#[test]
+fn ze597_batch_failure_publishes_nothing() {
+    let root = tempdir().expect("root");
+    let options = OpenOptions::new()
+        .with_embedder(Arc::new(RecordingModel::default()))
+        .expect("model");
+    let open = |name: &str| Store::open(root.path().join(name), options.clone()).expect("open");
+    let a = open("a");
+    let b = open("b");
+    for store in [&a, &b] {
+        store
+            .ingest(IngestBatch::new(vec![reuse_doc(1, 1, "target|old")]))
+            .expect("seed");
+    }
+    let original = reuse_row(&a, 1).expect("old revision");
+    let generation = a.snapshot().expect("snapshot").generation();
+    let check = |store: &Store| {
+        assert_eq!(store.snapshot().expect("snapshot").generation(), generation);
+        assert_eq!(reuse_row(store, 1), Some(original.clone()));
+        assert!(reuse_row(store, 2).is_none());
+        let chunks = store
+            .query_embedded("target", EmbeddedLeg::Dense, 2, None, running())
+            .expect("chunks");
+        assert_eq!(
+            chunks
+                .iter()
+                .map(|hit| (hit.chunk, hit.bytes.clone(), hit.score))
+                .collect::<Vec<_>>(),
+            [(0, 0..6, 0.), (1, 7..10, -2.)]
+        );
+    };
+    let rows = |last| vec![reuse_doc(1, 2, "replacement"), reuse_doc(2, 1, last)];
+    for bad in [
+        "!fail",
+        "too few",
+        "too many",
+        "empty",
+        "bad span",
+        "nonfinite",
+    ] {
+        assert!(matches!(
+            a.ingest(IngestBatch::new(rows(bad))),
+            Err(IngestError::Store(StoreError::Embedding(_)))
+        ));
+        check(&a);
+    }
+    assert!(matches!(
+        namespace_batch_live(
+            root.path(),
+            vec![
+                LiveNamespaceMutation {
+                    store: &a,
+                    mutation: mutation("a", options.clone(), rows("good"))
+                },
+                LiveNamespaceMutation {
+                    store: &b,
+                    mutation: mutation("b", options.clone(), rows("!fail"))
+                },
+            ]
+        ),
+        Err(StoreError::Embedding(_))
+    ));
+    check(&a);
+    check(&b);
+    drop((a, b));
+    check(&open("a"));
+    check(&open("b"));
+}
