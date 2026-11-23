@@ -562,6 +562,48 @@ fn parse_namespace_spec(request: *const ZeNamespaceSpec) -> Result<(Schema, Stor
     Ok((schema, epoch))
 }
 
+/// Model pins and resolution policy decoded from an embedded declaration.
+#[cfg_attr(not(feature = "text"), allow(dead_code))]
+struct EmbeddedPolicy {
+    embedded: ZeEmbeddedNamespaceSpec,
+    cache_limit: Option<u64>,
+    cache_dir: Option<std::path::PathBuf>,
+    offline: bool,
+}
+
+/// Reads the layout selected by tag 2, 3 or 4; each size is checked first.
+fn embedded_policy(pointer: *const ZeNamespaceSpec, tag: u32) -> Result<EmbeddedPolicy, FfiError> {
+    match tag {
+        4 => {
+            let v3 = marshal::read_struct(pointer.cast::<ZeEmbeddedNamespaceSpecV3>())?;
+            let explicit_limit = parse_flag(v3.has_mlx_cache_limit, "has_mlx_cache_limit")?;
+            let offline = parse_flag(v3.offline, "offline")?;
+            let cache_dir = marshal::utf8_without_nul(v3.model_cache_dir, v3.model_cache_dir_len)?;
+            Ok(EmbeddedPolicy {
+                embedded: v3.v2.embedded,
+                cache_limit: explicit_limit.then_some(v3.v2.mlx_cache_limit_bytes),
+                cache_dir: (!cache_dir.is_empty()).then(|| Path::new(cache_dir).to_path_buf()),
+                offline,
+            })
+        }
+        3 => {
+            let v2 = marshal::read_struct(pointer.cast::<ZeEmbeddedNamespaceSpecV2>())?;
+            Ok(EmbeddedPolicy {
+                embedded: v2.embedded,
+                cache_limit: Some(v2.mlx_cache_limit_bytes),
+                cache_dir: None,
+                offline: false,
+            })
+        }
+        _ => Ok(EmbeddedPolicy {
+            embedded: marshal::read_struct(pointer.cast::<ZeEmbeddedNamespaceSpec>())?,
+            cache_limit: None,
+            cache_dir: None,
+            offline: false,
+        }),
+    }
+}
+
 fn namespace_options(
     pointer: *const ZeNamespaceSpec,
     profile: Option<i32>,
@@ -569,19 +611,11 @@ fn namespace_options(
 ) -> Result<(OpenOptions, Schema, StoreEpoch), FfiError> {
     let spec = marshal::read_struct(pointer)?;
     // Preserve the legacy diagnostic for tag 2 on a base-only declaration.
-    if spec.has_vector_space == 3
+    if matches!(spec.has_vector_space, 3 | 4)
         || (spec.has_vector_space == 2
             && spec.abi_size as usize >= size_of::<ZeEmbeddedNamespaceSpec>())
     {
-        let (embedded, cache_limit) = if spec.has_vector_space == 3 {
-            let v2 = marshal::read_struct(pointer.cast::<ZeEmbeddedNamespaceSpecV2>())?;
-            (v2.embedded, Some(v2.mlx_cache_limit_bytes))
-        } else {
-            (
-                marshal::read_struct(pointer.cast::<ZeEmbeddedNamespaceSpec>())?,
-                None,
-            )
-        };
+        let policy = embedded_policy(pointer, spec.has_vector_space)?;
         let normalization = parse_normalization(spec.normalization)?;
         if !spec.epoch.is_null() || spec.dimensions != 0 || normalization != Normalization::None {
             return Err(FfiError::invalid(
@@ -590,7 +624,7 @@ fn namespace_options(
         }
         #[cfg(not(feature = "text"))]
         {
-            let _ = (embedded, cache_limit);
+            let _ = policy;
             return Err(FfiError::new(
                 ZeErrorCode::ZeErrUnsupported,
                 "embedded namespaces require a text-enabled build",
@@ -598,7 +632,7 @@ fn namespace_options(
         }
         #[cfg(feature = "text")]
         {
-            let model = marshal::read_struct(&embedded.model)?;
+            let model = marshal::read_struct(&policy.embedded.model)?;
             let reference = volantis_db_text::ModelRef {
                 repo: marshal::utf8_without_nul(model.repo, model.repo_len)?.into(),
                 revision: marshal::utf8_without_nul(model.revision, model.revision_len)?.into(),
@@ -613,8 +647,12 @@ fn namespace_options(
                 ..spec
             })?;
             let tokenizer = parse_tokenizer_profile(profile.unwrap_or(0))?;
-            let mut model_options = volantis_db_text::ModelOpenOptions::default();
-            if let Some(limit) = cache_limit {
+            let mut model_options = volantis_db_text::ModelOpenOptions {
+                cache_dir: policy.cache_dir,
+                offline: policy.offline,
+                ..Default::default()
+            };
+            if let Some(limit) = policy.cache_limit {
                 model_options.text = model_options.text.with_mlx_cache_limit_bytes(
                     usize::try_from(limit)
                         .map_err(|_| FfiError::invalid("MLX cache limit exceeds usize"))?,
@@ -1894,7 +1932,7 @@ fn decode_namespace_mutations(
         } else {
             decode_upsert_documents(
                 spec.has_vector_space == 0,
-                matches!(spec.has_vector_space, 2 | 3),
+                matches!(spec.has_vector_space, 2..=4),
                 &schema,
                 upsert,
             )?

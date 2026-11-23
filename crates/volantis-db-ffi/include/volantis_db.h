@@ -635,7 +635,7 @@ typedef struct ZeNamespaceSpec {
     size_t attribute_count;
     /*
      Zero for records, one for vectors, two for ZeEmbeddedNamespaceSpec,
-     or three for ZeEmbeddedNamespaceSpecV2.
+     three for ZeEmbeddedNamespaceSpecV2, or four for ZeEmbeddedNamespaceSpecV3.
      */
     uint32_t has_vector_space;
     /*
@@ -4019,6 +4019,37 @@ typedef struct ZeEmbeddedNamespaceSpecV2 {
      */
     uint64_t mlx_cache_limit_bytes;
 } ZeEmbeddedNamespaceSpecV2;
+
+/*
+ Embedded namespace with a model resolution policy and an optional MLX limit.
+ A zero-initialized extension selects the standard resolution policy.
+ */
+typedef struct ZeEmbeddedNamespaceSpecV3 {
+    /*
+     Prefix with abi_size = sizeof(ZeEmbeddedNamespaceSpecV3), has_vector_space = 4.
+     Its mlx_cache_limit_bytes applies only when has_mlx_cache_limit is one.
+     */
+    struct ZeEmbeddedNamespaceSpecV2 v2;
+    /*
+     Caller-owned UTF-8 model cache root without NUL. Length zero selects
+     ZE_MODEL_CACHE or the default root. An explicit root wins over both.
+     */
+    const uint8_t *model_cache_dir;
+    /*
+     Number of model cache root bytes.
+     */
+    size_t model_cache_dir_len;
+    /*
+     `1` prohibits network access (as does ZE_MODEL_OFFLINE=1); `0` allows it.
+     An offline cache miss returns ZE_ERR_NOT_FOUND.
+     */
+    uint32_t offline;
+    /*
+     `1` when v2.mlx_cache_limit_bytes is an explicit limit, including zero;
+     `0` accepts the configured process policy.
+     */
+    uint32_t has_mlx_cache_limit;
+} ZeEmbeddedNamespaceSpecV3;
 
 #ifdef __cplusplus
 extern "C" {

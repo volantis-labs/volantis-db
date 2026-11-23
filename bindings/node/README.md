@@ -810,6 +810,25 @@ A text-enabled build and the resolved model are required. The fourth argument
 can set the process-wide ceiling for reusable MLX buffers on the first embedded
 open. Embedded namespaces and TextStore share the [first-opener rules](#textstore-macos-arm64).
 
+The same fourth argument takes `modelCacheDir` and `offline`, with the meaning of
+`TextStore.openModel` `cacheDir` and `offline`. An explicit folder wins over
+`ZE_MODEL_CACHE` and `~/Library/Caches/volantis-db/models`; an omitted field or an
+empty string uses them. `offline: true` or `ZE_MODEL_OFFLINE=1` prohibits network
+access: a cache miss throws `ZE_ERR_NOT_FOUND` and a damaged entry throws
+`ZE_ERR_CORRUPT`. Each open verifies its own folder, also while another handle
+already shares the pinned model. The folder and the offline switch are not part
+of the namespace epoch. `namespaceBatch` and `namespaceBatchLive` read the same
+two fields from each embedded participant. Plain and vector namespaces reject them.
+
+```js
+const models = join(app.getPath('userData'), 'models');
+const notes = openNamespace(root, 'notes', spec, {modelCacheDir: models, offline: true});
+namespaceBatch(root, [
+  {name: 'notes', spec, modelCacheDir: models, offline: true, upserts: [{id: noteId, text: transcript}]},
+  {name: 'tags', spec: tagSpec, upserts: [tag]},
+]);
+```
+
 ```js
 const spec = {
   embeddedModel: modelRef,

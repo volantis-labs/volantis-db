@@ -203,3 +203,10 @@ test('namespace open validates the optional MLX byte count', {skip: !nativeMetal
   runCacheCase('validation');
   runCacheCase('race');
 });
+
+test('WF-989 opens from the requested cache offline', {skip: !nativeMetal}, async () => {
+  const {runCase} = await import('./fixtures/wf989-model-cache.mjs');
+  runCase('open');
+  runCase('mlx-zero');
+  runCase('mlx-implicit', {ZE_MLX_CACHE_LIMIT_BYTES: '8192'});
+});

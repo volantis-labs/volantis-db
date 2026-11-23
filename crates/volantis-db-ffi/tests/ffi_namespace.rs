@@ -682,3 +682,100 @@ fn embedded_cache_spec_checks_size_before_reading_limit() {
         assert_eq!(open(&legacy.spec), ZeErrorCode::ZeErrUnsupported);
     }
 }
+
+#[test]
+fn wf989_v3_namespace_spec_validation() {
+    let root = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let path = root.path().as_os_str().as_encoded_bytes();
+    let cache_path = cache.path().as_os_str().as_encoded_bytes();
+    let open = |spec: &ZeEmbeddedNamespaceSpecV3| {
+        let req = ZeNamespaceOpenRequest {
+            root: path.as_ptr(),
+            root_len: path.len(),
+            name: b"toy-a".as_ptr(),
+            name_len: 5,
+            spec: &spec.v2.embedded.spec,
+            open: open_settings(),
+            ..common::sized_zeroed()
+        };
+        let mut handle = 0;
+        let code = ze_namespace_open(&req, &mut handle);
+        assert_eq!(handle, 0);
+        code
+    };
+    let rev = b"1111111111111111111111111111111111111111";
+    let sha = b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let mut valid: ZeEmbeddedNamespaceSpecV3 = common::sized_zeroed();
+    valid.v2.embedded.spec.has_vector_space = 4;
+    valid.v2.embedded.model = ZeTextModelRef {
+        repo: b"fixture/fake-wf989".as_ptr(),
+        repo_len: 18,
+        revision: rev.as_ptr(),
+        revision_len: rev.len(),
+        manifest_sha256: sha.as_ptr(),
+        manifest_sha256_len: sha.len(),
+        ..common::sized_zeroed()
+    };
+    valid.model_cache_dir = cache_path.as_ptr();
+    valid.model_cache_dir_len = cache_path.len();
+    valid.offline = 1;
+    // The well-formed control proves the policy reaches resolution: the empty
+    // explicit root is an offline miss (text) or the build refuses it.
+    let expected = if cfg!(feature = "text") {
+        ZeErrorCode::ZeErrNotFound
+    } else {
+        ZeErrorCode::ZeErrUnsupported
+    };
+    assert_eq!(open(&valid), expected);
+    assert!(std::fs::read_dir(cache.path()).unwrap().next().is_none());
+
+    let mut truncated = valid;
+    truncated.v2.embedded.spec.abi_size = size_of::<ZeEmbeddedNamespaceSpecV2>() as u32;
+    let invalid_utf8 = [b'/', 0xff];
+    let interior_nul = [b'/', 0, b'x'];
+    let cases: [(&str, ZeEmbeddedNamespaceSpecV3); 6] = [
+        ("truncated tag 4", truncated),
+        (
+            "offline 2",
+            ZeEmbeddedNamespaceSpecV3 {
+                offline: 2,
+                ..valid
+            },
+        ),
+        (
+            "has_mlx_cache_limit 2",
+            ZeEmbeddedNamespaceSpecV3 {
+                has_mlx_cache_limit: 2,
+                ..valid
+            },
+        ),
+        (
+            "invalid UTF-8",
+            ZeEmbeddedNamespaceSpecV3 {
+                model_cache_dir: invalid_utf8.as_ptr(),
+                model_cache_dir_len: invalid_utf8.len(),
+                ..valid
+            },
+        ),
+        (
+            "interior NUL",
+            ZeEmbeddedNamespaceSpecV3 {
+                model_cache_dir: interior_nul.as_ptr(),
+                model_cache_dir_len: interior_nul.len(),
+                ..valid
+            },
+        ),
+        (
+            "null with length",
+            ZeEmbeddedNamespaceSpecV3 {
+                model_cache_dir: std::ptr::null(),
+                model_cache_dir_len: 1,
+                ..valid
+            },
+        ),
+    ];
+    for (label, spec) in cases {
+        assert_eq!(open(&spec), ZeErrorCode::ZeErrInvalidArgument, "{label}");
+    }
+}

@@ -6,6 +6,8 @@ import {
   CancellationToken,
   Store,
   idToUuid,
+  namespaceBatch,
+  namespaceBatchLive,
   openNamespace,
   openNamespaceAsync,
   uuidToId,
@@ -130,3 +132,20 @@ void openNamespaceAsync('/tmp/root', 'notes', embeddedSpec, {mlxCacheLimitBytes:
 void openNamespace('/tmp/root', 'notes', embeddedSpec, {mlxCacheLimitBytes: 0});
 // @ts-expect-error The byte count is an unsigned bigint.
 void openNamespaceAsync('/tmp/root', 'notes', embeddedSpec, {mlxCacheLimitBytes: 0});
+
+const cachePolicy = {modelCacheDir: '/tmp/models', offline: true};
+void openNamespace('/tmp/root', 'notes', embeddedSpec, cachePolicy);
+void openNamespaceAsync('/tmp/root', 'notes', embeddedSpec, {...cachePolicy, mlxCacheLimitBytes: 0n});
+// @ts-expect-error offline is a boolean.
+void openNamespace('/tmp/root', 'notes', embeddedSpec, {offline: 1});
+// @ts-expect-error modelCacheDir is a string.
+void openNamespaceAsync('/tmp/root', 'notes', embeddedSpec, {modelCacheDir: 1});
+void namespaceBatch('/tmp/root', [
+  {name: 'notes', spec: embeddedSpec, modelCacheDir: '/tmp/models', offline: true},
+  {name: 'segments', spec: embeddedSpec},
+]);
+void namespaceBatchLive('/tmp/root', [{store, name: 'notes', spec: embeddedSpec, ...cachePolicy}]);
+// @ts-expect-error offline is a boolean.
+void namespaceBatch('/tmp/root', [{name: 'notes', spec: embeddedSpec, offline: 'yes'}]);
+// @ts-expect-error modelCacheDir is a string.
+void namespaceBatchLive('/tmp/root', [{store, name: 'notes', spec: embeddedSpec, modelCacheDir: 1}]);

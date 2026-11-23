@@ -86,3 +86,10 @@ test('namespaceBatchLive keeps writable handles usable', () => {
     assert.throws(() => namespaceBatchLive(root, changes), { code: 'ZE_ERR_CLOSED' });
   } finally { stores.forEach(store => store.close()); rmSync(root, { recursive: true, force: true }); }
 });
+
+test('WF-989 resolves each embedded batch participant',
+  {skip: process.platform !== 'darwin' || process.arch !== 'arm64'}, async () => {
+  const {runCase} = await import('./fixtures/wf989-model-cache.mjs');
+  runCase('batch');
+  runCase('batch-live');
+});

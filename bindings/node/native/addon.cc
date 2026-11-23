@@ -1293,8 +1293,8 @@ bool ParseOpenRequest(napi_env env, napi_value options, const std::string &path,
 }
 
 struct NamespaceSpecStorage {
-  ZeEmbeddedNamespaceSpecV2 declaration{};
-  std::string repo, revision, sha;
+  ZeEmbeddedNamespaceSpecV3 declaration{};
+  std::string repo, revision, sha, model_cache_dir;
 };
 
 bool ParseNamespaceSpec(napi_env env, napi_value value,
@@ -1374,7 +1374,7 @@ bool ParseNamespaceSpec(napi_env env, napi_value value,
     native.nullable = nullable ? 1 : 0;
   }
 
-  auto *spec = &storage->declaration.embedded.spec;
+  auto *spec = &storage->declaration.v2.embedded.spec;
   *spec = ZeNamespaceSpec{};
   spec->abi_size = sizeof(*spec);
   spec->attributes = attributes->data();
@@ -1405,9 +1405,9 @@ bool ParseNamespaceSpec(napi_env env, napi_value value,
         !read_pin("revision", storage->revision) ||
         !read_pin("manifestSha256", storage->sha))
       return false;
-    spec->abi_size = sizeof(storage->declaration.embedded);
+    spec->abi_size = sizeof(storage->declaration.v2.embedded);
     spec->has_vector_space = 2;
-    auto &model = storage->declaration.embedded.model;
+    auto &model = storage->declaration.v2.embedded.model;
     model.abi_size = sizeof(model);
     model.repo = reinterpret_cast<const uint8_t *>(storage->repo.data());
     model.repo_len = storage->repo.size();
@@ -1456,6 +1456,36 @@ bool ParseNamespaceSpec(napi_env env, napi_value value,
   return true;
 }
 
+// Reads modelCacheDir and offline with TextStore.openModel's type rules.
+// Either field selects tag 4 and keeps an explicit tag-3 limit.
+bool ParseNamespaceModelPolicy(napi_env env, napi_value object,
+                               NamespaceSpecStorage *storage) {
+  bool has_dir = false, has_offline = false, offline = false;
+  if (!GetOptionalString(env, object, "modelCacheDir", &storage->model_cache_dir,
+                         &has_dir) ||
+      !NapiOk(env, napi_has_named_property(env, object, "offline", &has_offline),
+              "inspect property") ||
+      !GetOptionalBool(env, object, "offline", false, &offline))
+    return false;
+  if (!has_dir && !has_offline)
+    return true;
+  auto &declaration = storage->declaration;
+  auto &spec = declaration.v2.embedded.spec;
+  if (spec.has_vector_space != 2 && spec.has_vector_space != 3) {
+    napi_throw_type_error(env, "ERR_INVALID_ARG_VALUE",
+                          "model resolution policy requires embeddedModel");
+    return false;
+  }
+  declaration.model_cache_dir =
+      reinterpret_cast<const uint8_t *>(storage->model_cache_dir.data());
+  declaration.model_cache_dir_len = storage->model_cache_dir.size();
+  declaration.offline = offline ? 1 : 0;
+  declaration.has_mlx_cache_limit = spec.has_vector_space == 3 ? 1 : 0;
+  spec.has_vector_space = 4;
+  spec.abi_size = sizeof(declaration);
+  return true;
+}
+
 bool ParseNamespaceOpenSpec(napi_env env, napi_value spec, napi_value options,
                             NamespaceSpecStorage *storage,
                             std::vector<ZeAttributeDefinition> *attributes,
@@ -1466,24 +1496,24 @@ bool ParseNamespaceOpenSpec(napi_env env, napi_value spec, napi_value options,
   bool present;
   if (!GetNamed(env, options, "mlxCacheLimitBytes", &limit, &present))
     return false;
-  if (!present)
-    return true;
-  napi_valuetype type;
-  if (!NapiOk(env, napi_typeof(env, limit, &type), "inspect MLX cache limit"))
+  napi_valuetype type = napi_undefined;
+  if (present &&
+      !NapiOk(env, napi_typeof(env, limit, &type), "inspect MLX cache limit"))
     return false;
-  if (type == napi_undefined)
-    return true;
-  auto &declaration = storage->declaration;
-  if (declaration.embedded.spec.has_vector_space != 2) {
-    napi_throw_type_error(env, "ERR_INVALID_ARG_VALUE",
-                          "mlxCacheLimitBytes requires embeddedModel");
-    return false;
+  if (type != napi_undefined) {
+    auto &declaration = storage->declaration.v2;
+    if (declaration.embedded.spec.has_vector_space != 2) {
+      napi_throw_type_error(env, "ERR_INVALID_ARG_VALUE",
+                            "mlxCacheLimitBytes requires embeddedModel");
+      return false;
+    }
+    if (!GetUint64(env, limit, "mlxCacheLimitBytes",
+                   &declaration.mlx_cache_limit_bytes))
+      return false;
+    declaration.embedded.spec.has_vector_space = 3;
+    declaration.embedded.spec.abi_size = sizeof(declaration);
   }
-  if (!GetUint64(env, limit, "mlxCacheLimitBytes", &declaration.mlx_cache_limit_bytes))
-    return false;
-  declaration.embedded.spec.has_vector_space = 3;
-  declaration.embedded.spec.abi_size = sizeof(declaration);
-  return true;
+  return ParseNamespaceModelPolicy(env, options, storage);
 }
 
 NativeStore *UnwrapStore(napi_env env, napi_value receiver) {
@@ -1638,7 +1668,7 @@ napi_value ConstructStore(napi_env env, napi_callback_info info) {
       namespace_request.name = reinterpret_cast<const uint8_t *>(name.data());
       namespace_request.name_len = name.size();
       namespace_request.open = request;
-      namespace_request.spec = &spec.declaration.embedded.spec;
+      namespace_request.spec = &spec.declaration.v2.embedded.spec;
       std::string profile = "textDefault";
       bool has_profile = false;
       if (!GetOptionalString(env, args[3], "tokenizerProfile", &profile,
@@ -1723,7 +1753,7 @@ napi_value OpenAsync(napi_env env, napi_callback_info info) {
       ns.name = reinterpret_cast<const uint8_t *>(data->name.data());
       ns.name_len = data->name.size();
       ns.open = data->request;
-      ns.spec = &data->spec.declaration.embedded.spec;
+      ns.spec = &data->spec.declaration.v2.embedded.spec;
       std::string profile = "textDefault";
       bool present = false;
       const char *profiles[] = {"textDefault", "code", "voice"};
@@ -2301,6 +2331,10 @@ napi_value NamespaceOperationCall(napi_env env, napi_callback_info info,
       if (!ParseNamespaceSpec(env, spec, &owned.spec, &owned.attributes,
                               &owned.attribute_names))
         return nullptr;
+      if ((operation == NamespaceOperation::Batch ||
+           operation == NamespaceOperation::LiveBatch) &&
+          !ParseNamespaceModelPolicy(env, value, &owned.spec))
+        return nullptr;
       std::string profile = "textDefault";
       if (!GetOptionalString(env, spec, "tokenizerProfile", &profile, &present))
         return nullptr;
@@ -2312,7 +2346,7 @@ napi_value NamespaceOperationCall(napi_env env, napi_callback_info info,
       }
       native.name = reinterpret_cast<const uint8_t *>(owned.name.data());
       native.name_len = owned.name.size();
-      native.spec = &owned.spec.declaration.embedded.spec;
+      native.spec = &owned.spec.declaration.v2.embedded.spec;
       if (!GetNamed(env, value, "upserts", &field, &present))
         return nullptr;
       if (!present &&

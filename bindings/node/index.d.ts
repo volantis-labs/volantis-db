@@ -943,20 +943,34 @@ export declare class Store {
 
 export declare const ABI_VERSION: number;
 
+/**
+ * Model resolution for one embedded namespace open or batch participant, with
+ * the same meaning as TextStore.openModel cacheDir and offline. An explicit
+ * folder wins over ZE_MODEL_CACHE and the default cache; an empty string or an
+ * omitted field uses them. offline, or ZE_MODEL_OFFLINE=1, forbids network
+ * access: a cache miss throws ZE_ERR_NOT_FOUND and a damaged entry throws
+ * ZE_ERR_CORRUPT. The folder is verified on each open, also while another
+ * handle shares the pinned model; it is not part of the namespace epoch.
+ */
+export interface NamespaceModelPolicy {
+  readonly modelCacheDir?: string;
+  readonly offline?: boolean;
+}
+
 export declare function openNamespace(
   root: string,
   name: string,
   spec: NamespaceSpec,
-  /** mlxCacheLimitBytes applies to embeddedModel namespaces only. */
-  options?: OpenOptions & Pick<TextOpenOptions, 'mlxCacheLimitBytes'>,
+  /** mlxCacheLimitBytes and the model policy apply to embeddedModel namespaces only. */
+  options?: OpenOptions & Pick<TextOpenOptions, 'mlxCacheLimitBytes'> & NamespaceModelPolicy,
 ): Store;
 /** Off-thread namespace open, with the same options and migrations. */
 export declare function openNamespaceAsync(
   root: string,
   name: string,
   spec: NamespaceSpec,
-  /** mlxCacheLimitBytes applies to embeddedModel namespaces only. */
-  options?: OpenOptions & Pick<TextOpenOptions, 'mlxCacheLimitBytes'>,
+  /** mlxCacheLimitBytes and the model policy apply to embeddedModel namespaces only. */
+  options?: OpenOptions & Pick<TextOpenOptions, 'mlxCacheLimitBytes'> & NamespaceModelPolicy,
 ): Promise<Store>;
 
 export declare function listNamespaces(root: string): string[];
@@ -1191,7 +1205,7 @@ export type GraphDelete = GraphKeyedMutation & {
 } & ({ readonly kind: 'node'; readonly detach?: boolean } | { readonly kind: 'relationship' });
 export type GraphMutation = GraphNodeWrite | GraphRelationshipWrite | GraphDelete;
 /** One participant; operations run in the listed phase order. */
-export interface NamespaceMutation {
+export interface NamespaceMutation extends NamespaceModelPolicy {
   readonly name: string;
   /** Must match the existing namespace, including tokenizer. No schema evolution. */
   readonly spec: NamespaceSpec;

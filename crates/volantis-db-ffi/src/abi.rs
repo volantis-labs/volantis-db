@@ -209,7 +209,7 @@ pub struct ZeNamespaceSpec {
     /// Number of attribute definitions.
     pub attribute_count: usize,
     /// Zero for records, one for vectors, two for ZeEmbeddedNamespaceSpec,
-    /// or three for ZeEmbeddedNamespaceSpecV2.
+    /// three for ZeEmbeddedNamespaceSpecV2, or four for ZeEmbeddedNamespaceSpecV3.
     pub has_vector_space: u32,
     /// Vector dimensions, or zero or one for a record-only namespace.
     pub dimensions: u32,
@@ -2145,6 +2145,27 @@ pub struct ZeEmbeddedNamespaceSpecV2 {
     pub embedded: ZeEmbeddedNamespaceSpec,
     /// Reusable buffer ceiling in bytes. Zero disables caching.
     pub mlx_cache_limit_bytes: u64,
+}
+
+/// Embedded namespace with a model resolution policy and an optional MLX limit.
+/// A zero-initialized extension selects the standard resolution policy.
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct ZeEmbeddedNamespaceSpecV3 {
+    /// Prefix with abi_size = sizeof(ZeEmbeddedNamespaceSpecV3), has_vector_space = 4.
+    /// Its mlx_cache_limit_bytes applies only when has_mlx_cache_limit is one.
+    pub v2: ZeEmbeddedNamespaceSpecV2,
+    /// Caller-owned UTF-8 model cache root without NUL. Length zero selects
+    /// ZE_MODEL_CACHE or the default root. An explicit root wins over both.
+    pub model_cache_dir: *const u8,
+    /// Number of model cache root bytes.
+    pub model_cache_dir_len: usize,
+    /// `1` prohibits network access (as does ZE_MODEL_OFFLINE=1); `0` allows it.
+    /// An offline cache miss returns ZE_ERR_NOT_FOUND.
+    pub offline: u32,
+    /// `1` when v2.mlx_cache_limit_bytes is an explicit limit, including zero;
+    /// `0` accepts the configured process policy.
+    pub has_mlx_cache_limit: u32,
 }
 
 /// Text query against a model-bound Store namespace.

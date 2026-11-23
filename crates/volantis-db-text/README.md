@@ -56,8 +56,16 @@ share this ceiling for reusable MLX buffers, including after all handles close.
 ```rust
 let mut options = ModelOpenOptions::default();
 options.text = options.text.with_mlx_cache_limit_bytes(536_870_912);
+options.cache_dir = Some(app_data.join("models"));
+options.offline = true;
 let model = NamespaceModel::open_model(&pins, &options)?;
 ```
+
+`NamespaceModel::open_model` verifies the requested cache entry before it
+shares a live session for the same pins. Two verified copies of one model share
+the session; a missing or damaged copy fails. The cache folder and the offline
+switch are not part of the namespace epoch. C callers select the same policy
+with `ZeEmbeddedNamespaceSpecV3` (tag 4).
 
 `ModelOpenOptions.progress` receives synchronous byte counts on the calling
 thread. Intermediate reports require both at least 64 KiB and at least 100 ms
