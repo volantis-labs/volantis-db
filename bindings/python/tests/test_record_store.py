@@ -118,6 +118,50 @@ def _document(doc_id: int, revision: int = 1, timestamp: int = 10) -> ze.StoredD
     )
 
 
+def test_get_scan_and_iteration_send_only_public_field_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    requests: list[tuple[str, dict[str, int]]] = []
+
+    def capture(symbol: str, request_type: type[ct.Structure], label: str) -> None:
+        native = getattr(LIBRARY, symbol)
+
+        def call(handle: int, request: object, result: object) -> int:
+            fields = ct.cast(request, ct.POINTER(request_type)).contents
+            if isinstance(fields, s.ZeScanOrderedRequest):
+                fields = fields.scan
+            requests.append((label, {
+                name: int(getattr(fields, name))
+                for name, _ in type(fields)._fields_
+                if name.startswith("include_")
+            }))
+            return native(handle, request, result)
+
+        monkeypatch.setattr(LIBRARY, symbol, call)
+
+    capture("ze_get", s.ZeGetRequest, "ze_get")
+    # Scans go through ze_scan_ordered (ZE-575); its request embeds the scan request.
+    capture("ze_scan_ordered", s.ZeScanOrderedRequest, "ze_scan")
+    with ze.open(tmp_path / "store") as store:
+        store.get([1])
+        store.scan()
+        store.get([1], vector=False, text=False, attributes=False)
+        list(store.iter_documents(vector=False, text=False, attributes=False))
+
+    all_fields = {
+        "include_vector": 1, "include_text": 1, "include_metadata": 1, "include_attributes": 1
+    }
+    metadata_only = {
+        "include_vector": 0, "include_text": 0, "include_metadata": 1, "include_attributes": 0
+    }
+    assert requests == [
+        ("ze_get", all_fields),
+        ("ze_scan", all_fields),
+        ("ze_get", metadata_only),
+        ("ze_scan", metadata_only),
+    ]
+
+
 def test_upsert_every_attribute_type_round_trips_through_get(tmp_path: Path) -> None:
     with ze.open_namespace(tmp_path, "typed", _all_types_spec()) as store:
         report = store.upsert([_document(1)])

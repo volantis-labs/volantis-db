@@ -335,6 +335,64 @@ one budgeted native maintenance call.
 
 Explicit `store.observed_compute_units()` loads the CoreML compute plan on demand and returns planned placement counts (not an execution trace), or `None` without a CoreML query model.
 
+### Embedded namespaces
+
+Pass a pinned `EmbeddedModelRef(repo, revision, manifest_sha256)` as
+`NamespaceSpec.embedded_model`. The model sets the vector dimensions. Use the
+same pins when reopening the namespace. The resolver honors `ZE_MODEL_CACHE`,
+`ZE_MODEL_OFFLINE`, and `ZE_MODEL_ENDPOINT`. Opening an embedded namespace and
+calling the chunk query methods require a macOS arm64 text build. Other builds
+raise `ze.TextUnavailable`.
+
+```python
+import zeppelin_embed as ze
+
+model = ze.EmbeddedModelRef(**ze.DEFAULT_MODEL_REF)
+spec = ze.NamespaceSpec(
+    attributes=(ze.AttributeDefinition(1, "meeting", ze.AttributeType.U64),),
+    embedded_model=model,
+)
+meeting = ze.AttributeValue(1, ze.AttributeType.U64, 42)
+with ze.open_namespace("db", "notes", spec) as notes:
+    notes.upsert([
+        ze.StoredDocument(7, text="The fixtures arrive on Tuesday.", attributes=(meeting,)),
+        ze.StoredDocument(9, text="The shipment is due Tuesday.", attributes=(meeting,)),
+    ])
+    filter = ze.Filter.eq("meeting", 42)
+    hits = notes.query_embedded("delivery date", leg="hybrid", k=5, filter=filter)
+    neighbours = notes.nearest_chunks(ze.NeighbourSource(7, chunk=0), k=5)
+    groups = notes.nearest_chunks_batch([7, 9, 9], threshold=-0.25, filter=filter)
+```
+
+`upsert` accepts one or more source documents with text, optional metadata and
+schema attributes. The model embeds chunks. Supplying a vector raises
+`ze.InvalidArgument`. Replacing or deleting the parent row retires all of its
+chunks.
+
+`query_embedded` returns a tuple of `EmbeddedHit` values. Use `leg="dense"`
+for exact vector search (the default), `"lexical"` for BM25, or `"hybrid"` for
+reciprocal rank fusion. The limit `k` is 1–4096 and defaults to 10. Each hit
+contains the parent ID, revision, timestamp and attributes, plus its score,
+chunk text, zero-based chunk number and half-open UTF-8 byte offsets. Slice
+`source.encode("utf-8")[hit.byte_start:hit.byte_end]` for the original bytes.
+
+`nearest_chunks` uses persisted vectors. Pass a document ID to use all its
+chunks or a `NeighbourSource` to select one. Each `ChunkNeighbour` contains
+`doc_id`, `chunk`, and the negative squared L2 distance to the closest selected
+source chunk. Zero is an exact match. Ties sort by document ID, then chunk.
+Source chunks are excluded unless `include_source=True`. Set `k` to 1–4096
+to cap the results. A threshold alone returns every score strictly above it.
+Omitting both returns up to 10 hits. `nearest_chunks_batch` returns one tuple
+per source in input order, preserving duplicate sources and empty groups.
+An unknown source ID or chunk raises `ze.NotFound` for the entire call.
+
+Both query types accept a structured `filter`, a half-open `timestamp_range`,
+and `eligible_ids` to restrict candidates before ranking. An empty eligible
+list selects no candidates. Use either `cancel_token` or a relative
+`deadline_ns`. Stopped queries raise a typed error without returning partial
+results. Querying a regular namespace with either method raises
+`ze.MissingEmbedder`.
+
 ## Development
 
 The package is built from the repository because the wheel build compiles

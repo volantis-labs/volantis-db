@@ -3433,6 +3433,12 @@ impl Store {
                     durability_policy,
                 )
                 .map_err(StoreError::Manifest)?;
+            // The initial snapshot was loaded before the manifest existed.
+            snapshot.embedded_epoch = options
+                .epoch
+                .as_ref()
+                .filter(|epoch| epoch.embedding.alignment_digest.starts_with(embedded::EPOCH_TAG))
+                .cloned();
             open_publication = Some(publication);
         }
         let wal_writer = match options.access_mode {

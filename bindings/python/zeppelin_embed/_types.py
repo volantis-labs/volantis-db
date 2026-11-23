@@ -127,10 +127,44 @@ class VectorSpace:
 
 
 @dataclass(frozen=True)
+class EmbeddedModelRef:
+    repo: str
+    revision: str
+    manifest_sha256: str
+
+
+@dataclass(frozen=True)
 class NamespaceSpec:
     attributes: tuple[AttributeDefinition, ...] = ()
     vector_space: VectorSpace | None = None
     tokenizer_profile: TokenizerProfile | str | None = None
+    embedded_model: EmbeddedModelRef | None = None
+
+
+@dataclass(frozen=True)
+class EmbeddedHit:
+    doc_id: int
+    revision: int
+    timestamp: int
+    attributes: tuple[AttributeValue, ...]
+    chunk: int
+    byte_start: int
+    byte_end: int
+    text: str
+    score: float
+
+
+@dataclass(frozen=True)
+class NeighbourSource:
+    doc_id: int | tuple[int, int]
+    chunk: int | None = None
+
+
+@dataclass(frozen=True)
+class ChunkNeighbour:
+    doc_id: int
+    chunk: int
+    score: float
 
 
 @dataclass(frozen=True)

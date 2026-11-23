@@ -7,6 +7,14 @@ import ctypes as ct
 from zeppelin_embed import _structures as s
 
 LAYOUTS: dict[str, tuple[int, int, dict[str, int]]] = {
+    "ZeEmbeddedNamespaceSpec": (104, 8, {'spec': 0, 'model': 48}),
+    "ZeQueryFilter": (40, 8, {'abi_size': 0, 'abi_reserved': 4, 'filter': 8, 'has_timestamp_range': 16, 'start_ts': 24, 'end_ts': 32}),
+    "ZeEmbeddedQueryRequest": (80, 8, {'abi_size': 0, 'abi_reserved': 4, 'text': 8, 'text_len': 16, 'leg': 24, 'has_eligible': 28, 'eligible_ids': 32, 'eligible_count': 40, 'constraints': 48, 'k': 56, 'cancel_token': 64, 'deadline_ns': 72}),
+    "ZeChunkRank": (32, 8, {'chunk': 0, 'byte_start': 8, 'byte_end': 16, 'score': 24}),
+    "ZeNeighbourSource": (24, 8, {'doc_id': 0, 'has_chunk': 16, 'chunk': 20}),
+    "ZeNeighbourRequest": (96, 8, {'abi_size': 0, 'abi_reserved': 4, 'sources': 8, 'source_count': 16, 'constraints': 24, 'eligible_ids': 32, 'eligible_count': 40, 'k': 48, 'threshold': 56, 'include_source': 64, 'has_threshold': 68, 'has_eligible': 72, 'reserved': 76, 'cancel_token': 80, 'deadline_ns': 88}),
+    "ZeNeighbourHit": (40, 8, {'source_index': 0, 'doc_id': 8, 'chunk': 24, 'score': 32}),
+    "ZeNeighbourResult": (24, 8, {'abi_size': 0, 'abi_reserved': 4, 'hits': 8, 'hit_count': 16}),
     "ZeTextModelRef": (56, 8, {"abi_size": 0, "abi_reserved": 4, "repo": 8, "repo_len": 16, "revision": 24, "revision_len": 32, "manifest_sha256": 40, "manifest_sha256_len": 48}),
     "ZeTextObservedComputeUnits": (48, 8, {"abi_size": 0, "abi_reserved": 4, "cpu_ops": 8, "gpu_ops": 16, "neural_engine_ops": 24, "other_ops": 32, "has_observed_compute_units": 40, "reserved": 44}),
     "ZeOpenRequest": (64, 8, {"abi_size": 0, "abi_reserved": 4, "path": 8, "path_len": 16, "access_mode": 24, "durability_mode": 28, "commit_tier": 32, "reader_drain_timeout_ms": 40, "max_resident_bytes": 48, "max_temp_bytes": 56}),
@@ -73,7 +81,6 @@ LAYOUTS: dict[str, tuple[int, int, dict[str, int]]] = {
     "ZeSearchFilteredRequest": (112, 8, {"abi_size": 0, "abi_reserved": 4, "search": 8, "filter": 104}),
     "ZeQueryRequest": (160, 8, {"abi_size": 0, "abi_reserved": 4, "vector": 8, "vector_len": 16, "dimension": 24, "text": 32, "text_len": 40, "k": 48, "thread_budget": 56, "has_tier": 64, "tier": 68, "graph_profile": 72, "lexical_flags": 76, "graph_ef": 80, "graph_seed": 88, "has_alpha": 96, "rules_enabled": 100, "alpha": 104, "has_max_rounds": 112, "quoted_phrase": 116, "max_rounds": 120, "identifier_token": 128, "has_rarest_exact_document_frequency": 132, "rarest_exact_document_frequency": 136, "cancel_token": 144, "deadline_ns": 152}),
     "ZeQueryRequestV2": (192, 8, {"abi_size": 0, "abi_reserved": 4, "query": 8, "eligible_ids": 168, "eligible_count": 176, "has_eligible": 184, "reserved": 188}),
-    "ZeQueryFilter": (40, 8, {"abi_size": 0, "abi_reserved": 4, "filter": 8, "has_timestamp_range": 16, "start_ts": 24, "end_ts": 32}),
     "ZeSnippetHighlight": (16, 8, {"start": 0, "end": 8}),
     "ZeQuerySnippet": (48, 8, {"has_snippet": 0, "truncated_start": 4, "truncated_end": 8, "reserved": 12, "text": 16, "text_len": 24, "highlights": 32, "highlight_count": 40}),
     "ZeQuerySnippets": (24, 8, {"abi_size": 0, "abi_reserved": 4, "snippets": 8, "snippet_count": 16}),

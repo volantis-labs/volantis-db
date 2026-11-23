@@ -793,6 +793,78 @@ class ZeQueryFilter(ct.Structure):
     ]
 
 
+class ZeEmbeddedQueryRequest(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("text", UInt8Pointer),
+        ("text_len", ct.c_size_t),
+        ("leg", ct.c_int32),
+        ("has_eligible", ct.c_uint32),
+        ("eligible_ids", ct.POINTER(ZeDocId)),
+        ("eligible_count", ct.c_size_t),
+        ("constraints", ct.POINTER(ZeQueryFilter)),
+        ("k", ct.c_size_t),
+        ("cancel_token", ct.c_uint64),
+        ("deadline_ns", ct.c_uint64),
+    ]
+
+
+class ZeChunkRank(ct.Structure):
+    _fields_ = [
+        ("chunk", ct.c_size_t),
+        ("byte_start", ct.c_size_t),
+        ("byte_end", ct.c_size_t),
+        ("score", ct.c_double),
+    ]
+
+
+class ZeNeighbourSource(ct.Structure):
+    _fields_ = [
+        ("doc_id", ZeDocId),
+        ("has_chunk", ct.c_uint32),
+        ("chunk", ct.c_uint32),
+    ]
+
+
+class ZeNeighbourRequest(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("sources", ct.POINTER(ZeNeighbourSource)),
+        ("source_count", ct.c_size_t),
+        ("constraints", ct.POINTER(ZeQueryFilter)),
+        ("eligible_ids", ct.POINTER(ZeDocId)),
+        ("eligible_count", ct.c_size_t),
+        ("k", ct.c_size_t),
+        ("threshold", ct.c_double),
+        ("include_source", ct.c_uint32),
+        ("has_threshold", ct.c_uint32),
+        ("has_eligible", ct.c_uint32),
+        ("reserved", ct.c_uint32),
+        ("cancel_token", ct.c_uint64),
+        ("deadline_ns", ct.c_uint64),
+    ]
+
+
+class ZeNeighbourHit(ct.Structure):
+    _fields_ = [
+        ("source_index", ct.c_size_t),
+        ("doc_id", ZeDocId),
+        ("chunk", ct.c_size_t),
+        ("score", ct.c_double),
+    ]
+
+
+class ZeNeighbourResult(ct.Structure):
+    _fields_ = [
+        ("abi_size", ct.c_uint32),
+        ("abi_reserved", ct.c_uint32),
+        ("hits", ct.POINTER(ZeNeighbourHit)),
+        ("hit_count", ct.c_size_t),
+    ]
+
+
 class ZeQueryHit(ct.Structure):
     _fields_ = [
         ("has_document", ct.c_uint32),
@@ -1149,3 +1221,7 @@ class ZeTextModelRef(ct.Structure):
         ("revision", ct.POINTER(ct.c_uint8)), ("revision_len", ct.c_size_t),
         ("manifest_sha256", ct.POINTER(ct.c_uint8)), ("manifest_sha256_len", ct.c_size_t),
     ]
+
+
+class ZeEmbeddedNamespaceSpec(ct.Structure):
+    _fields_ = [("spec", ZeNamespaceSpec), ("model", ZeTextModelRef)]

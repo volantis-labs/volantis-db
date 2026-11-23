@@ -158,6 +158,16 @@ _bind("ze_cancel_token_free", [CancelHandle])
 
 TEXT_AVAILABLE = hasattr(LIBRARY, "ze_text_open")
 if TEXT_AVAILABLE:
+    _bind(
+        "ze_query_embedded",
+        [Handle, ct.POINTER(s.ZeEmbeddedQueryRequest), ct.POINTER(s.ZeChunkRank),
+         ct.c_size_t, ct.POINTER(s.ZeGetResult)],
+    )
+    _bind(
+        "ze_nearest_chunks",
+        [Handle, ct.POINTER(s.ZeNeighbourRequest), ct.POINTER(s.ZeNeighbourResult)],
+    )
+    _bind("ze_neighbour_result_free", [ct.POINTER(s.ZeNeighbourResult)])
     _bind("ze_text_default_model", [ct.POINTER(s.ZeTextModelRef)])
     _bind("ze_text_open", [ct.POINTER(s.ZeTextOpenRequest), ct.POINTER(Handle)])
     _bind("ze_text_open_v2", [ct.POINTER(s.ZeTextOpenRequestV2), ct.POINTER(Handle)])

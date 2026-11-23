@@ -33,6 +33,7 @@ from ._types import (
     CascadeDeclaration,
     CascadeDeleteParticipant,
     CascadeParticipant,
+    ChunkNeighbour,
     CommitTier,
     ComputeUnits,
     CountGroup,
@@ -41,6 +42,8 @@ from ._types import (
     DeleteTarget,
     DeleteWhereReport,
     DurabilityMode,
+    EmbeddedHit,
+    EmbeddedModelRef,
     EmbeddingEpoch,
     EmbeddingRuntime,
     EpochAliasReport,
@@ -58,6 +61,7 @@ from ._types import (
     MutationReport,
     NamespaceMutation,
     NamespaceSpec,
+    NeighbourSource,
     Normalization,
     ObservedComputeUnits,
     PartitionReport,
@@ -211,6 +215,12 @@ def _vector(value: np.ndarray[Any, Any], *, dimensions: int) -> np.ndarray[Any, 
 def _same_length(name: str, values: Sequence[object], expected: int) -> None:
     if len(values) != expected:
         invalid_argument(f"{name} length {len(values)} does not match document count {expected}")
+
+
+def _bounded_int(value: object, low: int, high: int, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        invalid_argument(f"{field} must be an integer in {low}..{high}")
+    return value
 
 
 def _tower(value: Any, owners: list[object]) -> s.ZeEmbeddingTower:
@@ -740,6 +750,7 @@ class Store:
         attribute_types: dict[int, AttributeType] | None = None,
         vector_dimensions: int | None = None,
         record_only: bool = False,
+        embedded: bool = False,
     ) -> None:
         self._handle = handle
         self._abi_call_count = 0
@@ -748,6 +759,7 @@ class Store:
         self._attribute_types = {} if attribute_types is None else dict(attribute_types)
         self._vector_dimensions = vector_dimensions
         self._record_only = record_only
+        self._embedded = embedded
 
     @property
     def closed(self) -> bool:
@@ -976,7 +988,10 @@ class Store:
         handle = self._live_handle()
         documents = tuple(documents)
         conditional, owners = self._marshal_upserts(
-            documents, record_only=self._record_only, vector_dimensions=self._vector_dimensions
+            documents,
+            record_only=self._record_only,
+            vector_dimensions=self._vector_dimensions,
+            embedded=self._embedded,
         )
         report = s.sized(s.ZeMutationReport)
         if conditional.condition_count:
@@ -1003,9 +1018,10 @@ class Store:
         *,
         record_only: bool,
         vector_dimensions: int | None,
+        embedded: bool,
         require_conditions: bool = False,
     ) -> tuple[s.ZeConditionalUpsertRequest, list[object]]:
-        if record_only:
+        if record_only or embedded:
             dimension = 0
         elif vector_dimensions is not None:
             dimension = vector_dimensions
@@ -1032,8 +1048,10 @@ class Store:
                 or not -(1 << 63) <= document.timestamp < 1 << 63
             ):
                 invalid_argument("timestamp must be a signed 64-bit integer")
-            if record_only:
+            if record_only or embedded:
                 if document.vector is not None:
+                    if embedded:
+                        invalid_argument("embedded upsert requires text without a vector")
                     invalid_argument("record-only namespace does not accept document vectors")
                 vector_pointer, vector_len = s.FloatPointer(), 0
             else:
@@ -1866,6 +1884,224 @@ class Store:
                 assert primary is not None
                 primary.add_note(f"ze_search_result_free: {last_error_message(handle)}")
 
+    def _embedded_constraints(
+        self,
+        filter: dict[str, Any] | None,
+        timestamp_range: tuple[int, int] | None,
+    ) -> tuple[Any, list[object]]:
+        if filter is None and timestamp_range is None:
+            return None, []
+        constraints = s.sized(s.ZeQueryFilter)
+        owners: list[object] = [constraints]
+        if filter is not None:
+            flat_filter, filter_owners = _flatten_filter(
+                filter, self._attribute_ids, self._attribute_types
+            )
+            constraints.filter = ct.pointer(flat_filter)
+            owners.extend((flat_filter, *filter_owners))
+        if timestamp_range is not None:
+            if not isinstance(timestamp_range, tuple) or len(timestamp_range) != 2:
+                invalid_argument("timestamp_range must be a (start, end) tuple")
+            start, end = timestamp_range
+            constraints.has_timestamp_range = 1
+            constraints.start_ts = _bounded_int(start, -(1 << 63), (1 << 63) - 1, "start_ts")
+            constraints.end_ts = _bounded_int(end, -(1 << 63), (1 << 63) - 1, "end_ts")
+        return ct.pointer(constraints), owners
+
+    def query_embedded(
+        self,
+        text: str,
+        *,
+        leg: TextLegs | str = TextLegs.DENSE,
+        k: int = 10,
+        filter: dict[str, Any] | None = None,
+        timestamp_range: tuple[int, int] | None = None,
+        eligible_ids: Sequence[int | tuple[int, int]] | None = None,
+        cancel_token: CancelToken | None = None,
+        deadline_ns: int = 0,
+    ) -> tuple[EmbeddedHit, ...]:
+        """Rank chunks in a model-bound namespace using text."""
+
+        _require_text()
+        handle = self._live_handle()
+        _bounded_int(k, 1, 4096, "k")
+        _bounded_int(deadline_ns, 0, (1 << 64) - 1, "deadline_ns")
+        if not isinstance(text, str):
+            invalid_argument("text must be a string")
+        if cancel_token is not None and not isinstance(cancel_token, CancelToken):
+            invalid_argument("cancel_token must be a CancelToken")
+        query_text, text_len, text_owner = _text_pointer(text)
+        constraints, filter_owners = self._embedded_constraints(filter, timestamp_range)
+        ids = None if eligible_ids is None else (
+            s.ZeDocId * len(eligible_ids)
+        )(*[_doc_id(value) for value in eligible_ids])
+        request = s.ZeEmbeddedQueryRequest(
+            abi_size=ct.sizeof(s.ZeEmbeddedQueryRequest),
+            text=query_text,
+            text_len=text_len,
+            leg=int(_enum_value(leg, TextLegs, "leg")),
+            has_eligible=int(ids is not None),
+            eligible_ids=ids,
+            eligible_count=0 if ids is None else len(ids),
+            constraints=constraints,
+            k=k,
+            cancel_token=0 if cancel_token is None else cancel_token.value,
+            deadline_ns=deadline_ns,
+        )
+        ranks = (s.ZeChunkRank * k)()
+        result = s.sized(s.ZeGetResult)
+        status = self._call(
+            LIBRARY.ze_query_embedded, handle, ct.byref(request), ranks, k, ct.byref(result)
+        )
+        del text_owner, filter_owners
+        raise_for_status(status, handle)
+        if result.document_count == 0 and not result.documents:
+            return ()
+        primary: BaseException | None = None
+        try:
+            hits = []
+            for index in range(result.document_count):
+                document = result.documents[index]
+                rank = ranks[index]
+                hits.append(EmbeddedHit(
+                    doc_id=_python_doc_id(document.doc_id),
+                    revision=int(document.revision),
+                    timestamp=int(document.timestamp),
+                    attributes=tuple(
+                        _returned_attribute(document.attributes[i], self._attribute_types)
+                        for i in range(document.attribute_count)
+                    ),
+                    chunk=int(rank.chunk),
+                    byte_start=int(rank.byte_start),
+                    byte_end=int(rank.byte_end),
+                    text=ct.string_at(document.text, document.text_len).decode("utf-8"),
+                    score=float(rank.score),
+                ))
+            return tuple(hits)
+        except BaseException as error:
+            primary = error
+            raise
+        finally:
+            free_status = self._call(LIBRARY.ze_get_result_free, ct.byref(result))
+            if free_status != 0:
+                if primary is None:
+                    raise_for_status(free_status)
+                assert primary is not None
+                primary.add_note(f"ze_get_result_free: {last_error_message()}")
+
+    def nearest_chunks(
+        self,
+        source: int | tuple[int, int] | NeighbourSource,
+        *,
+        k: int | None = None,
+        threshold: float | None = None,
+        include_source: bool = False,
+        filter: dict[str, Any] | None = None,
+        timestamp_range: tuple[int, int] | None = None,
+        eligible_ids: Sequence[int | tuple[int, int]] | None = None,
+        cancel_token: CancelToken | None = None,
+        deadline_ns: int = 0,
+    ) -> tuple[ChunkNeighbour, ...]:
+        """Rank candidate chunks against one stored document or chunk."""
+
+        return self.nearest_chunks_batch(
+            [source],
+            k=k,
+            threshold=threshold,
+            include_source=include_source,
+            filter=filter,
+            timestamp_range=timestamp_range,
+            eligible_ids=eligible_ids,
+            cancel_token=cancel_token,
+            deadline_ns=deadline_ns,
+        )[0]
+
+    def nearest_chunks_batch(
+        self,
+        sources: Sequence[int | tuple[int, int] | NeighbourSource],
+        *,
+        k: int | None = None,
+        threshold: float | None = None,
+        include_source: bool = False,
+        filter: dict[str, Any] | None = None,
+        timestamp_range: tuple[int, int] | None = None,
+        eligible_ids: Sequence[int | tuple[int, int]] | None = None,
+        cancel_token: CancelToken | None = None,
+        deadline_ns: int = 0,
+    ) -> tuple[tuple[ChunkNeighbour, ...], ...]:
+        """Rank candidate chunks for each source, preserving input order."""
+
+        _require_text()
+        handle = self._live_handle()
+        if k is not None:
+            _bounded_int(k, 1, 4096, "k")
+        _bounded_int(deadline_ns, 0, (1 << 64) - 1, "deadline_ns")
+        if not isinstance(include_source, bool):
+            invalid_argument("include_source must be a bool")
+        if cancel_token is not None and not isinstance(cancel_token, CancelToken):
+            invalid_argument("cancel_token must be a CancelToken")
+        bound = 0.0
+        if threshold is not None:
+            if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
+                invalid_argument("threshold must be a number")
+            try:
+                bound = float(threshold)
+            except OverflowError:
+                invalid_argument("threshold must fit a finite double")
+        records = (s.ZeNeighbourSource * len(sources))()
+        for index, source in enumerate(sources):
+            if isinstance(source, NeighbourSource):
+                doc_id, chunk = source.doc_id, source.chunk
+            else:
+                doc_id, chunk = source, None
+            records[index] = s.ZeNeighbourSource(
+                doc_id=_doc_id(doc_id),
+                has_chunk=int(chunk is not None),
+                chunk=0 if chunk is None else _bounded_int(chunk, 0, (1 << 32) - 1, "chunk"),
+            )
+        constraints, filter_owners = self._embedded_constraints(filter, timestamp_range)
+        ids = None if eligible_ids is None else (
+            s.ZeDocId * len(eligible_ids)
+        )(*[_doc_id(value) for value in eligible_ids])
+        request = s.ZeNeighbourRequest(
+            abi_size=ct.sizeof(s.ZeNeighbourRequest),
+            sources=records,
+            source_count=len(records),
+            constraints=constraints,
+            eligible_ids=ids,
+            eligible_count=0 if ids is None else len(ids),
+            k=0 if k is None else k,
+            threshold=bound,
+            include_source=int(include_source),
+            has_threshold=int(threshold is not None),
+            has_eligible=int(ids is not None),
+            cancel_token=0 if cancel_token is None else cancel_token.value,
+            deadline_ns=deadline_ns,
+        )
+        result = s.sized(s.ZeNeighbourResult)
+        status = self._call(LIBRARY.ze_nearest_chunks, handle, ct.byref(request), ct.byref(result))
+        del filter_owners
+        raise_for_status(status, handle)
+        primary: BaseException | None = None
+        try:
+            groups: list[list[ChunkNeighbour]] = [[] for _ in records]
+            for index in range(result.hit_count):
+                hit = result.hits[index]
+                groups[hit.source_index].append(
+                    ChunkNeighbour(_python_doc_id(hit.doc_id), int(hit.chunk), float(hit.score))
+                )
+            return tuple(tuple(group) for group in groups)
+        except BaseException as error:
+            primary = error
+            raise
+        finally:
+            free_status = self._call(LIBRARY.ze_neighbour_result_free, ct.byref(result))
+            if free_status != 0:
+                if primary is None:
+                    raise_for_status(free_status)
+                assert primary is not None
+                primary.add_note(f"ze_neighbour_result_free: {last_error_message()}")
+
     def query(
         self,
         *,
@@ -2279,9 +2515,16 @@ class Store:
 
 def _namespace_spec(
     spec: NamespaceSpec, owners: list[object]
-) -> tuple[s.ZeNamespaceSpec, dict[str, int], dict[int, AttributeType]]:
+) -> tuple[ct._Pointer[s.ZeNamespaceSpec], dict[str, int], dict[int, AttributeType]]:
     if not isinstance(spec, NamespaceSpec):
         invalid_argument("spec must be a NamespaceSpec")
+    model = spec.embedded_model
+    if model is not None:
+        if not isinstance(model, EmbeddedModelRef):
+            invalid_argument("embedded_model must be an EmbeddedModelRef")
+        if spec.vector_space is not None:
+            invalid_argument("the model determines the embedded namespace vector space")
+        _require_text()
     definitions = (s.ZeAttributeDefinition * len(spec.attributes))()
     attribute_ids: dict[str, int] = {}
     attribute_types: dict[int, AttributeType] = {0: AttributeType.I64}
@@ -2341,7 +2584,25 @@ def _namespace_spec(
         normalization=int(normalization),
         epoch=epoch_pointer,
     )
-    return namespace_spec, attribute_ids, attribute_types
+    if model is None:
+        return ct.pointer(namespace_spec), attribute_ids, attribute_types
+
+    model_ref = s.sized(s.ZeTextModelRef)
+    for field in ("repo", "revision", "manifest_sha256"):
+        value = getattr(model, field)
+        if not isinstance(value, str):
+            invalid_argument(f"embedded model {field} must be a string")
+        pointer, length, owner = _text_pointer(value)
+        setattr(model_ref, field, pointer)
+        setattr(model_ref, field + "_len", length)
+        if owner is not None:
+            owners.append(owner)
+    namespace_spec.abi_size = ct.sizeof(s.ZeEmbeddedNamespaceSpec)
+    namespace_spec.has_vector_space = 2
+    embedded_spec = s.ZeEmbeddedNamespaceSpec(spec=namespace_spec, model=model_ref)
+    owners.append(embedded_spec)
+    prefix = ct.cast(ct.pointer(embedded_spec), ct.POINTER(s.ZeNamespaceSpec))
+    return prefix, attribute_ids, attribute_types
 
 
 def open_namespace(
@@ -2375,9 +2636,8 @@ def open_namespace(
         owners.append(root_owner)
     if name_owner is not None:
         owners.append(name_owner)
-    namespace_spec, attribute_ids, attribute_types = _namespace_spec(spec, owners)
-    namespace_spec_pointer = ct.pointer(namespace_spec)
-    owners.extend((namespace_spec, namespace_spec_pointer))
+    namespace_spec_pointer, attribute_ids, attribute_types = _namespace_spec(spec, owners)
+    namespace_kind = namespace_spec_pointer.contents.has_vector_space
     request = s.ZeNamespaceOpenRequest(
         abi_size=ct.sizeof(s.ZeNamespaceOpenRequest),
         abi_reserved=0,
@@ -2403,7 +2663,8 @@ def open_namespace(
         attribute_ids=attribute_ids,
         attribute_types=attribute_types,
         vector_dimensions=spec.vector_space.dimensions if spec.vector_space else None,
-        record_only=spec.vector_space is None,
+        record_only=namespace_kind == 0,
+        embedded=namespace_kind == 2,
     )
 
 
@@ -2422,9 +2683,10 @@ def _namespace_batch_request(
     for index, participant in enumerate(participants):
         if not isinstance(participant, NamespaceMutation):
             invalid_argument("participants must contain NamespaceMutation values")
-        spec, attribute_ids, attribute_types = _namespace_spec(participant.spec, owners)
+        spec_pointer, attribute_ids, attribute_types = _namespace_spec(participant.spec, owners)
+        spec = spec_pointer.contents
         name, name_len, name_owner = _text_pointer(participant.name)
-        owners.extend((spec, name_owner))
+        owners.extend((spec_pointer, name_owner))
         profile = participant.spec.tokenizer_profile
         if profile is None:
             tokenizer = int(spec.epoch.contents.tokenizer_profile) if spec.epoch else 0
@@ -2434,6 +2696,7 @@ def _namespace_batch_request(
             tuple(participant.upserts),
             record_only=not spec.has_vector_space,
             vector_dimensions=int(spec.dimensions),
+            embedded=spec.has_vector_space == 2,
             require_conditions=True,
         )
         owners.extend(upsert_owners)
@@ -2451,7 +2714,7 @@ def _namespace_batch_request(
         mutation = s.sized(s.ZeNamespaceMutation)
         mutation.name = name
         mutation.name_len = name_len
-        mutation.spec = ct.pointer(spec)
+        mutation.spec = spec_pointer
         mutation.tokenizer_profile = tokenizer
         mutation.upserts = upserts
         mutation.deletes = deletes

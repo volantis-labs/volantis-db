@@ -12,6 +12,45 @@ mod namespace_model;
 use namespace_model::Model;
 
 #[test]
+fn fresh_embedded_namespace_reads_expose_caller_metadata() {
+    let dir = tempdir().expect("namespace");
+    let store =
+        Store::open_embedded(dir.path(), OpenOptions::new(), Arc::new(Model)).expect("open");
+    let id = DocId::new(1);
+    store
+        .ingest(IngestBatch::new(vec![
+            IngestDocument::new(DocumentVersion::new(id, Revision::new(1)), vec![])
+                .with_text("target|other")
+                .with_metadata(b"source".to_vec()),
+        ]))
+        .expect("ingest active row");
+
+    let fields = DocumentFields::TEXT | DocumentFields::METADATA | DocumentFields::ATTRIBUTES;
+    let check = |store: &Store| {
+        let get = store
+            .get_documents(&[id], fields)
+            .expect("get")
+            .pop()
+            .flatten()
+            .expect("live document");
+        let scan = store
+            .scan_documents(DocumentScanRequest::new(1, fields, running()))
+            .expect("scan");
+        let scanned = scan.documents.first().expect("scanned document");
+        assert_eq!(
+            (get.metadata.as_deref(), scanned.metadata.as_deref()),
+            (Some(b"source".as_slice()), Some(b"source".as_slice()))
+        );
+    };
+    check(&store);
+    let view = store.open_snapshot().expect("snapshot of active row");
+    check(&view);
+    drop(view);
+    store.seal().expect("seal");
+    check(&store);
+}
+
+#[test]
 fn filtered_query_returns_k_matching_chunks_before_top_k() {
     let dir = tempdir().expect("directory");
     let column = ColumnId::new(1);

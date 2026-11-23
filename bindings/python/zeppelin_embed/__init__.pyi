@@ -28,6 +28,7 @@ from ._types import AttributeValue as AttributeValue
 from ._types import CascadeDeclaration as CascadeDeclaration
 from ._types import CascadeDeleteParticipant as CascadeDeleteParticipant
 from ._types import CascadeParticipant as CascadeParticipant
+from ._types import ChunkNeighbour as ChunkNeighbour
 from ._types import CommitTier as CommitTier
 from ._types import ComputeUnits as ComputeUnits
 from ._types import CountGroup as CountGroup
@@ -36,6 +37,8 @@ from ._types import CountResult as CountResult
 from ._types import DeleteTarget as DeleteTarget
 from ._types import DeleteWhereReport as DeleteWhereReport
 from ._types import DurabilityMode as DurabilityMode
+from ._types import EmbeddedHit as EmbeddedHit
+from ._types import EmbeddedModelRef as EmbeddedModelRef
 from ._types import EmbeddingEpoch as EmbeddingEpoch
 from ._types import EmbeddingRuntime as EmbeddingRuntime
 from ._types import EmbeddingTower as EmbeddingTower
@@ -55,6 +58,7 @@ from ._types import MaintenanceStatus as MaintenanceStatus
 from ._types import MutationReport as MutationReport
 from ._types import NamespaceMutation as NamespaceMutation
 from ._types import NamespaceSpec as NamespaceSpec
+from ._types import NeighbourSource as NeighbourSource
 from ._types import Normalization as Normalization
 from ._types import ObservedComputeUnits as ObservedComputeUnits
 from ._types import PartitionReport as PartitionReport
