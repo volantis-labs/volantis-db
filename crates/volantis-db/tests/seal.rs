@@ -74,8 +74,7 @@ mod seal {
         } else {
             GRAPH_COMMIT_V1
         };
-        let mut wal =
-            volantis_db::wal::header::encode_header(LogSeq::new(1)).expect("WAL header");
+        let mut wal = volantis_db::wal::header::encode_header(LogSeq::new(1)).expect("WAL header");
         wal.extend(
             encode_record(WalRecord {
                 seq: LogSeq::new(1),

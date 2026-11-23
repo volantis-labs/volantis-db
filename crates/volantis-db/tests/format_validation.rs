@@ -5,7 +5,6 @@
     clippy::unwrap_used
 )]
 
-use xxhash_rust::xxh3::xxh3_64;
 use volantis_db::epoch::{
     ComputeUnits, EmbeddingEpoch, EmbeddingRuntime, EmbeddingTower, Normalization, StoreEpoch,
 };
@@ -15,11 +14,10 @@ use volantis_db::format::frame::{
 use volantis_db::format::golden::{HexError, decode_hex};
 use volantis_db::format::{FormatFamily, FormatRegistry, RegistryError};
 use volantis_db::fts::tokenizer::TokenizerConfig;
-use volantis_db::manifest::{
-    EpochMeta, Manifest, ManifestError, decode_manifest, encode_manifest,
-};
+use volantis_db::manifest::{EpochMeta, Manifest, ManifestError, decode_manifest, encode_manifest};
 use volantis_db::meta::{ColumnDefinition, ColumnId, ColumnType, Schema};
 use volantis_db::segment::{ClusteringKeyRange, SegmentId, SegmentMeta};
+use xxhash_rust::xxh3::xxh3_64;
 
 fn store_epoch(dims: u32) -> StoreEpoch {
     let document = EmbeddingTower {

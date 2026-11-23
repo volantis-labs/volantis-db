@@ -288,11 +288,8 @@ fn coreml_store_mismatch_child() {
     let root = tempdir().expect("store root");
     let bundle = root.path().join("document.zem");
     common::write_symmetric_fixture_bundle(&bundle);
-    let result = volantis_db_text::TextStore::open(
-        root.path().join("store"),
-        &bundle,
-        Default::default(),
-    );
+    let result =
+        volantis_db_text::TextStore::open(root.path().join("store"), &bundle, Default::default());
     assert!(
         matches!(result, Err(volantis_db_text::TextError::Runtime(RuntimeError::Shape(detail)))
         if detail == "CoreML query sequence length 2 is below bundle query max_tokens 16")

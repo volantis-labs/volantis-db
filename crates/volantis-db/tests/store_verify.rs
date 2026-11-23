@@ -12,7 +12,6 @@ use std::fs;
 use std::path::Path;
 
 use tempfile::{TempDir, tempdir};
-use xxhash_rust::xxh3::xxh3_64;
 use volantis_db::format::frame::{FILE_HEADER_LEN, FILE_TRAILER_LEN};
 use volantis_db::ingest::{
     DeleteBatch, DocId, DocumentVersion, IngestBatch, IngestDocument, Revision,
@@ -25,6 +24,7 @@ use volantis_db::segment::layout::{REGION_ENTRY_LEN, RegionKind, SEGMENT_PREFIX_
 use volantis_db::verify::{FindingKind, VerifyError, verify_store};
 use volantis_db::wal::LogSeq;
 use volantis_db::wal::header::encode_header;
+use xxhash_rust::xxh3::xxh3_64;
 
 const WAL: &str = "wal.ze";
 const WAL_HEADER_LEN: usize = 40;

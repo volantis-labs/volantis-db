@@ -235,9 +235,7 @@ impl Corpus {
             &m.key.value,
         )
         .unwrap();
-        use volantis_db::ingest::{
-            DocId, DocumentVersion, IngestBatch, IngestDocument, Revision,
-        };
+        use volantis_db::ingest::{DocId, DocumentVersion, IngestBatch, IngestDocument, Revision};
         let docs = if let Some(oracle::Image::Node { text, vector, .. }) = &m.image {
             if text.is_some() || vector.is_some() {
                 let mut doc = IngestDocument::new(
@@ -640,9 +638,7 @@ impl Corpus {
         assert!(
             matches!(actual.outcome(),GraphWriteOutcome::Committed {generation} if generation.get()==expected.generation)
         );
-        use volantis_db::ingest::{
-            DocId, DocumentVersion, IngestBatch, IngestDocument, Revision,
-        };
+        use volantis_db::ingest::{DocId, DocumentVersion, IngestBatch, IngestDocument, Revision};
         let documents = expected
             .receipts
             .iter()

@@ -82,9 +82,9 @@ fn newer_segment_region_retains_typed_version_range() {
         Err(error) => error,
         Ok(_) => panic!("future region accepted"),
     };
-    let volantis_db::lifecycle::StoreError::Segment(
-        volantis_db::segment::SegmentError::Format(error),
-    ) = error
+    let volantis_db::lifecycle::StoreError::Segment(volantis_db::segment::SegmentError::Format(
+        error,
+    )) = error
     else {
         panic!("unexpected error: {error}")
     };

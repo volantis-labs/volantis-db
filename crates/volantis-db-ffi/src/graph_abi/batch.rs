@@ -712,11 +712,12 @@ pub(crate) fn document_items(
                 ));
             }
         };
-        if linked.iter().any(
-            |prior: &volantis_db::property_graph::GraphNodeDocument| {
+        if linked
+            .iter()
+            .any(|prior: &volantis_db::property_graph::GraphNodeDocument| {
                 prior.document.version().doc_id().get() == id.get()
-            },
-        ) {
+            })
+        {
             return Err(invalid("duplicate caller node id"));
         }
         let image = pool

@@ -1089,8 +1089,7 @@ fn ze241_mid_query_deadline_returns_no_partial_rows() {
         base: Instant::now(),
         calls: AtomicUsize::new(0),
     });
-    let _scope =
-        volantis_db_ffi::graph_deadline_test_support::ClockScope::install(clock.clone());
+    let _scope = volantis_db_ffi::graph_deadline_test_support::ClockScope::install(clock.clone());
     let mut control: ZeGraphControl = sized_zeroed();
     control.deadline_ns = 1;
     let mut operator: ZeGraphOperator = sized_zeroed();
@@ -1178,9 +1177,8 @@ fn ze72_same_low_half_ids_remain_distinct_after_reopen() {
         RelId::new(1).unwrap(),
     )
     .unwrap();
-    let control = volantis_db::lifecycle::QueryControl::Cancel(
-        volantis_db::lifecycle::CancelToken::new(),
-    );
+    let control =
+        volantis_db::lifecycle::QueryControl::Cancel(volantis_db::lifecycle::CancelToken::new());
     let retained = volantis_db_cypher::execute(
         &graph,
         &control,

@@ -130,9 +130,8 @@ fn retained_input_capabilities_charge_spare_capacity_once_and_reject_missing_spa
             base + 1280
                 + std::mem::size_of_val(&inputs)
                 + proofs.len()
-                    * std::mem::size_of::<
-                        volantis_db::property_graph::query::plan::RetainedRegion,
-                    >(),
+                    * std::mem::size_of::<volantis_db::property_graph::query::plan::RetainedRegion>(
+                    ),
             "embedded region-arena controls must not be charged twice"
         );
     }
@@ -750,8 +749,7 @@ fn pull_driver_drains_private_batches_before_completion() {
         let lease = legacy_store.snapshot().expect("cold legacy lease");
         let (_, cold) = volantis_db::adversarial_test_support::audit_engine_path(|| drop(lease));
         let lease = legacy_store.snapshot().expect("second legacy lease");
-        let (_, second) =
-            volantis_db::adversarial_test_support::audit_engine_path(|| drop(lease));
+        let (_, second) = volantis_db::adversarial_test_support::audit_engine_path(|| drop(lease));
         assert_eq!(
             second.allocations, 0,
             "baseline must be first-use lease release only"

@@ -10,7 +10,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tempfile::tempdir;
-use xxhash_rust::xxh3::xxh3_64;
 use volantis_db::lifecycle::durability::{CommitTier, DurabilityMode, DurabilityPolicy};
 use volantis_db::meta::{
     AliveSet, ColumnDefinition, ColumnId, ColumnInput, ColumnStore, ColumnStoreBuilder, ColumnType,
@@ -19,11 +18,10 @@ use volantis_db::meta::{
 use volantis_db::quant::Bit4Factors;
 use volantis_db::segment::layout::{Int8Factors, RegionKind};
 use volantis_db::segment::reader::SegmentReader;
-use volantis_db::segment::writer::{
-    SegmentBuild, SegmentFactors, encode_segment, write_segment,
-};
+use volantis_db::segment::writer::{SegmentBuild, SegmentFactors, encode_segment, write_segment};
 use volantis_db::segment::{SegmentError, SegmentId};
 use volantis_db::vfs::{CountingVfs, StdVfs, SyncKind, Vfs, VfsFile};
+use xxhash_rust::xxh3::xxh3_64;
 
 fn ordered_policy() -> DurabilityPolicy {
     DurabilityPolicy::new(DurabilityMode::Durable, CommitTier::Ordered)

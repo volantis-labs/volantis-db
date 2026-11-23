@@ -908,9 +908,7 @@ fn validate_vector_episode_attestation(
             || record["first_differences"].as_u64() != Some(0)
             || record["checker_id"].as_str() != Some(checker_id)
             || record["canonical_version"].as_str()
-                != Some(
-                    volantis_db_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION,
-                )
+                != Some(volantis_db_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION)
             || !valid_digest(&record["input_digest"])
             || !valid_digest(&record["observed_digest"])
         {
@@ -2182,11 +2180,10 @@ impl CampaignSpec {
                 schedule_seed,
                 profile_ordinal,
             );
-            let case_index =
-                volantis_db_adversarial_oracle::storage_durability::ALL_OMISSION_CASES
-                    .iter()
-                    .position(|candidate| *candidate == omission)
-                    .expect("storage omission case belongs to the complete catalog");
+            let case_index = volantis_db_adversarial_oracle::storage_durability::ALL_OMISSION_CASES
+                .iter()
+                .position(|candidate| *candidate == omission)
+                .expect("storage omission case belongs to the complete catalog");
             coverage.insert(STORAGE_OMISSION_COVERAGE[case_index].to_owned());
             let subsite = if case_index % 2 == 0 {
                 "list"

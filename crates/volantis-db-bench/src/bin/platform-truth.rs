@@ -5,9 +5,7 @@ use std::io;
 use std::process::Command;
 use std::time::Duration;
 
-use volantis_db_bench::platform::{
-    bandwidth, energy, footprint, fsync, incumbent, memory_graph,
-};
+use volantis_db_bench::platform::{bandwidth, energy, footprint, fsync, incumbent, memory_graph};
 
 fn main() {
     if let Err(error) = run() {

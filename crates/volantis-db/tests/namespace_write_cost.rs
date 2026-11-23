@@ -48,9 +48,7 @@ fn single_namespace_write_io_is_unchanged() {
 
 #[test]
 fn previously_batched_writer_keeps_the_single_namespace_baseline() {
-    use volantis_db::lifecycle::{
-        LiveNamespaceMutation, NamespaceMutation, namespace_batch_live,
-    };
+    use volantis_db::lifecycle::{LiveNamespaceMutation, NamespaceMutation, namespace_batch_live};
     let directory = tempfile::tempdir().expect("root");
     let vfs = Arc::new(CountingVfs::new(StdVfs));
     let options = OpenOptions::new().with_durability(DurabilityMode::Durable, CommitTier::Durable);

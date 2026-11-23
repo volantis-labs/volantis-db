@@ -26,9 +26,7 @@ use volantis_db::lifecycle::{
     CancelToken, OpenOptions, QueryControl, SearchOptions, SearchTier, Store, StoreError,
     StoreTestDependencies, SystemMonotonicClock,
 };
-use volantis_db::meta::{
-    Predicate, PredicateValue, RangeBound, RangePredicate, TIMESTAMP_COLUMN,
-};
+use volantis_db::meta::{Predicate, PredicateValue, RangeBound, RangePredicate, TIMESTAMP_COLUMN};
 use volantis_db::scan::ScanOptions;
 use volantis_db::vfs::StdVfs;
 use volantis_db::wal::WalWriteError;

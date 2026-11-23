@@ -186,9 +186,7 @@ fn astra_12_vocabulary_reused_until_exact_inputs_change() {
     assert_eq!(search().1.builds, 1);
     assert_eq!(search().1.builds, 0);
     store
-        .delete(volantis_db::ingest::DeleteBatch::new(vec![DocId::new(
-            2,
-        )]))
+        .delete(volantis_db::ingest::DeleteBatch::new(vec![DocId::new(2)]))
         .expect("tombstone");
     let (deleted, work) = search();
     assert_eq!(work.builds, 1);

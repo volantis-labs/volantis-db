@@ -263,12 +263,9 @@ fn scheme_level_cli_and_audit_metadata_are_fail_closed_and_machine_readable() {
     assert_eq!(config.repeats, 5);
 
     let tiny_values = [1.0_f32, -1.0, 0.5, -0.5, 0.25, -0.25, 0.125, -0.125];
-    let tiny = volantis_db_bench::scheme_level::EncodedCorpus::encode(
-        QuantScheme::Bit4,
-        &tiny_values,
-        8,
-    )
-    .expect("tiny corpus encodes");
+    let tiny =
+        volantis_db_bench::scheme_level::EncodedCorpus::encode(QuantScheme::Bit4, &tiny_values, 8)
+            .expect("tiny corpus encodes");
     let error = enforce_cache_floor(&tiny).expect_err("cache-resident input must fail closed");
     assert_eq!(
         error,

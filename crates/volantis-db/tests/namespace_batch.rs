@@ -429,9 +429,8 @@ fn committed_frames_survive_root_retirement() {
     let b = Store::open(root.path().join("b"), OpenOptions::new()).expect("adopt b alone");
     b.ingest(IngestBatch::new(vec![doc(3, 1)]))
         .expect("later b");
-    let recovery_vfs = std::sync::Arc::new(volantis_db::vfs::CountingVfs::new(
-        volantis_db::vfs::StdVfs,
-    ));
+    let recovery_vfs =
+        std::sync::Arc::new(volantis_db::vfs::CountingVfs::new(volantis_db::vfs::StdVfs));
     let a = Store::open_with_test_dependencies(
         root.path().join("a"),
         OpenOptions::new(),
@@ -534,14 +533,12 @@ fn late_participant_validation_publishes_nothing() {
         if invalid == 3 {
             bad.upserts = vec![doc(2, 1)];
             bad.options = bad.options.with_schema(
-                volantis_db::meta::Schema::new(vec![
-                    volantis_db::meta::ColumnDefinition::new(
-                        volantis_db::meta::ColumnId::new(1),
-                        "new",
-                        volantis_db::meta::ColumnType::U64,
-                        true,
-                    ),
-                ])
+                volantis_db::meta::Schema::new(vec![volantis_db::meta::ColumnDefinition::new(
+                    volantis_db::meta::ColumnId::new(1),
+                    "new",
+                    volantis_db::meta::ColumnType::U64,
+                    true,
+                )])
                 .expect("declared schema"),
             );
         }

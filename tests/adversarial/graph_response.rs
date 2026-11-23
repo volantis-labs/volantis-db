@@ -14,9 +14,7 @@ use volantis_db::property_graph::query::runtime::{
 use volantis_db::property_graph::query::{QueryError, QueryView};
 use volantis_db::property_graph::resources::GraphResources;
 use volantis_db::property_graph::{GraphGeneration, StoreInstanceId};
-use volantis_db_adversarial_oracle::graph_response::{
-    self as oracle, Fault, Observation, Refusal,
-};
+use volantis_db_adversarial_oracle::graph_response::{self as oracle, Fault, Observation, Refusal};
 use volantis_db_ffi::graph_result::test_support::{
     NativeConversionCase, NativeConversionObservation, NativeConversionOutcome,
     NativeConversionRefusal, NativeConversionStage, run_native_conversion_case,

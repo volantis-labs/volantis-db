@@ -15,9 +15,7 @@ use volantis_db_bench::frontier::calibration::{
     CalibrationArtifact, CalibrationMachineContext, CalibrationRun, CalibrationTier,
     CalibrationWritePolicy, default_calibration_path, persist_calibration,
 };
-use volantis_db_bench::frontier::cli::{
-    Command, DenominatorCommand, TuneCommand, parse_command,
-};
+use volantis_db_bench::frontier::cli::{Command, DenominatorCommand, TuneCommand, parse_command};
 use volantis_db_bench::frontier::ledger::{Ledger, LedgerSummary};
 use volantis_db_bench::frontier::measure::{
     MeasurementConfig, StridedI8Workload, SyntheticI8Workload, SystemMachineProbe, Workload,

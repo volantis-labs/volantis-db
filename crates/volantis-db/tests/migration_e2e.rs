@@ -512,9 +512,7 @@ fn graph_free_epoch_snapshot_and_refusal_bytes_match_main() {
         )
         .expect("continued service");
     store
-        .delete(volantis_db::ingest::DeleteBatch::new(vec![DocId::new(
-            99,
-        )]))
+        .delete(volantis_db::ingest::DeleteBatch::new(vec![DocId::new(99)]))
         .expect("delete");
     let copies = tempdir().expect("copy root");
     let copy = copies.path().join("snapshot");

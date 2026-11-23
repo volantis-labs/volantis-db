@@ -2,9 +2,9 @@
 #[allow(dead_code)]
 #[path = "../../../scripts/fixtures/common.rs"]
 mod common;
-use volantis_db as engine;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use volantis_db as engine;
 use volantis_db::ingest::DocId;
 use volantis_db::ingest::wal_payload::{self, TransactionBinding};
 use volantis_db::lifecycle::{
@@ -153,13 +153,11 @@ fn add_undecided(directory: &Path, mut binding: TransactionBinding) {
                 wal_payload::encode_prepared(binding, index, 2, wal_payload::DELETE_V1, &inner)
                     .expect("prepared");
             out.extend_from_slice(
-                &volantis_db::wal::record::encode_record(
-                    volantis_db::wal::record::WalRecord {
-                        seq: LogSeq::new(start + u64::from(index)),
-                        op: 9,
-                        payload: &payload,
-                    },
-                )
+                &volantis_db::wal::record::encode_record(volantis_db::wal::record::WalRecord {
+                    seq: LogSeq::new(start + u64::from(index)),
+                    op: 9,
+                    payload: &payload,
+                })
                 .expect("record"),
             );
         }

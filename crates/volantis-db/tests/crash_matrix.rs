@@ -27,9 +27,7 @@ use volantis_db::manifest::io::{
 use volantis_db::manifest::{EpochMeta, Manifest, ManifestError, encode_manifest};
 use volantis_db::meta::{AliveSet, ColumnStoreBuilder, Schema};
 use volantis_db::segment::reader::validate_segment_bytes;
-use volantis_db::segment::writer::{
-    SegmentBuild, SegmentFactors, encode_segment, write_segment,
-};
+use volantis_db::segment::writer::{SegmentBuild, SegmentFactors, encode_segment, write_segment};
 use volantis_db::segment::{SegmentError, SegmentId, SegmentMeta};
 #[cfg(not(feature = "test-seams"))]
 use volantis_db::vfs::VfsFile;
@@ -884,8 +882,8 @@ fn one_row_segment_bytes(id: SegmentId, value: f32) -> (Vec<u8>, SegmentMeta) {
     let alive = AliveSet::new(1);
     let vector = [value, 0.0, 0.0];
     let mut codes = [0_u8; 2];
-    let factor = volantis_db::quant::quantize_bit4(&vector, &mut codes)
-        .expect("purge vector quantization");
+    let factor =
+        volantis_db::quant::quantize_bit4(&vector, &mut codes).expect("purge vector quantization");
     let bytes = encode_segment(SegmentBuild {
         id,
         scheme: 4,

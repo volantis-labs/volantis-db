@@ -22,9 +22,7 @@ use volantis_db::lifecycle::{
 };
 use volantis_db::planner::{ScanReason, ScanReasonCounter};
 use volantis_db::segment::layout::RegionKind;
-use volantis_db::tier::{
-    MaintenanceBudget, MaintenanceReport, MaintenanceStatus, TierThresholds,
-};
+use volantis_db::tier::{MaintenanceBudget, MaintenanceReport, MaintenanceStatus, TierThresholds};
 
 const DIMS: usize = 128;
 const MAINTENANCE_TEST_BUDGET: Duration = Duration::from_secs(600);
@@ -572,7 +570,9 @@ fn consolidation_defers_when_an_input_region_cannot_be_carried() {
     assert_eq!(deferral.segment_id, victim);
     assert_eq!(
         deferral.uncarried_regions,
-        vec![volantis_db::tier::maintain::UncarriedRegionKind::Unknown(65_000)]
+        vec![volantis_db::tier::maintain::UncarriedRegionKind::Unknown(
+            65_000
+        )]
     );
     assert_eq!(
         published_segment_count(&store),
@@ -658,8 +658,8 @@ fn region_entry_offset(bytes: &[u8], kind: u16) -> usize {
 }
 
 fn relabel_region(bytes: &mut [u8], from: RegionKind, to: u16) {
-    use xxhash_rust::xxh3::xxh3_64;
     use volantis_db::format::frame::FILE_TRAILER_LEN;
+    use xxhash_rust::xxh3::xxh3_64;
     let entry = region_entry_offset(bytes, from.id());
     bytes[entry..entry + 2].copy_from_slice(&to.to_le_bytes());
     let checksum_entry = region_entry_offset(bytes, RegionKind::ChecksumTable.id());

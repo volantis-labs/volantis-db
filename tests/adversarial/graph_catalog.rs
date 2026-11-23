@@ -9,9 +9,7 @@ use volantis_db::property_graph::catalog::{
     SymbolKind,
 };
 use volantis_db::property_graph::{GraphName, StoreInstanceId};
-use volantis_db_adversarial_oracle::graph_catalog::{
-    self as oracle, Dictionary, Interpretation,
-};
+use volantis_db_adversarial_oracle::graph_catalog::{self as oracle, Dictionary, Interpretation};
 
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.catalog.names",

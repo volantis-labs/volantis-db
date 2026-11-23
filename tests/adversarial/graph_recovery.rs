@@ -334,12 +334,8 @@ pub fn comparator_mutations(fixture: &Fixture, good: &BatchObservation) -> Resul
         let mut value = good.clone();
         match column {
             0 => value.relationship.rel = volantis_db::property_graph::RelId::new(2).unwrap(),
-            1 => {
-                value.relationship.source = volantis_db::property_graph::NodeId::new(2).unwrap()
-            }
-            2 => {
-                value.relationship.target = volantis_db::property_graph::NodeId::new(1).unwrap()
-            }
+            1 => value.relationship.source = volantis_db::property_graph::NodeId::new(2).unwrap(),
+            2 => value.relationship.target = volantis_db::property_graph::NodeId::new(1).unwrap(),
             _ => {
                 value.relationship.relationship_type =
                     volantis_db::property_graph::catalog::RelTypeId::new(2).unwrap()

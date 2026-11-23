@@ -9,7 +9,6 @@ use std::path::Path;
 
 use proptest::prelude::*;
 use proptest::test_runner::{Config, RngSeed, TestRunner};
-use xxhash_rust::xxh3::xxh3_64;
 use volantis_db::format::frame::{FILE_HEADER_LEN, FILE_TRAILER_LEN};
 use volantis_db::format::golden::decode_hex;
 use volantis_db::graph::block::{
@@ -30,6 +29,7 @@ use volantis_db::segment::writer::{
 };
 use volantis_db::segment::{SegmentError, SegmentId};
 use volantis_db::vfs::StdVfs;
+use xxhash_rust::xxh3::xxh3_64;
 
 fn empty_columns(rows: u32) -> ColumnStore {
     let mut builder = ColumnStoreBuilder::new(Schema::new(Vec::new()).expect("empty schema"));

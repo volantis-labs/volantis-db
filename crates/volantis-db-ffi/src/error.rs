@@ -19,14 +19,15 @@ impl FfiError {
                 volantis_db_text::ModelError::OfflineMiss => ZeErrorCode::ZeErrNotFound,
                 volantis_db_text::ModelError::Verification(_) => ZeErrorCode::ZeErrCorrupt,
                 volantis_db_text::ModelError::Invalid(_) => ZeErrorCode::ZeErrInvalidArgument,
-                volantis_db_text::ModelError::Download(_)
-                | volantis_db_text::ModelError::Io(_) => ZeErrorCode::ZeErrIo,
+                volantis_db_text::ModelError::Download(_) | volantis_db_text::ModelError::Io(_) => {
+                    ZeErrorCode::ZeErrIo
+                }
                 volantis_db_text::ModelError::UnsupportedBackend => ZeErrorCode::ZeErrUnsupported,
             },
             TextError::Bundle(_) => ZeErrorCode::ZeErrBundle,
-            TextError::Runtime(
-                volantis_db_text::runtime::RuntimeError::CacheLimitConflict { .. },
-            ) => ZeErrorCode::ZeErrMlxCacheLimitConflict,
+            TextError::Runtime(volantis_db_text::runtime::RuntimeError::CacheLimitConflict {
+                ..
+            }) => ZeErrorCode::ZeErrMlxCacheLimitConflict,
             TextError::Runtime(RuntimeError::UnsupportedBackend { .. }) => {
                 ZeErrorCode::ZeErrUnsupported
             }
@@ -104,9 +105,7 @@ impl FfiError {
                 ZeErrorCode::ZeErrLegacyGraphDirectory
             }
             #[cfg(feature = "graph-cypher")]
-            volantis_db::lifecycle::StoreError::DocumentMutation(error) => {
-                Self::ingest_code(error)
-            }
+            volantis_db::lifecycle::StoreError::DocumentMutation(error) => Self::ingest_code(error),
             volantis_db::lifecycle::StoreError::CascadeCycle { .. } => {
                 ZeErrorCode::ZeErrCascadeCycle
             }
@@ -609,8 +608,7 @@ mod format_version_tests {
                 .get_mut(10..12)
                 .unwrap()
                 .copy_from_slice(&version.to_le_bytes());
-            let error =
-                volantis_db::manifest::decode_manifest("manifest.ze", &bytes).unwrap_err();
+            let error = volantis_db::manifest::decode_manifest("manifest.ze", &bytes).unwrap_err();
             let error = FfiError::store(volantis_db::lifecycle::StoreError::Manifest(error));
             assert_eq!(format!("{:?}", error.code), expected);
         }
@@ -646,11 +644,10 @@ fn format_version_code(error: &(dyn std::error::Error + 'static)) -> Option<ZeEr
 mod legacy_graph_dir {
     #[test]
     fn legacy_graph_directory_has_a_stable_error_code() {
-        let error = super::FfiError::store(
-            volantis_db::lifecycle::StoreError::NativeGraphDirectory {
+        let error =
+            super::FfiError::store(volantis_db::lifecycle::StoreError::NativeGraphDirectory {
                 path: std::path::PathBuf::from("graph"),
-            },
-        );
+            });
         assert_eq!(error.code as i32, 58);
     }
 }

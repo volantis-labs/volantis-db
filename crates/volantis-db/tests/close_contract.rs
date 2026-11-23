@@ -122,9 +122,7 @@ fn calls_after_close_return_typed_closed_error() {
             DocumentVersion::new(DocId::new(1), Revision::new(1)),
             vec![1.0_f32],
         )])),
-        Err(volantis_db::ingest::IngestError::Store(
-            StoreError::Closed
-        ))
+        Err(volantis_db::ingest::IngestError::Store(StoreError::Closed))
     ));
     let query = [1.0_f32];
     let rows = F32Rows::new(vec![1.0_f32]);

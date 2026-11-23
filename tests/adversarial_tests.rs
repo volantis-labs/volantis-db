@@ -2740,9 +2740,9 @@ fn unmatched_cancel_stays_unfired_in_faults_jsonl_and_earns_no_coverage() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .expect("parse unmatched cancel fault")
         })
         .find(|record| {
@@ -3518,9 +3518,8 @@ fn clean_ingest_batch_runs_i20_exact_checker() {
 
 #[test]
 fn i20_batch_atomicity_checker_rejects_one_visible_row_from_failed_batch() {
-    let error =
-        volantis_db_adversarial_oracle::ingest_retention::i20_visible_subset_plant_error()
-            .expect("valid I20 independent checker plant");
+    let error = volantis_db_adversarial_oracle::ingest_retention::i20_visible_subset_plant_error()
+        .expect("valid I20 independent checker plant");
     assert!(
         error.contains("I20.batch-atomicity.v1 visible subset 1/2"),
         "{error}"
@@ -3571,9 +3570,8 @@ fn clean_seal_runs_i21_exact_multiset_checker() {
 #[test]
 fn i22_retention_checker_rejects_inclusive_cutoff_drop() {
     let error =
-        volantis_db_adversarial_oracle::ingest_retention::i22_inclusive_cutoff_drop_plant_error(
-        )
-        .expect("valid I22 independent checker plant");
+        volantis_db_adversarial_oracle::ingest_retention::i22_inclusive_cutoff_drop_plant_error()
+            .expect("valid I22 independent checker plant");
     assert!(
         error.contains("I22.retention-boundary.v1 cutoff row was dropped"),
         "{error}"
@@ -4961,10 +4959,8 @@ fn vector_forced_child_replay_retains_typed_binary_product_receipt() {
         adversarial::runner::run_program_for(campaign, seed, FaultProfile::None, artifacts.path())
             .expect("vector forced child episode");
     let fixture: volantis_db_bench::harness_json::Value =
-        volantis_db_bench::harness_json::from_slice(
-            &outcome.family_artifact_bytes["fixture.json"],
-        )
-        .expect("parse vector fixture");
+        volantis_db_bench::harness_json::from_slice(&outcome.family_artifact_bytes["fixture.json"])
+            .expect("parse vector fixture");
     let kernel = fixture["operations"]
         .as_array()
         .expect("vector fixture operations")
@@ -5026,8 +5022,7 @@ fn vector_kernel_operation_uses_exact_i24_and_real_store_selection() {
         adversarial::runner::run_program_for(campaign, seed, FaultProfile::None, artifacts.path())
             .expect("I24 operation episode");
     let oracle = String::from_utf8(outcome.oracle_bytes).expect("oracle JSON is UTF-8");
-    let expected_records =
-        volantis_db::kernels::KernelVariant::available().count() * 15 * 17 + 1;
+    let expected_records = volantis_db::kernels::KernelVariant::available().count() * 15 * 17 + 1;
     assert_eq!(
         oracle
             .matches("\"checker_id\":\"I24.kernel-contract-parity.v1\"")
@@ -5795,9 +5790,9 @@ fn ingest_retention_replay_compares_oracle_controls_and_receipts() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .expect("parse retained ingest oracle row")
         })
         .collect::<Vec<_>>();
@@ -6129,9 +6124,9 @@ fn ingest_retention_receipt_checksum_rejects_effect_drift() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .expect("parse merged ingest receipt")
         })
         .collect::<Vec<_>>();
@@ -6182,9 +6177,9 @@ fn ingest_retention_observations_are_typed_canonical_records() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .expect("parse retained ingest typed observation")
         })
         .collect::<Vec<_>>();
@@ -6192,10 +6187,7 @@ fn ingest_retention_observations_are_typed_canonical_records() {
     for record in records {
         assert_eq!(
             record["canonical_version"].as_u64(),
-            Some(
-                volantis_db_adversarial_oracle::ingest_retention::INGEST_CANONICAL_VERSION
-                    as u64
-            ),
+            Some(volantis_db_adversarial_oracle::ingest_retention::INGEST_CANONICAL_VERSION as u64),
             "ingest observation omitted its canonical version"
         );
         let checker_id = record["checker_id"]
@@ -6213,11 +6205,10 @@ fn ingest_retention_observations_are_typed_canonical_records() {
                 .expect("ingest observation omitted canonical observed bytes"),
         )
         .expect("decode ingest observation observed bytes");
-        let replay =
-            volantis_db_adversarial_oracle::ingest_retention::replay_canonical_comparison(
-                checker_id, &input, &observed,
-            )
-            .expect("replay typed ingest observation");
+        let replay = volantis_db_adversarial_oracle::ingest_retention::replay_canonical_comparison(
+            checker_id, &input, &observed,
+        )
+        .expect("replay typed ingest observation");
         assert!(replay.first_difference.is_none());
         assert!(record["expected"].is_null());
         assert!(record["observed"].is_null());
@@ -6299,9 +6290,9 @@ fn ingest_retention_oracle_rows_replay_the_family_canonical_bytes() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .expect("parse ingest-retention oracle row")
         })
         .collect::<Vec<_>>();
@@ -6329,13 +6320,12 @@ fn ingest_retention_oracle_rows_replay_the_family_canonical_bytes() {
             !observed.is_empty(),
             "{invariant} omitted retained observed bytes"
         );
-        let replay =
-            volantis_db_adversarial_oracle::ingest_retention::replay_canonical_comparison(
-                row["checker_id"].as_str().expect("ingest checker id"),
-                &input,
-                &observed,
-            )
-            .expect("replay ingest-retention canonical row");
+        let replay = volantis_db_adversarial_oracle::ingest_retention::replay_canonical_comparison(
+            row["checker_id"].as_str().expect("ingest checker id"),
+            &input,
+            &observed,
+        )
+        .expect("replay ingest-retention canonical row");
         assert!(replay.first_difference.is_none(), "{replay:?}");
     }
 }
@@ -6405,10 +6395,8 @@ fn vector_replay_declares_every_family_evidence_stream() {
         );
     }
     let fixture: volantis_db_bench::harness_json::Value =
-        volantis_db_bench::harness_json::from_slice(
-            &outcome.family_artifact_bytes["fixture.json"],
-        )
-        .expect("parse canonical vector fixture");
+        volantis_db_bench::harness_json::from_slice(&outcome.family_artifact_bytes["fixture.json"])
+            .expect("parse canonical vector fixture");
     let operations = fixture["operations"]
         .as_array()
         .expect("vector fixture operations array");
@@ -6519,10 +6507,8 @@ fn vector_fixture_artifact_executes_literal_family_bytes() {
         adversarial::runner::run_program_for(campaign, 6, FaultProfile::None, root.path())
             .expect("vector retained-fixture episode");
     let fixture: volantis_db_bench::harness_json::Value =
-        volantis_db_bench::harness_json::from_slice(
-            &outcome.family_artifact_bytes["fixture.json"],
-        )
-        .expect("parse vector fixture artifact");
+        volantis_db_bench::harness_json::from_slice(&outcome.family_artifact_bytes["fixture.json"])
+            .expect("parse vector fixture artifact");
     let operations = fixture["operations"]
         .as_array()
         .expect("vector fixture operations");
@@ -6718,9 +6704,9 @@ fn metadata_replay_executes_the_retained_independent_checker() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .find(|line| {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .is_ok_and(|record| record["invariant"] == "I36")
         })
         .expect("metadata episode emitted an I36 oracle row");
@@ -6948,9 +6934,9 @@ fn metadata_replay_declares_fixture_and_query_evidence() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .expect("parse metadata fixture mutation")
         })
         .collect::<Vec<_>>();
@@ -7101,9 +7087,9 @@ fn metadata_retained_replay_rejects_a_mutated_same_seed_control_digest() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .expect("parse retained metadata control")
         })
         .collect::<Vec<_>>();
@@ -8375,8 +8361,7 @@ fn real_crash_child_rebuilds_the_schedule_from_seed() {
     assert!(
         faults.lines().any(|line| {
             let record: volantis_db_bench::harness_json::Value =
-                volantis_db_bench::harness_json::from_str(line)
-                    .expect("parse child fault record");
+                volantis_db_bench::harness_json::from_str(line).expect("parse child fault record");
             record["id"].as_str() == Some(event_id.as_str())
                 && record["fired"].as_bool() == Some(true)
                 && record["fire_count"].as_u64() == Some(1)
@@ -8826,9 +8811,9 @@ fn replay_storage_retained_episode(expected: &Path) -> Result<String, String> {
         "episode.json",
         "storage-fixture.json",
     ] {
-        volantis_db_bench::harness_json::from_slice::<
-            volantis_db_bench::harness_json::Value,
-        >(&artifacts[name])
+        volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+            &artifacts[name],
+        )
         .map_err(|error| format!("parse retained storage artifact {name}: {error}"))?;
     }
     for name in [
@@ -8849,9 +8834,9 @@ fn replay_storage_retained_episode(expected: &Path) -> Result<String, String> {
             .filter(|line| !line.is_empty())
             .enumerate()
         {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .map_err(|error| {
                 format!(
                     "parse retained storage artifact {name} line {}: {error}",
@@ -9010,9 +8995,9 @@ fn replay_metadata_retained_episode(expected: &Path) -> Result<String, String> {
         "episode.json",
         "metadata-fixture.json",
     ] {
-        volantis_db_bench::harness_json::from_slice::<
-            volantis_db_bench::harness_json::Value,
-        >(&artifacts[name])
+        volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+            &artifacts[name],
+        )
         .map_err(|error| format!("parse retained metadata artifact {name}: {error}"))?;
     }
     for name in [
@@ -9030,9 +9015,9 @@ fn replay_metadata_retained_episode(expected: &Path) -> Result<String, String> {
             .filter(|line| !line.is_empty())
             .enumerate()
         {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .map_err(|error| {
                 format!(
                     "parse retained metadata artifact {name} line {}: {error}",
@@ -9474,9 +9459,9 @@ fn replay_vector_retained_episode(expected: &Path) -> Result<String, String> {
         "backend-inventory.json",
         "episode-summary.json",
     ] {
-        volantis_db_bench::harness_json::from_slice::<
-            volantis_db_bench::harness_json::Value,
-        >(&artifacts[name])
+        volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+            &artifacts[name],
+        )
         .map_err(|error| format!("parse retained vector artifact {name}: {error}"))?;
     }
     for name in [
@@ -9497,9 +9482,9 @@ fn replay_vector_retained_episode(expected: &Path) -> Result<String, String> {
             .filter(|line| !line.is_empty())
             .enumerate()
         {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .map_err(|error| {
                 format!(
                     "parse retained vector artifact {name} line {}: {error}",
@@ -11098,15 +11083,13 @@ fn preserve_campaign_failure(
     );
     partial_artifacts |= ensure_failure_artifact(
         &destination.join("episode.json"),
-        &volantis_db_bench::harness_json::to_vec_pretty(
-            &volantis_db_bench::harness_json::json!({
-                "schema": "volantis-db-adversarial-episode",
-                "version": 3,
-                "campaign": campaign.key(),
-                "seed": seed,
-                "profile": profile.key(),
-            }),
-        )
+        &volantis_db_bench::harness_json::to_vec_pretty(&volantis_db_bench::harness_json::json!({
+            "schema": "volantis-db-adversarial-episode",
+            "version": 3,
+            "campaign": campaign.key(),
+            "seed": seed,
+            "profile": profile.key(),
+        }))
         .expect("serialize fallback episode metadata"),
     );
     let failure = volantis_db_bench::harness_json::json!({
@@ -17372,8 +17355,8 @@ fn write_campaign_summary(
         "coverage": coverage_json,
         "attestation": attestation,
     });
-    let mut summary = volantis_db_bench::harness_json::to_vec(&summary)
-        .expect("serialize campaign summary v3");
+    let mut summary =
+        volantis_db_bench::harness_json::to_vec(&summary).expect("serialize campaign summary v3");
     summary.push(b'\n');
     let final_path = root.join("campaign-summary.json");
     let temporary_path = root.join(".campaign-summary.json.tmp");
@@ -17392,8 +17375,7 @@ fn validate_completed_campaign_summary(root: &Path, config: &RunConfig) {
     let bytes =
         std::fs::read(root.join("campaign-summary.json")).expect("read final campaign summary");
     let summary: volantis_db_bench::harness_json::Value =
-        volantis_db_bench::harness_json::from_slice(&bytes)
-            .expect("parse final campaign summary");
+        volantis_db_bench::harness_json::from_slice(&bytes).expect("parse final campaign summary");
     assert_eq!(summary["version"], 3, "campaign summary schema version");
     assert_eq!(summary["campaign"], config.campaign.key());
     assert_eq!(summary["qualification"], config.qualification.key());
@@ -17547,10 +17529,9 @@ fn validate_feature_oracle_record(
             volantis_db_adversarial_oracle::fts::I41_CHECKER_ID,
             "regions",
         )),
-        (CampaignKind::Fts, "I42") => Some((
-            volantis_db_adversarial_oracle::fts::I42_CHECKER_ID,
-            "bm25",
-        )),
+        (CampaignKind::Fts, "I42") => {
+            Some((volantis_db_adversarial_oracle::fts::I42_CHECKER_ID, "bm25"))
+        }
         (CampaignKind::Fts, "I43") => Some((
             volantis_db_adversarial_oracle::fts::I43_CHECKER_ID,
             "pruning",
@@ -17735,57 +17716,58 @@ fn validate_feature_oracle_record(
         ));
     }
     if campaign == CampaignKind::MetadataFilterPlanner {
-        let validate_metadata_digest =
-            |digest: &str, bytes_field: &str, role: &str| -> Result<Vec<u8>, String> {
-                let bytes_hex = record[bytes_field].as_str().ok_or_else(|| {
-                    format!("merged {invariant} oracle row omitted {bytes_field}")
-                })?;
-                let bytes = decode_storage_hex(bytes_hex).map_err(|error| {
-                    format!("merged {invariant} oracle row invalid {bytes_field}: {error}")
-                })?;
-                let domain = format!("metadata/{invariant}/{role}/v1");
-                let Some(length_bytes) = bytes.get(..8) else {
-                    return Err(format!(
-                        "merged {invariant} oracle row canonical {role} is truncated"
-                    ));
-                };
-                let length = usize::try_from(u64::from_le_bytes(
-                    length_bytes
-                        .try_into()
-                        .expect("metadata canonical length is exactly eight bytes"),
-                ))
-                .map_err(|_| {
-                    format!("merged {invariant} oracle row canonical {role} length overflowed")
-                })?;
-                if bytes.get(8..8_usize.saturating_add(length)) != Some(domain.as_bytes()) {
-                    return Err(format!(
-                        "merged {invariant} oracle row canonical {role} domain is stale"
-                    ));
-                }
-                let recomputed =
-                    volantis_db_adversarial_oracle::metadata_filter_planner::canonical_digest(
-                        &bytes,
-                    );
-                let expected = format!("metadata-v{canonical_version}:{recomputed:016x}");
-                if digest != expected {
-                    return Err(format!(
-                        "merged {invariant} oracle row family canonical {role} digest differs"
-                    ));
-                }
-                Ok(bytes)
+        let validate_metadata_digest = |digest: &str,
+                                        bytes_field: &str,
+                                        role: &str|
+         -> Result<Vec<u8>, String> {
+            let bytes_hex = record[bytes_field]
+                .as_str()
+                .ok_or_else(|| format!("merged {invariant} oracle row omitted {bytes_field}"))?;
+            let bytes = decode_storage_hex(bytes_hex).map_err(|error| {
+                format!("merged {invariant} oracle row invalid {bytes_field}: {error}")
+            })?;
+            let domain = format!("metadata/{invariant}/{role}/v1");
+            let Some(length_bytes) = bytes.get(..8) else {
+                return Err(format!(
+                    "merged {invariant} oracle row canonical {role} is truncated"
+                ));
             };
+            let length = usize::try_from(u64::from_le_bytes(
+                length_bytes
+                    .try_into()
+                    .expect("metadata canonical length is exactly eight bytes"),
+            ))
+            .map_err(|_| {
+                format!("merged {invariant} oracle row canonical {role} length overflowed")
+            })?;
+            if bytes.get(8..8_usize.saturating_add(length)) != Some(domain.as_bytes()) {
+                return Err(format!(
+                    "merged {invariant} oracle row canonical {role} domain is stale"
+                ));
+            }
+            let recomputed =
+                volantis_db_adversarial_oracle::metadata_filter_planner::canonical_digest(&bytes);
+            let expected = format!("metadata-v{canonical_version}:{recomputed:016x}");
+            if digest != expected {
+                return Err(format!(
+                    "merged {invariant} oracle row family canonical {role} digest differs"
+                ));
+            }
+            Ok(bytes)
+        };
         let input_bytes =
             validate_metadata_digest(oracle_input_digest, "oracle_input_bytes", "input")?;
         let observed_bytes =
             validate_metadata_digest(oracle_observed_digest, "oracle_observed_bytes", "observed")?;
-        let replay = volantis_db_adversarial_oracle::metadata_filter_planner::replay_canonical_comparison(
-            checker_id,
-            &input_bytes,
-            &observed_bytes,
-        )
-        .map_err(|error| {
-            format!("merged {invariant} retained metadata checker replay failed: {error}")
-        })?;
+        let replay =
+            volantis_db_adversarial_oracle::metadata_filter_planner::replay_canonical_comparison(
+                checker_id,
+                &input_bytes,
+                &observed_bytes,
+            )
+            .map_err(|error| {
+                format!("merged {invariant} retained metadata checker replay failed: {error}")
+            })?;
         if replay.checker_id != checker_id
             || replay.input_digest
                 != volantis_db_adversarial_oracle::metadata_filter_planner::canonical_digest(
@@ -17860,9 +17842,7 @@ fn validate_feature_oracle_record(
     }
     if campaign == CampaignKind::IngestRetention {
         if canonical_version
-            != u64::from(
-                volantis_db_adversarial_oracle::ingest_retention::INGEST_CANONICAL_VERSION,
-            )
+            != u64::from(volantis_db_adversarial_oracle::ingest_retention::INGEST_CANONICAL_VERSION)
             || !oracle_input_digest.starts_with("ingest-v1:")
             || oracle_input_digest.len() != "ingest-v1:".len() + 16
             || !oracle_observed_digest.starts_with("ingest-v1:")
@@ -17898,20 +17878,17 @@ fn validate_feature_oracle_record(
         let input_bytes = validate_ingest_digest(oracle_input_digest, "oracle_input_bytes")?;
         let observed_bytes =
             validate_ingest_digest(oracle_observed_digest, "oracle_observed_bytes")?;
-        let replay =
-            volantis_db_adversarial_oracle::ingest_retention::replay_canonical_comparison(
-                checker_id,
-                &input_bytes,
-                &observed_bytes,
-            )
-            .map_err(|error| {
-                format!("merged {invariant} retained ingest checker replay failed: {error}")
-            })?;
+        let replay = volantis_db_adversarial_oracle::ingest_retention::replay_canonical_comparison(
+            checker_id,
+            &input_bytes,
+            &observed_bytes,
+        )
+        .map_err(|error| {
+            format!("merged {invariant} retained ingest checker replay failed: {error}")
+        })?;
         if replay.checker_id != checker_id
             || replay.input_digest
-                != volantis_db_adversarial_oracle::ingest_retention::canonical_digest(
-                    &input_bytes,
-                )
+                != volantis_db_adversarial_oracle::ingest_retention::canonical_digest(&input_bytes)
             || replay.observed_digest
                 != volantis_db_adversarial_oracle::ingest_retention::canonical_digest(
                     &observed_bytes,
@@ -17991,14 +17968,13 @@ fn validate_feature_oracle_record(
         let input_bytes = validate_vector_digest(oracle_input_digest, "oracle_input_bytes")?;
         let observed_bytes =
             validate_vector_digest(oracle_observed_digest, "oracle_observed_bytes")?;
-        let replay =
-            volantis_db_adversarial_oracle::vector_execution::replay_canonical_comparison(
-                &input_bytes,
-                &observed_bytes,
-            )
-            .map_err(|error| {
-                format!("merged {invariant} retained vector checker replay failed: {error}")
-            })?;
+        let replay = volantis_db_adversarial_oracle::vector_execution::replay_canonical_comparison(
+            &input_bytes,
+            &observed_bytes,
+        )
+        .map_err(|error| {
+            format!("merged {invariant} retained vector checker replay failed: {error}")
+        })?;
         if replay.checker_id != checker_id {
             return Err(format!(
                 "merged {invariant} retained vector checker replay used {} instead of {checker_id}",

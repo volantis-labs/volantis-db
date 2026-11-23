@@ -1363,15 +1363,11 @@ pub fn original_cases() -> Vec<Json> {
     for (write, text) in [
         (
             false,
-            include_str!(
-                "../../crates/volantis-db-cypher/tests/fixtures/read-tck-execution.txt"
-            ),
+            include_str!("../../crates/volantis-db-cypher/tests/fixtures/read-tck-execution.txt"),
         ),
         (
             true,
-            include_str!(
-                "../../crates/volantis-db-cypher/tests/fixtures/write-tck-execution.txt"
-            ),
+            include_str!("../../crates/volantis-db-cypher/tests/fixtures/write-tck-execution.txt"),
         ),
     ] {
         for s in tck::scenarios(text) {

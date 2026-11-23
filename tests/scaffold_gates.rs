@@ -14,10 +14,8 @@ fn repo_root() -> PathBuf {
 
 fn fixture_dir(name: &str) -> Result<PathBuf, Box<dyn Error>> {
     let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-    let path = std::env::temp_dir().join(format!(
-        "volantis-db-{name}-{}-{nonce}",
-        std::process::id()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("volantis-db-{name}-{}-{nonce}", std::process::id()));
     fs::create_dir_all(&path)?;
     Ok(path)
 }

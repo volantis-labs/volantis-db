@@ -19,9 +19,7 @@ use volantis_db::lifecycle::{
     CancelToken, GraphSearchOptions, OpenOptions, QueryControl, SearchOptions, SearchTier, Store,
     StoreTestDependencies, SystemMonotonicClock,
 };
-use volantis_db::meta::{
-    Predicate, PredicateValue, RangeBound, RangePredicate, TIMESTAMP_COLUMN,
-};
+use volantis_db::meta::{Predicate, PredicateValue, RangeBound, RangePredicate, TIMESTAMP_COLUMN};
 use volantis_db::planner::SegmentBranch;
 use volantis_db::tier::{MaintenanceBudget, MaintenanceStatus, TierThresholds};
 

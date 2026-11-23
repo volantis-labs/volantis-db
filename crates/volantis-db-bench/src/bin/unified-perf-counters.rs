@@ -593,9 +593,7 @@ fn attach_relationships(
     store: &Store,
     smoke: bool,
 ) -> Result<Vec<volantis_db::property_graph::RelId>> {
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
     use volantis_db::property_graph::{
         ApplicationKey, EntityId, EntityKind, GraphName, GraphRevision, NodeId, NodeRef,
     };

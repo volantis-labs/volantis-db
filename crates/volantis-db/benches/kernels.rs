@@ -1,7 +1,5 @@
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use volantis_db::kernels::{
-    dot_f16, dot_f32, dot_i8, dot_i8_batch, hamming_u1, hamming_u1_batch,
-};
+use volantis_db::kernels::{dot_f16, dot_f32, dot_i8, dot_i8_batch, hamming_u1, hamming_u1_batch};
 
 const DIMENSIONS: [usize; 3] = [384, 768, 1_024];
 const BATCH_ROWS: usize = 100_000;

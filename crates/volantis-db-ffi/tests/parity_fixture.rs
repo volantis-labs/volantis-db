@@ -460,11 +460,7 @@ fn generate_fixture() -> String {
 
     let mut json = String::new();
     writeln!(json, "{{").expect("write JSON");
-    writeln!(
-        json,
-        "  \"schema\": \"volantis-db-cross-binding-parity\","
-    )
-    .expect("write JSON");
+    writeln!(json, "  \"schema\": \"volantis-db-cross-binding-parity\",").expect("write JSON");
     writeln!(json, "  \"version\": 1,").expect("write JSON");
     writeln!(json, "  \"seed\": {SEED},").expect("write JSON");
     writeln!(json, "  \"score_precision\": 6,").expect("write JSON");

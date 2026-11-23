@@ -39,9 +39,7 @@ use volantis_db::planner::{
 use volantis_db::scan::ScanOptions;
 use volantis_db::segment::layout::RegionKind;
 use volantis_db::segment::reader::SegmentReader;
-use volantis_db::segment::{
-    ClusteringKeyRange, MetadataDecodeProvenance, SegmentError, SegmentId,
-};
+use volantis_db::segment::{ClusteringKeyRange, MetadataDecodeProvenance, SegmentError, SegmentId};
 use volantis_db::tier::{MaintenanceBudget, MaintenanceStatus, TierThresholds};
 use volantis_db::vfs::StdVfs;
 use volantis_db::wal::WalReader;
@@ -2786,10 +2784,7 @@ fn execution_receipt(receipt: &MetadataExecutionReceipt) -> independent::Executi
     }
 }
 
-fn report(
-    query_id: u64,
-    plan: &volantis_db::planner::SegmentPlan,
-) -> independent::BranchReportDto {
+fn report(query_id: u64, plan: &volantis_db::planner::SegmentPlan) -> independent::BranchReportDto {
     independent::BranchReportDto {
         key: independent::QuerySourceKey {
             query_id,

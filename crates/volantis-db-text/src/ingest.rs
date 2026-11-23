@@ -2478,10 +2478,7 @@ mod tests {
         );
         assert!(
             reopened
-                .get_documents(
-                    &[stale],
-                    volantis_db::lifecycle::DocumentFields::default()
-                )
+                .get_documents(&[stale], volantis_db::lifecycle::DocumentFields::default())
                 .expect("read removed stale chunk")
                 .iter()
                 .all(Option::is_none)

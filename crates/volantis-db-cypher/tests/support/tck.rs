@@ -6,9 +6,7 @@
     reason = "shared by several test crates, each using a subset"
 )]
 use std::collections::BTreeMap;
-use volantis_db::property_graph::query::completed::{
-    CompletedGraphResult, ListKind, Pools, Value,
-};
+use volantis_db::property_graph::query::completed::{CompletedGraphResult, ListKind, Pools, Value};
 
 /// One comparable value. Integers and floats stay distinct types; nodes and
 /// relationships compare by labels/type and properties, as the TCK does.

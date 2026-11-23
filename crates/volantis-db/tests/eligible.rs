@@ -78,9 +78,7 @@ fn corpus() -> (tempfile::TempDir, Store) {
         ]))
         .expect("replace sealed version");
     store
-        .delete(volantis_db::ingest::DeleteBatch::new(vec![document_id(
-            3,
-        )]))
+        .delete(volantis_db::ingest::DeleteBatch::new(vec![document_id(3)]))
         .expect("delete sealed row");
     (dir, store)
 }

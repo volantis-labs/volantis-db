@@ -83,9 +83,7 @@ fn ze452_map_literals_nested_access_and_grouping() {
 #[test]
 fn ze452_comprehension_iterations_and_map_values_are_accounted() {
     use volantis_db::lifecycle::{CancelToken, QueryControl};
-    use volantis_db::property_graph::query::completed::{
-        GraphQueryErrorKind, GraphQueryOptions,
-    };
+    use volantis_db::property_graph::query::completed::{GraphQueryErrorKind, GraphQueryOptions};
     use volantis_db::property_graph::query::plan::ParameterBinding;
     use volantis_db::property_graph::query::runtime::{RuntimeLimits, WorkKind};
     use volantis_db::property_graph::query::{QueryList, QueryValue, QueryView, ValueContext};

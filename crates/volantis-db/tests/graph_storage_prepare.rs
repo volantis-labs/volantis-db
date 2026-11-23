@@ -332,7 +332,23 @@ fn authentic_native_graph_candidate_pairs_same_batch_self_and_parallel_edges() {
 
         let first = RelId::new(rel + 1).unwrap();
         let mut output = [reader.relationship(first, &mut r).unwrap().unwrap(); 1];
-        assert_eq!(reader.scan_relationships(volantis_db::property_graph::storage::adjacency::RelationshipRange {lower: first, upper: volantis_db::property_graph::storage::adjacency::UpperBound::Exclusive(first)}, &mut output, &mut r).unwrap(), 0, "empty read intervals are valid even though persisted ranges must be nonempty");
+        assert_eq!(
+            reader
+                .scan_relationships(
+                    volantis_db::property_graph::storage::adjacency::RelationshipRange {
+                        lower: first,
+                        upper:
+                            volantis_db::property_graph::storage::adjacency::UpperBound::Exclusive(
+                                first
+                            )
+                    },
+                    &mut output,
+                    &mut r
+                )
+                .unwrap(),
+            0,
+            "empty read intervals are valid even though persisted ranges must be nonempty"
+        );
 
         // Independent root review: every public component read uses the same
         // numeric range and live-endpoint rules, before consuming capacity.

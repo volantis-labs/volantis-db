@@ -136,9 +136,7 @@ fn expression_limit(graph: &Graph, text: &str, limit: u64) {
         .unwrap();
     let error = volantis_db_cypher::execute(
         graph.store(),
-        &volantis_db::lifecycle::QueryControl::Cancel(
-            volantis_db::lifecycle::CancelToken::new(),
-        ),
+        &volantis_db::lifecycle::QueryControl::Cancel(volantis_db::lifecycle::CancelToken::new()),
         &options,
         text,
         &[],

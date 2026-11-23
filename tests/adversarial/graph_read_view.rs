@@ -36,8 +36,7 @@ pub struct Report {
     pub comparator: &'static str,
 }
 
-fn expected_operations() -> Vec<volantis_db_adversarial_oracle::graph_adjacency_store::Operation>
-{
+fn expected_operations() -> Vec<volantis_db_adversarial_oracle::graph_adjacency_store::Operation> {
     use volantis_db_adversarial_oracle::graph_adjacency_store::Operation;
     let node_a = (1_u128 << 100) + 1;
     let node_b = node_a + 1;
@@ -130,7 +129,6 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<Report, Strin
     Ok(Report {
         seed_draw,
         actual_paths,
-        comparator:
-            volantis_db_adversarial_oracle::graph_adjacency_store::READ_VIEW_COMPARATOR_ID,
+        comparator: volantis_db_adversarial_oracle::graph_adjacency_store::READ_VIEW_COMPARATOR_ID,
     })
 }

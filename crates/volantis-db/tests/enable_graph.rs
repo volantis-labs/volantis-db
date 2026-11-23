@@ -167,9 +167,7 @@ mod enable_graph {
             .graph,
             graph
         );
-        let token = store
-            .purge(&[volantis_db::ingest::DocId::new(1)])
-            .unwrap();
+        let token = store.purge(&[volantis_db::ingest::DocId::new(1)]).unwrap();
         store.await_physical_purge(token).unwrap();
         let mut expected = graph.clone().unwrap();
         expected.generation_absorbed_through = Some(ack.seq().get());

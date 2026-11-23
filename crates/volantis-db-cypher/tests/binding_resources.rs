@@ -247,9 +247,7 @@ mod search;
 #[test]
 fn ze76_public_failure_preserves_real_retrieval_and_publication() {
     use volantis_db::property_graph::query::completed::{GraphQueryOptions, Value};
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
     use volantis_db::property_graph::{
         ApplicationKey, CanonicalContents, EntityKind, GraphRevision,
     };

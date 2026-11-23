@@ -11,9 +11,7 @@ use volantis_db::property_graph::storage::{
 };
 use volantis_db::property_graph::{GraphGeneration, StoreInstanceId};
 use volantis_db::vfs::{CountingVfs, StdVfs};
-use volantis_db_adversarial_oracle::property_graph_storage::{
-    Case, Observation, Outcome, check,
-};
+use volantis_db_adversarial_oracle::property_graph_storage::{Case, Observation, Outcome, check};
 
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.artifact.clean",

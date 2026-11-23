@@ -32,10 +32,7 @@ fn fusion_policy_constants_are_pinned_to_their_measured_or_placeholder_values() 
         volantis_db::fusion::STORE_VECTOR_GAIN.to_bits(),
         32.0_f64.to_bits()
     );
-    assert_eq!(
-        volantis_db::fusion::HYBRID_NORMALIZATION_POLICY_VERSION,
-        2
-    );
+    assert_eq!(volantis_db::fusion::HYBRID_NORMALIZATION_POLICY_VERSION, 2);
     assert_eq!(DEFAULT_ALPHA.to_bits(), 0.7_f64.to_bits());
     assert_eq!(LEXICAL_RULE_ALPHA.to_bits(), 0.4_f64.to_bits());
     assert_eq!(RARE_DOCUMENT_FREQUENCY_THRESHOLD, 5);

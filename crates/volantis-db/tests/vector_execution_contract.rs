@@ -212,8 +212,7 @@ fn astra_06_rescore_invalid_queries_and_cancellation_fail_closed() {
 
 fn astra_06_options(oversample: usize, limit: usize) -> SearchOptions {
     search_options(SearchTier::Scan).with_scan_rescore(
-        volantis_db::lifecycle::ScanRescoreOptions::new(oversample, limit)
-            .expect("valid controls"),
+        volantis_db::lifecycle::ScanRescoreOptions::new(oversample, limit).expect("valid controls"),
     )
 }
 
@@ -415,9 +414,7 @@ fn astra_06_filtered_rescore_applies_eligibility_before_frontier() {
             store.seal().expect("seal");
         }
         store
-            .delete(volantis_db::ingest::DeleteBatch::new(vec![DocId::new(
-                4,
-            )]))
+            .delete(volantis_db::ingest::DeleteBatch::new(vec![DocId::new(4)]))
             .expect("delete high coarse row");
         let result = store
             .search_filtered(
@@ -2666,9 +2663,13 @@ fn astra_05_exact_pool_measurement() {
     let segment = &snapshot.segments()[0];
     assert_eq!(segment.meta().row_count, 58980);
     assert_eq!(segment.meta().dims, 768);
-    assert!(!segment.directory().iter().any(
-        |entry| entry.kind == volantis_db::segment::layout::RegionKind::GraphNodeBlocks.id()
-    ));
+    assert!(
+        !segment
+            .directory()
+            .iter()
+            .any(|entry| entry.kind
+                == volantis_db::segment::layout::RegionKind::GraphNodeBlocks.id())
+    );
     let rows = segment
         .rescore_f32()
         .expect("checked full-precision vectors");
@@ -2891,8 +2892,7 @@ fn astra_05_exact_crossover_measurement() {
                 samples.push(micros);
                 actual_workers.push(result.stats.threads_used);
                 collector_bytes.extend(work.iter().map(|w| {
-                    w.collector_capacity
-                        * std::mem::size_of::<volantis_db::scan::ScanCandidate>()
+                    w.collector_capacity * std::mem::size_of::<volantis_db::scan::ScanCandidate>()
                 }));
             }
         }

@@ -89,9 +89,7 @@ fn ids(result: &CompletedGraphResult) -> Vec<u128> {
 mod relationship_speed {
     use super::*;
     use volantis_db::property_graph::query::runtime::WorkKind;
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
     use volantis_db::property_graph::{
         ApplicationKey, EntityKind, GraphName, GraphRevision, NodeId, NodeRef,
     };
@@ -603,9 +601,7 @@ fn document_folder_scan_work(n: u128) -> u64 {
     use volantis_db::property_graph::query::plan::ParameterBinding;
     use volantis_db::property_graph::query::runtime::{RuntimeLimits, WorkKind};
     use volantis_db::property_graph::query::{QueryList, QueryValue, QueryView, ValueContext};
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
     use volantis_db::property_graph::{
         ApplicationKey, EntityKind, GraphGeneration, GraphName, GraphRevision, NodeId, NodeRef,
         StoreInstanceId,
@@ -811,8 +807,7 @@ fn eligible_collect_parity_at(
         let expected: Vec<_> = if hybrid {
             store
                 .search_hybrid(
-                    volantis_db::ingest::SearchRequest::new(&[1.0, 0.0])
-                        .with_eligible(&eligible),
+                    volantis_db::ingest::SearchRequest::new(&[1.0, 0.0]).with_eligible(&eligible),
                     &term,
                     &volantis_db::fusion::HybridQuery::new(10),
                     volantis_db::lifecycle::SearchOptions::default()
@@ -978,8 +973,7 @@ fn eligible_collect_parity_at(
         ] {
             let current = work.get(kind);
             if let Some((old_n, old_work)) = previous {
-                let old_work: volantis_db::property_graph::query::runtime::WorkCounters =
-                    old_work;
+                let old_work: volantis_db::property_graph::query::runtime::WorkCounters = old_work;
                 assert!(
                     current <= old_work.get(kind) * (n as u64).div_ceil(old_n) + 1024,
                     "linear {kind:?}: {current}"
@@ -1275,9 +1269,7 @@ mod incident_sources {
         observe_document_visits, with_original_node_sources,
     };
     use volantis_db::property_graph::query::runtime::WorkKind;
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
     use volantis_db::property_graph::{
         ApplicationKey, EntityKind, GraphName, GraphRevision, NodeId, NodeRef,
     };
@@ -1683,9 +1675,7 @@ mod incident_sources {
 mod ze404_counts {
     use super::*;
     use volantis_db::property_graph::query::runtime::{WorkCounters, WorkKind};
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
     use volantis_db::property_graph::{
         ApplicationKey, EntityKind, GraphName, GraphRevision, NodeId, NodeRef,
     };
@@ -1830,9 +1820,7 @@ mod ze404_counts {
                 0
             );
             store
-                .delete(volantis_db::ingest::DeleteBatch::new(vec![DocId::new(
-                    2,
-                )]))
+                .delete(volantis_db::ingest::DeleteBatch::new(vec![DocId::new(2)]))
                 .unwrap();
             assert_count(&store, "MATCH (n:Document) RETURN count(n)", n as i64 - 1);
             documents(&store, 2, 3, 2);
@@ -2281,9 +2269,7 @@ mod ze408 {
 mod ze409_scan_tests {
     use super::*;
     use volantis_db::property_graph::query::runtime::{RuntimeLimits, WorkKind};
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
     use volantis_db::property_graph::{
         ApplicationKey, EntityKind, GraphName, GraphRevision, NodeId, NodeRef,
     };
@@ -2408,8 +2394,7 @@ mod ze409_scan_tests {
 
     #[test]
     fn ze404_document_scan_does_not_revalidate_graph_pages_per_document() {
-        let mut previous: Option<volantis_db::property_graph::query::runtime::WorkCounters> =
-            None;
+        let mut previous: Option<volantis_db::property_graph::query::runtime::WorkCounters> = None;
         for n in [1_000, 2_000] {
             let (_directory, store) = scan_fixture(n);
             // LIMIT keeps the original lazy cursor as an independent order oracle.
@@ -2514,9 +2499,7 @@ mod relationship_speed_main {
         ApplicationKey, EntityKind, GraphName, GraphRevision, NodeId, NodeRef,
     };
 
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
 
     fn edges(count: usize) -> (Directory, Store) {
         let (directory, store) = fixture();
@@ -2884,9 +2867,7 @@ fn ze418_sparse_labelled_ignores_isolated_documents() {
 mod node_text {
     use super::*;
     use volantis_db::fts::{index::DEFAULT_FIELD, search::TermQuery};
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
     use volantis_db::property_graph::{
         ApplicationKey, CanonicalContents, EntityId, EntityKind, GraphDeleteMode, GraphRevision,
     };

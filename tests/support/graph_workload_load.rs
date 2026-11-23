@@ -606,9 +606,8 @@ pub fn verify_mixed(
     let (mut snapshot, mut ids) = primitive_snapshot(root, state, receipts)?;
     let mut baseline = None;
     for line in BufReader::new(std::fs::File::open(receipts).map_err(|e| e.to_string())?).lines() {
-        let r: Value =
-            volantis_db_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?;
+        let r: Value = volantis_db_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
         if let Some(g) = r["admitted_generation"].as_u64() {
             baseline = Some(g);
         }
@@ -721,9 +720,7 @@ pub fn recovery_series(list: &Path, read_only: bool) -> Result<(), String> {
 /// Untimed complete public entity reads for import/retention correctness.
 /// Identity comes from receipts; all expected payload comes from frozen inputs.
 pub fn inspect_entities(path: &Path, requests: &Path) -> Result<(), String> {
-    use volantis_db::property_graph::query::completed::{
-        Pools, Span, Value as Cell, ValueIndex,
-    };
+    use volantis_db::property_graph::query::completed::{Pools, Span, Value as Cell, ValueIndex};
     use volantis_db::property_graph::{GraphGetOptions, NodeId, RelId};
     fn text(p: Pools<'_>, s: Span) -> Result<String, String> {
         let bytes = p

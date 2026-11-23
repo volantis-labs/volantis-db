@@ -19,9 +19,7 @@ use volantis_db::property_graph::query::completed::{
 use volantis_db::property_graph::query::runtime::WorkKind;
 use volantis_db::property_graph::resources::GraphResources;
 use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
-use volantis_db::property_graph::{
-    ApplicationKey, CanonicalContents, EntityKind, GraphRevision,
-};
+use volantis_db::property_graph::{ApplicationKey, CanonicalContents, EntityKind, GraphRevision};
 use volantis_db::vfs::StdVfs;
 use volantis_db_cypher::{CompileLimits, StatementError, execute};
 pub const REQUIRED_COVERAGE: &[&str] = &[

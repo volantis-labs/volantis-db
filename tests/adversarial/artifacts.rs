@@ -86,9 +86,9 @@ pub fn verify_recomputed_fault_plan_bytes(
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .map_err(|error| format!("parse faults.jsonl row: {error}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -180,9 +180,9 @@ pub fn verify_recomputed_fault_plan_records(
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            volantis_db_bench::harness_json::from_slice::<
-                volantis_db_bench::harness_json::Value,
-            >(line)
+            volantis_db_bench::harness_json::from_slice::<volantis_db_bench::harness_json::Value>(
+                line,
+            )
             .map_err(|error| format!("parse recomputed faults.jsonl row: {error}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -413,15 +413,14 @@ impl MergedEvidence {
                 .map(|(name, value)| (format!("family/{name}"), value)),
         );
 
-        let mut index = volantis_db_bench::harness_json::to_vec(
-            &volantis_db_bench::harness_json::json!({
+        let mut index =
+            volantis_db_bench::harness_json::to_vec(&volantis_db_bench::harness_json::json!({
                 "campaign_episode": self.episodes,
                 "seed": seed,
                 "profile": profile.key(),
                 "streams": streams,
-            }),
-        )
-        .map_err(|error| format!("serialize merged evidence index: {error}"))?;
+            }))
+            .map_err(|error| format!("serialize merged evidence index: {error}"))?;
         index.push(b'\n');
         self.index
             .write_all(&index)
@@ -639,14 +638,13 @@ impl MergedStream {
             let record: volantis_db_bench::harness_json::Value =
                 volantis_db_bench::harness_json::from_slice(line)
                     .map_err(|error| format!("parse {} evidence row: {error}", self.name))?;
-            let mut envelope = volantis_db_bench::harness_json::to_vec(
-                &volantis_db_bench::harness_json::json!({
+            let mut envelope =
+                volantis_db_bench::harness_json::to_vec(&volantis_db_bench::harness_json::json!({
                     "seed": seed,
                     "profile": profile.key(),
                     "record": record,
-                }),
-            )
-            .map_err(|error| format!("serialize {} evidence row: {error}", self.name))?;
+                }))
+                .map_err(|error| format!("serialize {} evidence row: {error}", self.name))?;
             envelope.push(b'\n');
             self.file
                 .write_all(&envelope)
@@ -678,14 +676,13 @@ impl MergedStream {
         let record: volantis_db_bench::harness_json::Value =
             volantis_db_bench::harness_json::from_slice(source)
                 .map_err(|error| format!("parse {} evidence document: {error}", self.name))?;
-        let mut envelope = volantis_db_bench::harness_json::to_vec(
-            &volantis_db_bench::harness_json::json!({
+        let mut envelope =
+            volantis_db_bench::harness_json::to_vec(&volantis_db_bench::harness_json::json!({
                 "seed": seed,
                 "profile": profile.key(),
                 "record": record,
-            }),
-        )
-        .map_err(|error| format!("serialize {} evidence document: {error}", self.name))?;
+            }))
+            .map_err(|error| format!("serialize {} evidence document: {error}", self.name))?;
         envelope.push(b'\n');
         self.file
             .write_all(&envelope)

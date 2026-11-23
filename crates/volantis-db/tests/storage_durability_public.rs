@@ -761,11 +761,9 @@ fn storage_corrupt_segment_region_can_fire() {
                 QueryControl::Cancel(CancelToken::new()),
             )
             .expect_err("corrupt rescore region must return no candidates");
-        let volantis_db::lifecycle::QueryError::Store(
-            volantis_db::lifecycle::StoreError::Segment(
-                volantis_db::segment::SegmentError::Format(format),
-            ),
-        ) = error
+        let volantis_db::lifecycle::QueryError::Store(volantis_db::lifecycle::StoreError::Segment(
+            volantis_db::segment::SegmentError::Format(format),
+        )) = error
         else {
             panic!("wrong corrupt-region query error: {error:?}");
         };
@@ -825,9 +823,9 @@ fn storage_wrong_manifest_object_can_fire() {
     )
     .err()
     .expect("segment bytes at manifest path must refuse open");
-    let volantis_db::lifecycle::StoreError::Manifest(
-        volantis_db::manifest::ManifestError::Format(format),
-    ) = error
+    let volantis_db::lifecycle::StoreError::Manifest(volantis_db::manifest::ManifestError::Format(
+        format,
+    )) = error
     else {
         panic!("wrong public manifest error: {error:?}");
     };

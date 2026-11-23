@@ -236,7 +236,8 @@ fn graph_entry_prototypes_are_callable_from_c() {
 #[test]
 fn graph_runtime_header_matches_the_graph_export_allowlist() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let header = std::fs::read_to_string(root.join("include/volantis_db_graph_contracts.h")).unwrap();
+    let header =
+        std::fs::read_to_string(root.join("include/volantis_db_graph_contracts.h")).unwrap();
     let declared: std::collections::BTreeSet<_> = header
         .lines()
         .filter(|line| {

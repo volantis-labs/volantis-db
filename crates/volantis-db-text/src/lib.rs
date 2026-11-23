@@ -47,6 +47,4 @@ pub use query::{
 };
 pub use runtime::mlx_cache::DEFAULT_MLX_CACHE_LIMIT_BYTES;
 pub use volantis_db::lifecycle::SearchTier;
-pub use volantis_db::tier::{
-    MaintenanceBudget, MaintenanceReport, MaintenanceStatus, SegmentTier,
-};
+pub use volantis_db::tier::{MaintenanceBudget, MaintenanceReport, MaintenanceStatus, SegmentTier};

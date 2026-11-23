@@ -534,9 +534,7 @@ fn delete_matching_after_sealed_delete_preserves_survivors_and_purges_history() 
             )]))
             .expect("replacement transcript");
         store
-            .delete(volantis_db::ingest::DeleteBatch::new(vec![DocId::new(
-                1,
-            )]))
+            .delete(volantis_db::ingest::DeleteBatch::new(vec![DocId::new(1)]))
             .expect("delete old transcript");
         if seal_before_delete {
             store.seal().expect("seal replacement");

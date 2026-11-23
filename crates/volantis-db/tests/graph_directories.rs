@@ -220,9 +220,7 @@ fn root_review_predecessor_discards_previous_leaf_when_cancel_fires_during_read(
 
 #[test]
 fn root_review_predecessor_rejects_malformed_probe_even_on_empty_root() {
-    use volantis_db::property_graph::storage::tree::directory::{
-        lookup_entry, lookup_predecessor,
-    };
+    use volantis_db::property_graph::storage::tree::directory::{lookup_entry, lookup_predecessor};
     let objects = Objects::new();
     let (_dir, _store, shared) = memory_fixture();
     let control = QueryControl::Cancel(CancelToken::new());
@@ -367,9 +365,7 @@ fn immutable_directory_preserves_full_ids_and_old_root_values() {
 
 #[test]
 fn predecessor_rejects_malformed_probe_even_on_empty_root() {
-    use volantis_db::property_graph::storage::tree::directory::{
-        lookup_entry, lookup_predecessor,
-    };
+    use volantis_db::property_graph::storage::tree::directory::{lookup_entry, lookup_predecessor};
     let objects = Objects::new();
     let (_directory, _store, shared) = memory_fixture();
     let control = QueryControl::Cancel(CancelToken::new());
@@ -1454,8 +1450,7 @@ fn graph_root_bundle_retains_typed_full_width_label_and_type_directories() {
         .unwrap();
         let mut observed = Vec::new();
         while let Some(entry) = cursor.next_entry(&mut resources).unwrap() {
-            let volantis_db::property_graph::storage::tree::Key::Inline(key) = entry.key()
-            else {
+            let volantis_db::property_graph::storage::tree::Key::Inline(key) = entry.key() else {
                 panic!("numeric key overflow")
             };
             assert!(entry.value().is_empty());

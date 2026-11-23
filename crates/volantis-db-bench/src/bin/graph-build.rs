@@ -79,10 +79,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                     "/private/tmp/volantis-db-m5-{}-one",
                     dataset.name()
                 )),
-                GraphBuildPasses::Two => PathBuf::from(format!(
-                    "/private/tmp/volantis-db-m4b-{}",
-                    dataset.name()
-                )),
+                GraphBuildPasses::Two => {
+                    PathBuf::from(format!("/private/tmp/volantis-db-m4b-{}", dataset.name()))
+                }
             }
         }
     });

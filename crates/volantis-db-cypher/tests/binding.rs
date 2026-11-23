@@ -86,10 +86,7 @@ fn scalar_scope_parameters_and_operator_types_bind_before_consumption() {
             volantis_db_cypher::ErrorKind::DuplicateVariable,
         ),
         ("RETURN true + 1", volantis_db_cypher::ErrorKind::Type),
-        (
-            "RETURN $missing",
-            volantis_db_cypher::ErrorKind::Parameter,
-        ),
+        ("RETURN $missing", volantis_db_cypher::ErrorKind::Parameter),
     ] {
         let mut consumed = false;
         let result = compile_with(
@@ -509,11 +506,7 @@ fn property_assignment_aliases_keep_exact_list_element_types() {
             |_| Ok(()),
         )
         .unwrap_err();
-        assert_eq!(
-            error.kind,
-            volantis_db_cypher::ErrorKind::Type,
-            "{query}"
-        );
+        assert_eq!(error.kind, volantis_db_cypher::ErrorKind::Type, "{query}");
     }
     compile_with(
         "WITH [] AS values MATCH (n) SET n.p = values",
@@ -722,11 +715,7 @@ fn computed_property_lists_preserve_possible_homogeneous_scalar_values() {
             },
         )
         .unwrap_err();
-        assert_eq!(
-            error.kind,
-            volantis_db_cypher::ErrorKind::Type,
-            "{query}"
-        );
+        assert_eq!(error.kind, volantis_db_cypher::ErrorKind::Type, "{query}");
         assert!(!consumed);
     }
 }

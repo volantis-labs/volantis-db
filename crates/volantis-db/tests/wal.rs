@@ -5,7 +5,6 @@
     clippy::unwrap_used
 )]
 
-use xxhash_rust::xxh3::xxh3_64;
 use volantis_db::format::FormatFamily;
 use volantis_db::format::frame::{
     FILE_MAGIC, FileHeader, FormatCheck, decode_header as decode_frame_header,
@@ -20,6 +19,7 @@ use volantis_db::wal::record::{
     MIN_RECORD_LEN, RecordEncodeError, RecordError, WalRecord, decode_record, encode_record,
 };
 use volantis_db::wal::replay::{CorruptionLocation, CorruptionReason, ReplayTerminator, replay};
+use xxhash_rust::xxh3::xxh3_64;
 
 fn encoded(seq: u64, op: u16, payload: &[u8]) -> Vec<u8> {
     encode_record(WalRecord {

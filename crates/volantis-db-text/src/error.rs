@@ -134,9 +134,11 @@ mod tests {
         let materialization = TextError::Materialization(Box::new(
             volantis_db::lifecycle::MaterializationError::ArithmeticOverflow,
         ));
-        assert!(materialization.source().is_some_and(|source| {
-            source.is::<volantis_db::lifecycle::MaterializationError>()
-        }));
+        assert!(
+            materialization.source().is_some_and(|source| {
+                source.is::<volantis_db::lifecycle::MaterializationError>()
+            })
+        );
         assert_eq!(
             materialization.to_string(),
             volantis_db::lifecycle::MaterializationError::ArithmeticOverflow.to_string()

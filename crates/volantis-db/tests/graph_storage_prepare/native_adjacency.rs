@@ -1105,9 +1105,7 @@ fn property_only_with_detach_preserves_adjacency_then_raw_cleanup_is_paired() {
             fn query_view(&self) -> &volantis_db::property_graph::query::QueryView {
                 &self.token
             }
-            fn check_active(
-                &self,
-            ) -> Result<(), volantis_db::property_graph::query::QueryError> {
+            fn check_active(&self) -> Result<(), volantis_db::property_graph::query::QueryError> {
                 self.lease
                     .check_active()
                     .map_err(|_| volantis_db::property_graph::query::QueryError::ReadCancelled)
@@ -1402,10 +1400,9 @@ fn property_only_with_detach_preserves_adjacency_then_raw_cleanup_is_paired() {
         );
         let row_bytes = std::mem::size_of::<RelationshipRow>() as u64;
         let refusal_limit = count_delta + 3 * row_bytes - 1;
-        let refusal_limits =
-            volantis_db::property_graph::query::runtime::RuntimeLimits::default()
-                .with_limit(WorkKind::CopiedBytes, refusal_limit)
-                .unwrap();
+        let refusal_limits = volantis_db::property_graph::query::runtime::RuntimeLimits::default()
+            .with_limit(WorkKind::CopiedBytes, refusal_limit)
+            .unwrap();
         let refusal_before = query_memory.reserved_bytes();
         let mut refusal = volantis_db::property_graph::query::runtime::RuntimeContext::new(
             &retained,

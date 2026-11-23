@@ -273,10 +273,8 @@ fn open_touches_only_manifest_and_headers() {
         .open(&directory.path().join(MANIFEST_FILE))
         .expect("manifest length");
     assert_eq!(counting.read_bytes(), opened.bytes_read);
-    let one_header = volantis_db::format::frame::FILE_HEADER_LEN
-        + SEGMENT_PREFIX_LEN
-        + 6 * REGION_ENTRY_LEN
-        + 8;
+    let one_header =
+        volantis_db::format::frame::FILE_HEADER_LEN + SEGMENT_PREFIX_LEN + 6 * REGION_ENTRY_LEN + 8;
     assert_eq!(
         counting.read_bytes(),
         manifest_bytes + 2 * one_header as u64

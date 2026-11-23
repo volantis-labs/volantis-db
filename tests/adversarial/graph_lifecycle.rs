@@ -330,8 +330,7 @@ fn images(operation: &str, leg: &str, report: &BoundaryReport) -> Value {
 fn lines(records: &[Value]) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
     for record in records {
-        bytes
-            .extend(volantis_db_bench::harness_json::to_vec(record).map_err(|e| e.to_string())?);
+        bytes.extend(volantis_db_bench::harness_json::to_vec(record).map_err(|e| e.to_string())?);
         bytes.push(b'\n');
     }
     Ok(bytes)
@@ -429,7 +428,10 @@ fn run_inner(
                     let mut report = super::graph_reclaim::observe(seed, &mut coverage)?;
                     let race = super::graph_reclaim::race_observation(seed, &mut coverage)?;
                     report["reader_race"] = race;
-                    let reclaim = volantis_db::graph_commit_recovery_test_support::run_ze75_reclaim_evidence(seed);
+                    let reclaim =
+                        volantis_db::graph_commit_recovery_test_support::run_ze75_reclaim_evidence(
+                            seed,
+                        );
                     check_reclaim(&reclaim)?;
                     report["checkpoint_retry_reclaim"] = json!(reclaim.iter().map(|r| json!({
                     "cell": r.cell, "fires": r.fires, "controls": r.controls,

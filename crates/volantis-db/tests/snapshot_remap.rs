@@ -4,7 +4,6 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use tempfile::tempdir;
-use xxhash_rust::xxh3::xxh3_64;
 use volantis_db::format::frame::{FILE_HEADER_LEN, FILE_TRAILER_LEN};
 use volantis_db::ingest::{
     DocId, DocumentVersion, IngestBatch, IngestDocument, Revision, RowSource, SearchRequest,
@@ -26,6 +25,7 @@ use volantis_db::segment::layout::{
 use volantis_db::segment::reader::{SegmentReader, validate_segment_bytes};
 use volantis_db::segment::writer::{SegmentBuild, SegmentFactors, write_segment};
 use volantis_db::vfs::{StdVfs, SyncKind, Vfs, VfsFile};
+use xxhash_rust::xxh3::xxh3_64;
 
 const DIMS: usize = 32;
 const ROWS: usize = 3;

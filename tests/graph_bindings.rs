@@ -58,9 +58,7 @@ fn rust_cell(
         }
     }
 }
-fn rust_observe(
-    r: &volantis_db::property_graph::query::completed::CompletedGraphResult,
-) -> String {
+fn rust_observe(r: &volantis_db::property_graph::query::completed::CompletedGraphResult) -> String {
     (0..r.metadata().rows as usize)
         .map(|row| {
             (0..r.pools().columns.len())

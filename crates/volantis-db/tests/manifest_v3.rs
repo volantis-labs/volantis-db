@@ -116,10 +116,10 @@ fn manifest_v3_round_trips_after_the_clustering_extension() {
 #[cfg(feature = "graph-cypher")]
 #[test]
 fn manifest_v3_rejects_malformed_graph_sections() {
-    use xxhash_rust::xxh3::xxh3_64;
     use volantis_db::format::FormatFamily;
     use volantis_db::format::frame::{decode_artifact, encode_artifact};
     use volantis_db::manifest::ManifestError;
+    use xxhash_rust::xxh3::xxh3_64;
     let bytes = golden();
     let original = decode_artifact("golden", FormatFamily::Manifest, &bytes)
         .unwrap()

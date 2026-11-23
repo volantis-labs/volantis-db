@@ -2406,9 +2406,9 @@ fn query_status(error: QueryError) -> independent::PrimitiveStatus {
                 needed,
             }
         }
-        QueryError::Store(StoreError::Segment(
-            volantis_db::segment::SegmentError::Geometry(detail),
-        )) => independent::PrimitiveStatus::SegmentGeometry { detail },
+        QueryError::Store(StoreError::Segment(volantis_db::segment::SegmentError::Geometry(
+            detail,
+        ))) => independent::PrimitiveStatus::SegmentGeometry { detail },
         other => independent::PrimitiveStatus::SegmentGeometry {
             detail: other.to_string(),
         },

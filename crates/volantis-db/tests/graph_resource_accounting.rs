@@ -247,9 +247,7 @@ fn ze76_eligibility_distinguishes_examined_and_unique_ids() {
 
 #[test]
 fn ze76_public_replay_counts_canonical_byte_pairs() {
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
     use volantis_db::property_graph::{
         ApplicationKey, CanonicalContents, EntityKind, GraphRevision,
     };

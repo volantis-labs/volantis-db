@@ -19,9 +19,7 @@ use volantis_db::ingest::{
 use volantis_db::lifecycle::{
     CancelToken, GraphSearchOptions, OpenOptions, QueryControl, SearchOptions, SearchTier, Store,
 };
-use volantis_db::meta::{
-    Predicate, PredicateValue, RangeBound, RangePredicate, TIMESTAMP_COLUMN,
-};
+use volantis_db::meta::{Predicate, PredicateValue, RangeBound, RangePredicate, TIMESTAMP_COLUMN};
 use volantis_db::planner::{ExplicitScanTier, ScanReason, ScanReasonCounter};
 
 fn diagnostics_v1_text(diagnostics: &volantis_db::diag::QueryDiagnostics) -> String {

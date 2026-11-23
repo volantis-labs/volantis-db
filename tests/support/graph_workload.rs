@@ -402,9 +402,8 @@ pub fn primitive_snapshot(
     let mut ids = Ids::new();
     let mut metadata = BTreeMap::new();
     for line in BufReader::new(File::open(receipts).map_err(|e| e.to_string())?).lines() {
-        let v: Value =
-            volantis_db_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?;
+        let v: Value = volantis_db_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
         if let Some(rows) = v["receipts"].as_array() {
             for r in rows {
                 let k = key(&r["key"], s(r, "kind")?)?;

@@ -4,7 +4,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use tempfile::{TempDir, tempdir};
-use xxhash_rust::xxh3::xxh3_64;
 use volantis_db::ingest::{
     DocId, DocumentVersion, IngestBatch, IngestDocument, IngestError, Revision, SearchRequest,
 };
@@ -25,6 +24,7 @@ use volantis_db::segment::reader::SegmentReader;
 use volantis_db::segment::writer::{SegmentBuild, SegmentFactors, encode_segment};
 use volantis_db::segment::{MetadataDecodeProvenance, SegmentError, SegmentId};
 use volantis_db::vfs::StdVfs;
+use xxhash_rust::xxh3::xxh3_64;
 
 #[allow(dead_code)]
 #[path = "../../../tests/adversarial-oracle/src/metadata_filter_planner.rs"]

@@ -15,9 +15,7 @@ use volantis_db::manifest::io::{
 use volantis_db::manifest::{Manifest, ManifestError, encode_manifest};
 use volantis_db::meta::{AliveSet, ColumnStoreBuilder, Schema};
 use volantis_db::segment::reader::validate_segment_bytes;
-use volantis_db::segment::writer::{
-    SegmentBuild, SegmentFactors, encode_segment, write_segment,
-};
+use volantis_db::segment::writer::{SegmentBuild, SegmentFactors, encode_segment, write_segment};
 use volantis_db::segment::{SegmentError, SegmentId};
 #[cfg(not(feature = "test-seams"))]
 use volantis_db::vfs::VfsFile;

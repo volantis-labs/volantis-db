@@ -2,8 +2,8 @@
 #[allow(dead_code)]
 #[path = "../../../scripts/fixtures/common.rs"]
 mod common;
-use volantis_db as engine;
 use std::path::Path;
+use volantis_db as engine;
 use volantis_db::ingest::{DocId, SearchRequest};
 use volantis_db::lifecycle::{DocumentFields, SearchOptions, SearchTier, Store};
 use volantis_db::meta::{ColumnId, PredicateValue};
@@ -527,8 +527,7 @@ fn the_v0_6_0_reader_refuses_portable_namespaces_without_changing_data() {
     );
     let source_before = file_hashes(&source);
     let converted = conversion.path().join("converted");
-    volantis_db::lifecycle::namespace_relocate(&source, &converted)
-        .expect("explicit conversion");
+    volantis_db::lifecycle::namespace_relocate(&source, &converted).expect("explicit conversion");
     for name in ["a", "b"] {
         assert_refused(&converted, &converted.join(name));
     }

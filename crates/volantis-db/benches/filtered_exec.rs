@@ -6,9 +6,7 @@ use volantis_db::ingest::{
 use volantis_db::lifecycle::{
     CancelToken, OpenOptions, QueryControl, SearchOptions, SearchTier, Store,
 };
-use volantis_db::meta::{
-    Predicate, PredicateValue, RangeBound, RangePredicate, TIMESTAMP_COLUMN,
-};
+use volantis_db::meta::{Predicate, PredicateValue, RangeBound, RangePredicate, TIMESTAMP_COLUMN};
 
 const ROWS: usize = 5_000;
 const DIMENSIONS: usize = 64;

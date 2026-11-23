@@ -87,8 +87,7 @@ mod recovery {
             DurabilityPolicy::new(DurabilityMode::Durable, CommitTier::Durable).expect("policy"),
         )
         .expect("commit absorbed boundary");
-        let report =
-            volantis_db::verify::verify_store(directory.path()).expect("verify v2 store");
+        let report = volantis_db::verify::verify_store(directory.path()).expect("verify v2 store");
         assert!(
             report.findings.is_empty(),
             "unexpected findings: {:?}",

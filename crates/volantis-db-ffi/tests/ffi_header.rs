@@ -195,8 +195,8 @@ fn assert_header_gate() {
     let target_dir = workspace.join("target/ffi-header-gate");
     let archive = build_release_staticlib(&workspace, &target_dir);
 
-    let header = std::fs::read_to_string(crate_dir.join("include/volantis_db.h"))
-        .expect("committed header");
+    let header =
+        std::fs::read_to_string(crate_dir.join("include/volantis_db.h")).expect("committed header");
     let graph_header =
         std::fs::read_to_string(crate_dir.join("include/volantis_db_graph_contracts.h"))
             .expect("graph header");
@@ -312,8 +312,8 @@ fn cbindgen_output(crate_dir: &Path) -> String {
 fn the_committed_header_is_the_exact_cbindgen_output() {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let generated = cbindgen_output(crate_dir);
-    let committed = std::fs::read_to_string(crate_dir.join("include/volantis_db.h"))
-        .expect("committed header");
+    let committed =
+        std::fs::read_to_string(crate_dir.join("include/volantis_db.h")).expect("committed header");
     if generated != committed {
         let mut drift = Vec::new();
         for (line, (expected, actual)) in generated.lines().zip(committed.lines()).enumerate() {

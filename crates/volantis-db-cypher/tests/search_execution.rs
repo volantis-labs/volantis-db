@@ -98,7 +98,13 @@ fn ze58_independent_calls_preserve_bags_and_eager_counts() {
         if rows == 6 {
             let left = f.run("CALL ze.text_search('amber',2) YIELD node RETURN node");
             let right = f.run("CALL ze.vector_search([0,0],3,'exact') YIELD node RETURN node");
-            let id=|result:&volantis_db::property_graph::query::completed::CompletedGraphResult,row,col|match result.cell(row,col){Some(Value::Node(index))=>result.pools().nodes[*index as usize].id.get(),_=>panic!("node pair type")};
+            let id =
+                |result: &volantis_db::property_graph::query::completed::CompletedGraphResult,
+                 row,
+                 col| match result.cell(row, col) {
+                    Some(Value::Node(index)) => result.pools().nodes[*index as usize].id.get(),
+                    _ => panic!("node pair type"),
+                };
             let mut expected = Vec::new();
             for a in 0..2 {
                 for b in 0..3 {
@@ -339,12 +345,10 @@ fn ze58_runtime_refusals_return_no_partial_result() {
         assert!(e.nothing_committed());
     }
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e300] {
-        let bindings = [
-            volantis_db::property_graph::query::plan::ParameterBinding {
-                name: "x",
-                value: volantis_db::property_graph::query::QueryValue::F64(value),
-            },
-        ];
+        let bindings = [volantis_db::property_graph::query::plan::ParameterBinding {
+            name: "x",
+            value: volantis_db::property_graph::query::QueryValue::F64(value),
+        }];
         let error = f
             .try_run(
                 "CALL ze.vector_search([$x,0],1,'exact') YIELD node RETURN node",
@@ -386,9 +390,7 @@ fn ze58_runtime_refusals_return_no_partial_result() {
 }
 #[test]
 fn ze58_full_u128_ties_remain_ordered() {
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
     use volantis_db::property_graph::{
         ApplicationKey, CanonicalContents, EntityKind, GraphRevision, NodeId, RelId,
     };
@@ -413,13 +415,10 @@ fn ze58_full_u128_ties_remain_ordered() {
                 &search::control(),
             )
             .unwrap();
-        let volantis_db::property_graph::EntityId::Node(id) = receipt.receipts()[0].entity
-        else {
+        let volantis_db::property_graph::EntityId::Node(id) = receipt.receipts()[0].entity else {
             panic!("node receipt")
         };
-        use volantis_db::ingest::{
-            DocId, DocumentVersion, IngestBatch, IngestDocument, Revision,
-        };
+        use volantis_db::ingest::{DocId, DocumentVersion, IngestBatch, IngestDocument, Revision};
         store
             .ingest(IngestBatch::new(vec![
                 IngestDocument::new(
@@ -460,9 +459,7 @@ fn ze58_full_u128_ties_remain_ordered() {
 }
 #[test]
 fn ze58_graph_coverage_requires_actual_traversal() {
-    use volantis_db::property_graph::staging::{
-        StructuredOperation, StructuredWrite, WriteImage,
-    };
+    use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
     use volantis_db::property_graph::{
         ApplicationKey, CanonicalContents, CanonicalEmbedding, EntityKind, GraphRevision,
     };

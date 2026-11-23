@@ -9,9 +9,7 @@ use volantis_db::ingest::{
 };
 use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl, SearchOptions, Store};
 use volantis_db::segment::layout::RegionKind;
-use volantis_db_adversarial_oracle::diagnostics_health::{
-    DiagnosticsInput, DiagnosticsObserved,
-};
+use volantis_db_adversarial_oracle::diagnostics_health::{DiagnosticsInput, DiagnosticsObserved};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticsOperationKind {

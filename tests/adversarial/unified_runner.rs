@@ -706,9 +706,7 @@ fn node_text_preparation_cancel(root: &Path, seed: u64) -> Result<(), String> {
         return Err("node receipt expected".into());
     };
     let token = CancelToken::new();
-    volantis_db::graph_structured_write_test_support::cancel_node_text_preparation(
-        token.clone(),
-    );
+    volantis_db::graph_structured_write_test_support::cancel_node_text_preparation(token.clone());
     let error = store
         .graph_apply(&put, &QueryControl::Cancel(token))
         .err()

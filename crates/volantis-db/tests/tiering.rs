@@ -10,7 +10,6 @@ use rand::Rng;
 mod test_support;
 
 use tempfile::{TempDir, tempdir};
-use xxhash_rust::xxh3::xxh3_64;
 use volantis_db::epoch::{
     ComputeUnits, EmbeddingEpoch, EmbeddingRuntime, EmbeddingTower, Normalization, StoreEpoch,
 };
@@ -31,9 +30,8 @@ use volantis_db::quant::{Bit4Factors, quantize_bit4};
 use volantis_db::segment::SegmentId;
 use volantis_db::segment::layout::{REGION_ENTRY_LEN, RegionKind, SEGMENT_PREFIX_LEN};
 use volantis_db::tier::maintain::UncarriedRegionKind;
-use volantis_db::tier::{
-    MaintenanceBudget, MaintenanceReport, MaintenanceStatus, TierThresholds,
-};
+use volantis_db::tier::{MaintenanceBudget, MaintenanceReport, MaintenanceStatus, TierThresholds};
+use xxhash_rust::xxh3::xxh3_64;
 
 const DIMS: usize = 128;
 const GRAPH_TEST_ROWS: usize = 128;

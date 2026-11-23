@@ -33,9 +33,7 @@ use volantis_db::vfs::fault::BlockingVfs;
 use volantis_db::wal::header::{WAL_HEADER_LEN, WalHeaderError};
 use volantis_db::wal::record::{RECORD_HEADER_LEN, RecordError};
 use volantis_db::wal::replay::{CorruptionLocation, CorruptionReason};
-use volantis_db::wal::{
-    LogSeq, VisibleRecordError, WalReadError, WalRecoveryError, WalWriteError,
-};
+use volantis_db::wal::{LogSeq, VisibleRecordError, WalReadError, WalRecoveryError, WalWriteError};
 
 #[test]
 fn committed_write_is_visible_to_next_query() {

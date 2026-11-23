@@ -1293,9 +1293,8 @@ fn graph_result_native_driver_finalizes_all_23_exact_counters() {
             );
         }
         assert_eq!((rows[22].kind, rows[22].value), (22, peak as u64));
-        let native_bytes = size_of::<
-            volantis_db::property_graph::query::completed::CompletedGraphResult,
-        >() as u64;
+        let native_bytes =
+            size_of::<volantis_db::property_graph::query::completed::CompletedGraphResult>() as u64;
         let c_bytes = (23 * size_of::<ZeGraphWorkCounter>()) as u64;
         assert_eq!(counters.get(WorkKind::CompletedRows), 6 + 1);
         assert_eq!(counters.get(WorkKind::CompletedBytes), 7 + native_bytes);

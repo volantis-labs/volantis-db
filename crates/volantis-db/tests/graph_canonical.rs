@@ -253,8 +253,7 @@ fn original_vector_bits_and_every_document_field_determine_contents() {
     );
     let mut first_code = [0];
     let mut second_code = [0];
-    volantis_db::quant::quantize_bit4(&[1.0, 0.0001], &mut first_code)
-        .expect("first quantization");
+    volantis_db::quant::quantize_bit4(&[1.0, 0.0001], &mut first_code).expect("first quantization");
     volantis_db::quant::quantize_bit4(&[1.0, 0.00010001], &mut second_code)
         .expect("second quantization");
     assert_eq!(
