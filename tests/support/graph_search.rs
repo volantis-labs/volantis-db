@@ -374,6 +374,64 @@ impl Corpus {
         self.model.generation += 1;
         Ok(())
     }
+    /// WF-984: four live "amber" nodes with equal BM25 scores, whose physical
+    /// lexical order disagrees with their node IDs 4, 7, 11 and 13. It applies
+    /// the graph qualification mutations, then rewrites item (4) after a
+    /// checkpoint so its live indexed row moves behind the other three.
+    pub fn wf984_amber_tie() -> Self {
+        let mut c = Self::new();
+        c.checkpoint().unwrap();
+        c.apply(&oracle::Mutation {
+            key: oracle::Key {
+                kind: oracle::Kind::Node,
+                namespace: "ze65".into(),
+                value: "a".into(),
+            },
+            operation: oracle::Operation::Delete,
+            revision: 3,
+            expected: oracle::Expectation::Entity(6),
+            detach: true,
+            image: None,
+        });
+        c.node(
+            "empty",
+            "Eligible",
+            Some("amber"),
+            Some([4.0, 0.0]),
+            3,
+            oracle::Operation::Put,
+        );
+        c.apply(&oracle::Mutation {
+            key: oracle::Key {
+                kind: oracle::Kind::Node,
+                namespace: "ze65".into(),
+                value: "outside".into(),
+            },
+            operation: oracle::Operation::Delete,
+            revision: 3,
+            expected: oracle::Expectation::Entity(8),
+            detach: false,
+            image: None,
+        });
+        c.node(
+            "outside",
+            "Outside",
+            Some("amber"),
+            Some([0.0, 0.0]),
+            4,
+            oracle::Operation::Recreate,
+        );
+        c.checkpoint().unwrap();
+        c.node(
+            "item",
+            "Item",
+            Some("amber"),
+            None,
+            3,
+            oracle::Operation::Put,
+        );
+        c
+    }
     pub fn reopen(&mut self) {
         assert_eq!(self.store.take().unwrap().release(), 0);
         self.store = Some(ProbeStore::open(&self.dir.path().join("graph")).unwrap());

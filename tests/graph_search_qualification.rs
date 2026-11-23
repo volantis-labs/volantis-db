@@ -181,6 +181,60 @@ fn ze65_compaction_preserves_logical_search() {
     }
     println!("ZE65 relocated_refs={relocated}");
 }
+/// WF-984: equal BM25 scores rank by ascending full node ID, and a `k`
+/// inside the tie keeps the prefix of that order. Retrieval contract:
+/// descending score, then ascending full NodeId; the oracle uses the same.
+#[test]
+fn wf984_graph_text_tie_crosses_top_k() {
+    let mut c = Corpus::wf984_amber_tie();
+    let snapshot = c.snapshot();
+    for reopened in [false, true] {
+        if reopened {
+            c.reopen();
+        }
+        let cases = [(4, &[4_u128, 7, 11, 13][..]), (2, &[4, 7][..])];
+        let observations: Vec<Vec<_>> = cases
+            .iter()
+            .map(|(k, _)| {
+                let rows = observe(&c.run(&format!(
+                    "CALL ze.text_search('amber',{k}) YIELD node,score RETURN node,score"
+                )));
+                let observed: Vec<_> = rows
+                    .iter()
+                    .map(|row| match (&row[0], &row[1]) {
+                        (oracle::Cell::Node(id), oracle::Cell::Score(bits)) => (*id, *bits),
+                        other => panic!("unexpected row {other:?}"),
+                    })
+                    .collect();
+                println!("WF984 reopened={reopened} k={k} observed={observed:?}");
+                observed
+            })
+            .collect();
+        for ((k, ids), observed) in cases.into_iter().zip(observations) {
+            let observed_ids: Vec<_> = observed.iter().map(|(id, _)| *id).collect();
+            assert_eq!(observed_ids, ids, "reopened={reopened} k={k}");
+            assert!(f64::from_bits(observed[0].1).is_finite());
+            assert!(observed.iter().all(|(_, bits)| *bits == observed[0].1));
+            let expected = oracle::query(
+                &snapshot,
+                &oracle::Query::LexicalEvidence {
+                    terms: vec!["amber".into()],
+                    phrase: false,
+                    k,
+                },
+            )
+            .unwrap();
+            let expected_ids: Vec<_> = expected
+                .iter()
+                .map(|row| match row[0] {
+                    oracle::Cell::Node(id) => id,
+                    _ => panic!("oracle node"),
+                })
+                .collect();
+            assert_eq!(expected_ids, ids, "oracle k={k}");
+        }
+    }
+}
 use volantis_db::property_graph::query::completed::{
     ActualTier, CandidateCoverage, LegState, ScorePrecision,
 };

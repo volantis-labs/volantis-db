@@ -28,18 +28,32 @@ impl Store {
             query => PinnedLexicalQuery::Structured(query),
         };
         let mut preparation = prepared_lexical::PreparedLexicalQuery::new(lexical);
-        let (hits, _, counters, _) = match lexical {
-            PinnedLexicalQuery::Term(_) => {
-                exact_lexical_leg(inputs, k, &cancellation, &mut preparation)?
+        // The lexical legs break equal scores by physical (segment, row)
+        // order. Graph text breaks them by ascending full node ID, so a
+        // document tied with the k-th score can lie beyond the leg bound with
+        // a smaller ID. Score one extra hit, and widen the bound until the
+        // hits hold every document tied with the k-th score.
+        let mut bound = k.saturating_add(1);
+        let mut counters = crate::fts::search::SearchCounters::default();
+        let hits = loop {
+            let (hits, _, leg_counters, _) = match lexical {
+                PinnedLexicalQuery::Term(_) => {
+                    exact_lexical_leg(inputs, bound, &cancellation, &mut preparation)?
+                }
+                PinnedLexicalQuery::Structured(query) => exact_structured_lexical_leg(
+                    inputs,
+                    &self.tokenizer,
+                    query,
+                    bound,
+                    &cancellation,
+                    &mut preparation,
+                )?,
+            };
+            accumulate_search_counters(&mut counters, &leg_counters);
+            match widened_bound(&hits, k, bound) {
+                Some(wider) => bound = wider,
+                None => break hits,
             }
-            PinnedLexicalQuery::Structured(query) => exact_structured_lexical_leg(
-                inputs,
-                &self.tokenizer,
-                query,
-                k,
-                &cancellation,
-                &mut preparation,
-            )?,
         };
         // Count matching eligible posting membership before top-k. Scorer
         // work counters count evaluated rows and cannot stand in for this domain.
@@ -109,6 +123,7 @@ impl Store {
                 })
             })
             .collect::<Result<Vec<_>, crate::fusion::FusionError>>()?;
+        let candidates = rank_graph_text(candidates, k);
         let mut diagnostics =
             crate::diag::QueryDiagnostics::lexical(crate::diag::LexicalDiagnostics {
                 snapshot_generation: pin.generation,
@@ -131,6 +146,32 @@ impl Store {
             matching,
         ))
     }
+}
+
+/// Returns a wider leg bound while the leg filled `bound` and its last hit
+/// still ties the k-th score, so an unscored document can share that score.
+fn widened_bound(hits: &[hybrid::LexicalHit], k: usize, bound: usize) -> Option<usize> {
+    let kth = hits.get(k.checked_sub(1)?)?.bm25;
+    let last = hits.last()?.bm25;
+    (hits.len() >= bound && last >= kth).then_some(bound.saturating_mul(2))
+}
+
+/// Graph text order: descending BM25, then ascending full node ID. This is
+/// the retrieval tie rule. It is not the physical (segment, row) key that
+/// the lexical scorers use for their own ties. Node IDs are unique among
+/// live hits, so an unstable sort gives one order.
+fn rank_graph_text(
+    mut candidates: Vec<crate::ingest::LexicalCandidate>,
+    k: usize,
+) -> Vec<crate::ingest::LexicalCandidate> {
+    candidates.sort_unstable_by(|left, right| {
+        right
+            .score
+            .total_cmp(&left.score)
+            .then_with(|| left.document.doc_id().cmp(&right.document.doc_id()))
+    });
+    candidates.truncate(k);
+    candidates
 }
 
 impl Store {
@@ -219,5 +260,37 @@ impl Store {
             HybridPreparationError::Preparation(never) => match never {},
             HybridPreparationError::Search(error) => error,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rank_graph_text;
+    use crate::ingest::{DocId, DocumentVersion, LexicalCandidate, Revision};
+
+    fn candidate(id: u128, score: f64) -> LexicalCandidate {
+        LexicalCandidate {
+            document: DocumentVersion::new(DocId::new(id), Revision::new(1)),
+            score,
+        }
+    }
+
+    fn ids(candidates: &[LexicalCandidate]) -> Vec<u128> {
+        candidates
+            .iter()
+            .map(|candidate| candidate.document.doc_id().get())
+            .collect()
+    }
+
+    /// WF-984: equal graph text scores rank by ascending full node ID, not
+    /// by the physical order in which the lexical leg offers them.
+    #[test]
+    fn wf984_four_equal_nodes_use_durable_id() {
+        let physical = [7, 11, 13, 4].map(|id| candidate(id, 1.0));
+        assert_eq!(ids(&rank_graph_text(physical.to_vec(), 4)), [4, 7, 11, 13]);
+        assert_eq!(ids(&rank_graph_text(physical.to_vec(), 2)), [4, 7]);
+        let mut scored = physical.to_vec();
+        scored.push(candidate(99, 2.0));
+        assert_eq!(ids(&rank_graph_text(scored, 2)), [99, 4]);
     }
 }
