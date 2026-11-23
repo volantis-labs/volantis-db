@@ -72,7 +72,8 @@ for path in sys.argv[2:-1]:
     m.check_exports(Path(path), sys.argv[-1])
 CHECK
 
-if [ "$ARTIFACT" = legacy ] && grep -En 'ZeText|ze_text_' "$STAGE_DIR/include/volantis_db.h"; then
+# ZeTextModelRef stays: every build's embedded namespace specs carry it.
+if [ "$ARTIFACT" = legacy ] && grep -Eon 'ZeText[A-Za-z0-9_]*|ze_text_[A-Za-z0-9_]*' "$STAGE_DIR/include/volantis_db.h" | grep -v ':ZeTextModelRef$'; then
     echo "ERROR: core SDK header exposes the optional text ABI" >&2
     exit 1
 fi

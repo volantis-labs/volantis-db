@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import re
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -32,9 +33,14 @@ class TextPackaging(unittest.TestCase):
             destination = Path(tmp)
             load('core_header').write_artifact_headers(source, destination, 'legacy')
             contents = (destination / 'volantis_db.h').read_text()
-            self.assertNotIn('ZeText', contents)
             self.assertNotIn('ze_text_', contents)
+            # Embedded namespace specs exist in every build and embed the model reference.
+            self.assertEqual(set(re.findall(r'\bZeText\w*', contents)), {'ZeTextModelRef'})
             self.assertIn('ze_open(', contents)
+            consumer = destination / 'consumer.c'
+            consumer.write_text('#include "volantis_db.h"\nint main(void) { return 0; }\n')
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Werror', '-fsyntax-only', '-I', str(destination), str(consumer)],
+                           check=True)
 
     def test_full_exports_include_complete_text_abi(self):
         checker = load('check-graph-artifact')

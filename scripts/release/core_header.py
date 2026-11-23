@@ -24,8 +24,12 @@ TEXT_FUNCTIONS = {
     "ze_text_query_outcome_free",
     "ze_text_observed_compute_units",
 }
+# Embedded namespace specs (ZeEmbeddedNamespaceSpec and its versions) are part
+# of the namespace ABI in every build and carry a ZeTextModelRef field, so the
+# model reference stays in the text-free header. Text-free builds refuse an
+# embedded open with ZE_ERR_UNSUPPORTED.
+SHARED_TEXT_TYPES = {"ZeTextModelRef"}
 TEXT_TYPES = {
-    "ZeTextModelRef",
     "ZeTextDocument",
     "ZeTextIngestRequest",
     "ZeTextOpenRequest",
@@ -74,7 +78,7 @@ def write_core_header(source: Path, destination: Path) -> None:
             if line.rstrip().endswith(";"):
                 skipping_function = False
             continue
-        if line.startswith("typedef struct ZeText"):
+        if line.startswith("typedef struct ZeText") and line.split()[2] not in SHARED_TEXT_TYPES:
             item = line.split()[2]
             if item not in TEXT_TYPES:
                 raise RuntimeError(f"unexpected text ABI type: {item}")
