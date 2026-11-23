@@ -386,8 +386,8 @@ fn pack_vectors() {
     let precision = required("E5_PRECISION");
     let floor = match precision.as_str() {
         "fp32" => 0.9999,
-        // fp16 is reported; this floor only catches a broken graph.
-        "fp16" => 0.99,
+        // WF-987 owner gate for the FP16 release bundle, per row against fp32 goldens.
+        "fp16" => 0.999,
         other => panic!("set E5_PRECISION to fp32 or fp16, got {other}"),
     };
     let texts = std::fs::read(pack.join("fixtures/texts.json")).expect("texts.json");

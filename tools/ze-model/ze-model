@@ -676,14 +676,148 @@ def write_bundle(args: argparse.Namespace, towers: tuple[Tower, ...], alignment:
     )
 
 
+# The model card lists every task that loses more than this nDCG@10 against the ceiling.
+CARD_LOSS = 0.05
+CEILING = "ceiling_retrieval_e5_as_query_tower"
+
+
+def card_inputs(pack: Path, pair: dict) -> dict:
+    """Read and check every model card source before anything is baked."""
+    for key, kind in [("target_languages", list), ("measured_retrieval", dict),
+                      (CEILING, dict), ("release_status", str)]:
+        if not isinstance(pair.get(key), kind) or not pair[key]:
+            raise ValueError(f"release card: PAIR.json needs a non-empty {key}")
+    for role in ("query", "document"):
+        if type(pair[role].get("parameters")) is not int:
+            raise ValueError(f"release card: PAIR.json {role} needs integer parameters")
+    for group, values in pair["measured_retrieval"].items():
+        if not isinstance(pair[CEILING].get(group), dict) or not isinstance(values, dict):
+            raise ValueError(f"release card: {CEILING} has no {group!r} group")
+    provenance = pack / "PROVENANCE.md"
+    if not provenance.is_file():
+        raise ValueError("release card: the pack has no PROVENANCE.md")
+    licences = sorted(p for p in (pack / "licenses").rglob("*") if p.is_file())
+    if not licences:
+        raise ValueError("release card: the pack has no files in licenses/")
+    query = pair["query"]["name"]
+    if "/" in query:
+        raise ValueError(f"release card: query name {query!r} is not a file stem")
+    tables = []
+    for name in [f"retrieval-{query}.json", "retrieval-e5-ceiling.json"]:
+        path = pack / "benchmarks" / name
+        if not path.is_file():
+            raise ValueError(f"release card: the pack has no benchmarks/{name}")
+        tables.append({(m["task"], m["hf_subset"], m["split"]): m["ndcg_at_10"]
+                       for m in json_file(path)["metrics"]})
+    if tables[0].keys() != tables[1].keys() or not tables[0]:
+        raise ValueError("release card: the two benchmark files list different tasks")
+    tasks = sorted(((key, tables[0][key], tables[1][key]) for key in tables[0]),
+                   key=lambda row: (row[1] - row[2], row[0]))
+    return {"provenance": provenance.read_text(), "licences": licences, "tasks": tasks}
+
+
+def model_card(args: argparse.Namespace, pair: dict, pair_sha256: str, inputs: dict,
+               manifest: dict, manifest_sha256: str, licences: list[str]) -> str:
+    """Render the Hugging Face model card from the pack and the measured output bytes."""
+    query_precision = (args.query_mlx_precision or args.document_precision).upper()
+    precision = {"query": query_precision, "document": args.document_precision.upper()}
+    total = sum(entry["size"] for entry in manifest["files"])
+    lines = ["---", f"license: {args.card_license}", "language:"]
+    lines += [f"- {language}" for language in pair["target_languages"]]
+    lines += ["tags:", "- volantis-db", "- text-embeddings", "- mlx"]
+    if pair["document"].get("revision"):
+        lines += ["base_model:", f"- {pair['document']['name']}"]
+    lines += ["---", "", f"# {args.name}", "",
+              f"Two-tower text embedding model for Volantis DB. The query tower is "
+              f"`{pair['query']['name']}`. The document tower is `{pair['document']['name']}`. "
+              f"Each tower gives an L2-normalized vector of {pair['dimension']} dimensions. "
+              f"The score is the dot product of the two vectors.", "",
+              "## Towers", "",
+              "| Role | Model | Revision | Parameters | Prefix | Max tokens | Pooling | Dimensions | Weights |",
+              "|---|---|---|---|---|---|---|---|---|"]
+    for role in ("query", "document"):
+        tower = pair[role]
+        lines.append(f"| {role} | `{tower['name']}` | {tower.get('revision') or '-'} | "
+                     f"{tower['parameters']:,} | `{tower['prefix']}` | {tower['max_tokens']} | "
+                     f"{tower['pooling']} | {pair['dimension']} | {precision[role]} |")
+    lines.append("")
+    for role in ("query", "document"):
+        if pair[role].get("parameters_note"):
+            lines.append(f"- {role.capitalize()} parameters: {pair[role]['parameters_note']}.")
+        if pair[role].get("weights_sha256"):
+            lines.append(f"- {role.capitalize()} source weights SHA-256 (FP32 safetensors): "
+                         f"`{pair[role]['weights_sha256']}`.")
+    lines += ["- The token limits include the prefix and the two special tokens.",
+              "- A query longer than its limit is cut. A long document is split into chunks.", "",
+              "## Runtime", ""]
+    if manifest["query_coreml"] is None:
+        lines.append("MLX only, on Apple silicon. No Core ML query model ships: "
+                     "`query_coreml` is null in `volantis-model.json`.")
+    else:
+        lines.append(f"Core ML query model `{manifest['query_coreml']}` "
+                     f"({args.query_coreml.upper()}, {pair['query']['max_tokens']} tokens). "
+                     "The bundle also keeps the MLX query weights.")
+    lines += ["", "## Files", "", "| File | Bytes | SHA-256 |", "|---|---|---|"]
+    lines += [f"| `{e['path']}` | {e['size']:,} | `{e['sha256']}` |" for e in manifest["files"]]
+    lines += ["", f"Download size: {total:,} bytes.",
+              f"SHA-256 of `volantis-model.json`: `{manifest_sha256}`.",
+              "Volantis DB opens this model by repository, a full 40-character commit of this "
+              "repository and this manifest SHA-256. It checks the size and SHA-256 of each file.",
+              "", "## Languages", "",
+              f"Target languages: {', '.join(pair['target_languages'])}.", "",
+              "Quality drops outside the target languages. These tasks lose more than "
+              f"{CARD_LOSS} nDCG@10 against e5 as the query tower:", ""]
+    losses = [row for row in inputs["tasks"] if row[1] - row[2] < -CARD_LOSS]
+    lines += [f"- {task} {subset}: {ours:.3f} with this query tower, {ceiling:.3f} with e5."
+              for (task, subset, _), ours, ceiling in losses] or ["- None."]
+    lines += ["", "## Retrieval", "",
+              "nDCG@10 and recall@100 of this pair, and of the same pair with e5 as the query "
+              "tower (ceiling). Source: `PAIR.json` of the source pack.", "",
+              "| Group | Tasks | nDCG@10 | Ceiling nDCG@10 | Recall@100 | Ceiling recall@100 |",
+              "|---|---|---|---|---|---|"]
+    for group, values in pair["measured_retrieval"].items():
+        ceiling = pair[CEILING][group]
+        lines.append(f"| {group} | {values.get('count', '-')} | {values['ndcg_at_10']:.3f} | "
+                     f"{ceiling['ndcg_at_10']:.3f} | {values['recall_at_100']:.3f} | "
+                     f"{ceiling['recall_at_100']:.3f} |")
+    lines += ["", "Each task, largest loss first:", "",
+              "| Task | Subset | Split | nDCG@10 | Ceiling | Delta |", "|---|---|---|---|---|---|"]
+    lines += [f"| {task} | {subset} | {split} | {ours:.3f} | {ceiling:.3f} | {ours - ceiling:+.3f} |"
+              for (task, subset, split), ours, ceiling in inputs["tasks"]]
+    provenance = inputs["provenance"].strip().splitlines()
+    if provenance and provenance[0].startswith("# "):
+        provenance = "\n".join(provenance[1:]).strip().splitlines()
+    lines += ["", "## Provenance", "", "Text of the source pack `PROVENANCE.md`:", "",
+              *[f"> {line.rstrip()}".rstrip() for line in provenance], "",
+              "This repository ships the text above, the model card and `licenses/`. Other "
+              "source pack files, for example `provenance/` manifests and `benchmarks/`, are "
+              "not in this repository.", "",
+              f"Source pack status (`PAIR.json`): {pair['release_status']}", "",
+              f"Source pack `PAIR.json` SHA-256: `{pair_sha256}`. "
+              "The bundle stores this digest as its pair alignment identity.", "",
+              "## Licences", "",
+              f"Licence of this repository: `{args.card_license}`. The files below state the "
+              "licence of each source and the training-data obligations. Read them before you "
+              "redistribute the model.", ""]
+    lines += [f"- `{path}`" for path in licences]
+    return "\n".join(lines) + "\n"
+
+
 def release(args: argparse.Namespace) -> None:
+    if args.query_coreml_precision is not None:
+        raise ValueError("--query-coreml-precision was replaced by --query-coreml none|fp16|int8")
+    if args.query_coreml is None:
+        raise ValueError("release requires --query-coreml none|fp16|int8")
     # Match the downloader's conservative single-component path contract.
     if (not args.name or args.name in (".", "..")
             or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_." for c in args.name)):
         raise ValueError("--name must be a safe single file stem")
+    if not args.card_license or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-." for c in args.card_license):
+        raise ValueError("--card-license must be a Hugging Face licence identifier")
     pack = Path(args.pack).resolve()
     pair_bytes = (pack / "PAIR.json").read_bytes()
     pair = json.loads(pair_bytes)
+    inputs = card_inputs(pack, pair)
     out = Path(args.out).resolve()
     if out.exists() and (not out.is_dir() or any(out.iterdir())):
         raise FileExistsError(f"release output must be absent or empty: {out}")
@@ -691,52 +825,60 @@ def release(args: argparse.Namespace) -> None:
     # Stage outside the upload directory; never publish an incomplete manifest.
     with tempfile.TemporaryDirectory(prefix="ze-model-release-", dir=out.parent) as temporary:
         stage = Path(temporary)
+        # PAIR.json is the only source of tower names, prefixes and limits.
         bake(argparse.Namespace(
-            document=str(pack / pair["document"]["path"]), document_id=pair["document"]["name"],
-            query=str(pack / pair["query"]["path"]), query_id=pair["query"]["name"],
-            query_prefix=pair["query"]["prefix"], query_max_tokens=96, document_max_tokens=8192,
-            document_precision=args.document_precision, query_mlx_precision=args.query_mlx_precision,
-            alpha=0.5,
-            alignment_digest=hashlib.sha256(pair_bytes).hexdigest(),
+            pair=str(pack / "PAIR.json"), document=None, document_id=None, query=None,
+            query_id=None, query_prefix=None, alignment_digest="", query_max_tokens=None,
+            document_max_tokens=None, document_precision=args.document_precision,
+            query_mlx_precision=args.query_mlx_precision, alpha=0.5,
             output=str(stage / f"{args.name}.zem")))
-        coreml_export(argparse.Namespace(query=str(pack / pair["query"]["path"]), tokens=96,
-                                       precision=args.query_coreml_precision,
-                                       output=str(stage / f"{args.name}.mlpackage")))
-        # The exporter also writes source package/receipt; only compiled bytes ship.
         payload = [stage / f"{args.name}.zem"]
-        compiled = stage / f"{args.name}.mlmodelc"
-        compiled_files = sorted(p for p in compiled.rglob("*") if p.is_file())
-        if not compiled_files:
-            raise ValueError("CoreML compiler produced no files")
-        payload.extend(compiled_files)
+        shipped = [stage / f"{args.name}.zem"]
+        if args.query_coreml != "none":
+            coreml_export(argparse.Namespace(query=str(pack / pair["query"]["path"]),
+                                           tokens=pair["query"]["max_tokens"],
+                                           precision=args.query_coreml,
+                                           output=str(stage / f"{args.name}.mlpackage")))
+            # The exporter also writes source package/receipt; only compiled bytes ship.
+            compiled = stage / f"{args.name}.mlmodelc"
+            compiled_files = sorted(p for p in compiled.rglob("*") if p.is_file())
+            if not compiled_files:
+                raise ValueError("CoreML compiler produced no files")
+            payload.extend(compiled_files)
+            shipped.append(compiled)
         files = []
         for path in sorted(payload):
-            with path.open("rb") as source:
-                digest = hashlib.file_digest(source, "sha256").hexdigest()
             files.append({"path": path.relative_to(stage).as_posix(),
-                          "size": path.stat().st_size, "sha256": digest})
+                          "size": path.stat().st_size, "sha256": file_sha256(path)})
         manifest = {"format": 1, "name": args.name, "bundle": f"{args.name}.zem",
-                    "query_coreml": f"{args.name}.mlmodelc", "files": files}
+                    "query_coreml": None if args.query_coreml == "none" else f"{args.name}.mlmodelc",
+                    "files": files}
         (stage / "volantis-model.json").write_text(json.dumps(manifest, indent=2) + "\n")
-        sizes = {"document_precision": args.document_precision,
-                 "bundle_bytes": (stage / f"{args.name}.zem").stat().st_size,
-                 "query_coreml_bytes": sum(p.stat().st_size for p in compiled_files)}
-        (stage / "README.md").write_text(
-            f"# {args.name}\n\nModel card pending ZE-500.\n\n"
-            f"Document weights: {args.document_precision}; CoreML query: {args.query_coreml_precision}, 96 tokens.\n"
-            f"The bundle retains {(args.query_mlx_precision or args.document_precision).upper()} MLX query weights and both tokenizers.\n\n"
-            f"Sizes (bytes): bundle {sizes['bundle_bytes']}; compiled query {sizes['query_coreml_bytes']}.\n")
-        payload.extend([stage / "volantis-model.json", stage / "README.md"])
-        checksums = []
-        for path in sorted(payload):
-            with path.open("rb") as source:
-                checksums.append(f"{hashlib.file_digest(source, 'sha256').hexdigest()}  {path.relative_to(stage).as_posix()}\n")
+        # Licences and the card ship for people; the loader needs only the manifest files.
+        licences = []
+        for source in inputs["licences"]:
+            target = stage / "licenses" / source.relative_to(pack / "licenses")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+            licences.append(target.relative_to(stage).as_posix())
+        (stage / "README.md").write_text(model_card(
+            args, pair, hashlib.sha256(pair_bytes).hexdigest(), inputs, manifest,
+            file_sha256(stage / "volantis-model.json"), licences))
+        payload += [stage / "volantis-model.json", stage / "README.md"]
+        payload += [stage / path for path in licences]
+        checksums = [f"{file_sha256(path)}  {path.relative_to(stage).as_posix()}\n"
+                     for path in sorted(payload)]
         (stage / "SHA256SUMS").write_text("".join(checksums))
+        shipped += [stage / name for name in
+                    ["volantis-model.json", "README.md", "licenses", "SHA256SUMS"]]
         out.mkdir(exist_ok=True)
-        for path in [stage / f"{args.name}.zem", compiled, stage / "volantis-model.json",
-                     stage / "README.md", stage / "SHA256SUMS"]:
+        for path in shipped:
             shutil.move(str(path), out / path.name)
-        print(json.dumps(sizes, sort_keys=True))
+        bundle = (out / manifest["bundle"]).stat().st_size
+        print(json.dumps({"bundle_bytes": bundle,
+                          "query_coreml_bytes": sum(e["size"] for e in files) - bundle,
+                          "manifest_sha256": file_sha256(out / "volantis-model.json")},
+                         sort_keys=True))
 
 
 def _linear(torch_module, tensors: dict[str, torch.Tensor], base: str):
@@ -1039,7 +1181,12 @@ def parser() -> argparse.ArgumentParser:
     release_parser.add_argument("--document-precision", choices=("fp32", "fp16"), required=True)
     release_parser.add_argument("--query-mlx-precision", choices=("fp32", "fp16"),
                                 help="MLX query weights (default: document precision)")
-    release_parser.add_argument("--query-coreml-precision", choices=("fp16", "int8"), default="fp16")
+    release_parser.add_argument("--query-coreml", choices=("none", "fp16", "int8"),
+                                help="Core ML query model precision; none ships MLX only (required)")
+    # Removed flag: kept only so release can name its replacement.
+    release_parser.add_argument("--query-coreml-precision", help=argparse.SUPPRESS)
+    release_parser.add_argument("--card-license", required=True,
+                                help="Hugging Face licence identifier for the model card")
     export = commands.add_parser("coreml-export")
     export.add_argument("--query", required=True)
     export.add_argument("--precision", choices=("fp16", "int8"), default="fp16")

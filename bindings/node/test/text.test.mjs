@@ -318,3 +318,38 @@ test('all text opens validate mlxCacheLimitBytes as an unsigned bigint', {skip: 
     await assert.rejects(TextStore.openModel({path: '/unused', offline: true, ...options}), invalid);
   }
 });
+
+// WF-987: opt-in loopback rehearsal of a release folder before upload (WF987_RELEASE).
+test('WF-987 release model downloads, verifies and reopens offline', {skip: !supported || !process.env.WF987_RELEASE}, async () => {
+  const {serveRelease, useEndpoint, DOCUMENTS, QUERY} = await import('./fixtures/wf987-release-server.mjs');
+  const server = await serveRelease();
+  const restore = useEndpoint(server.url);
+  const root = mkdtempSync(join(tmpdir(), 'wf987-model-'));
+  const options = {path: join(root, 'store'), ...server.pin, cacheDir: join(root, 'cache')};
+  const bytes = server.manifest.files.reduce((sum, file) => sum + BigInt(file.size), 0n);
+  let store;
+  try {
+    const events = [];
+    const started = performance.now();
+    store = await TextStore.openModel({...options, onProgress: event => events.push(event)});
+    const seconds = (performance.now() - started) / 1000;
+    console.log(`WF-987 loopback download and verify: ${bytes} bytes in ${seconds.toFixed(1)} s`);
+    assert.deepEqual(server.requests.map(url => url.split('/').at(-1)).sort(),
+      [...server.manifest.files.map(file => file.path), 'volantis-model.json'].sort());
+    assert.deepEqual(events.at(-1), {done: bytes, total: bytes});
+    await store.ingestAsync(DOCUMENTS);
+    const online = await store.queryAsync({text: QUERY, legs: 'dense', k: 2});
+    assert.deepEqual(online.hits.map(hit => hit.id), DOCUMENTS.map(doc => doc.id));
+    assert.ok(online.hits[0].score > online.hits[1].score);
+    assert.match(online.backend.runtimeName, /mlx/i);
+    store.close(); store = undefined;
+    const requests = server.requests.length;
+    store = await TextStore.openModel({...options, offline: true});
+    assert.equal(server.requests.length, requests, 'offline reopen makes no request');
+    const offline = store.query({text: QUERY, legs: 'dense', k: 2});
+    assert.deepEqual(offline.hits.map(hit => [hit.id, hit.score]), online.hits.map(hit => [hit.id, hit.score]));
+  } finally {
+    store?.close(); await server.close(); restore();
+    rmSync(root, {recursive: true, force: true});
+  }
+});

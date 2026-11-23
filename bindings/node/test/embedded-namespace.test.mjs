@@ -218,3 +218,30 @@ test('deferred embedded namespace commits before inference', {skip: !nativeMetal
 test('deferred paused writes survive reopen', {skip: !nativeMetal}, () => {
   runCacheCase('deferred-reopen');
 });
+
+// WF-987: opt-in loopback rehearsal of a release folder before upload (WF987_RELEASE).
+test('WF-987 release model in an embedded namespace', {skip: !nativeMetal || !process.env.WF987_RELEASE}, async () => {
+  const {serveRelease, useEndpoint, DOCUMENTS, QUERY} = await import('./fixtures/wf987-release-server.mjs');
+  const server = await serveRelease();
+  const restore = useEndpoint(server.url);
+  const root = mkdtempSync(join(tmpdir(), 'wf987-namespace-'));
+  const spec = {embeddedModel: server.pin};
+  const modelCacheDir = join(root, 'cache');
+  let store;
+  try {
+    // Online open downloads into the requested cache and verifies the pin.
+    store = await openNamespaceAsync(join(root, 'store'), 'notes', spec, {...options, modelCacheDir, offline: false});
+    store.close(); store = undefined;
+    const requests = server.requests.length;
+    assert.ok(requests >= 2);
+    process.env.ZE_MODEL_OFFLINE = '1';
+    store = openNamespace(join(root, 'store'), 'notes', spec, {...options, modelCacheDir, offline: true});
+    await store.upsertAsync(DOCUMENTS);
+    const hits = store.queryEmbedded({text: QUERY, leg: 'dense', k: 2});
+    assert.deepEqual(hits.map(hit => hit.id), DOCUMENTS.map(doc => doc.id));
+    assert.equal(server.requests.length, requests, 'offline open makes no request');
+  } finally {
+    store?.close(); await server.close(); restore();
+    rmSync(root, {recursive: true, force: true});
+  }
+});
