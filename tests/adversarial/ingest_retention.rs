@@ -2535,8 +2535,7 @@ fn run_i20_post_ack_retry(seed: u64, invocation_id: u64) -> Result<I20Evidence, 
     run_i20_post_ack_retry_from_fixture(i20_fixture(seed, false), invocation_id)
 }
 
-#[path = "../../crates/volantis-db/tests/test_support/namespace_model.rs"]
-mod namespace_model;
+use super::namespace_model;
 
 // Pair the post-ack schedule with an invalidated pre-commit read. The first
 // attempt must infer again after deletion. Replaying its ack must do neither

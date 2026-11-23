@@ -306,8 +306,7 @@ fn mixed_batch(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String>
     Ok(())
 }
 
-#[path = "../../crates/volantis-db/tests/test_support/namespace_model.rs"]
-mod namespace_model;
+use super::namespace_model;
 
 fn embedded_batch(
     seed: u64,

@@ -22,6 +22,9 @@ pub mod ingest_retention;
 pub mod lifecycle_accounting;
 pub mod metadata_filter_planner;
 pub mod model;
+// Shared embedded-namespace fixture models; include the file once per crate.
+#[path = "../../crates/volantis-db/tests/test_support/namespace_model.rs"]
+pub mod namespace_model;
 pub mod oracle;
 pub mod profiles;
 pub mod program;
