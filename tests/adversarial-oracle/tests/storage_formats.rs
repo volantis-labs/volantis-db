@@ -1,4 +1,4 @@
-use zeppelin_embed_adversarial_oracle::storage_durability::*;
+use volantis_db_adversarial_oracle::storage_durability::*;
 
 fn hex(text: &str) -> Vec<u8> {
     let digits: Vec<_> = text
@@ -16,7 +16,7 @@ fn hex(text: &str) -> Vec<u8> {
 
 fn manifest() -> Vec<u8> {
     hex(include_str!(
-        "../../../crates/zeppelin-embed/tests/fixtures/format/manifest_v2.hex"
+        "../../../crates/volantis-db/tests/fixtures/format/manifest_v2.hex"
     ))
 }
 

@@ -9,14 +9,14 @@
 
 use super::coverage::CoverageRegistry;
 use std::collections::BTreeSet;
-use zeppelin_embed::graph_identity_test_support::{
+use volantis_db::graph_identity_test_support::{
     IdentityProbeReport, IdentityState, ObservedAdjacency,
 };
-use zeppelin_embed_adversarial_oracle::graph_adjacency_store::{AdjacencyRow, Direction};
-use zeppelin_embed_adversarial_oracle::graph_identity::{
+use volantis_db_adversarial_oracle::graph_adjacency_store::{AdjacencyRow, Direction};
+use volantis_db_adversarial_oracle::graph_identity::{
     Batch, Expectation, Framing, Sequence, Step, Watch, WatchedRows,
 };
-use zeppelin_embed_adversarial_oracle::graph_key_lifecycle::{
+use volantis_db_adversarial_oracle::graph_key_lifecycle::{
     Action, Expected, Observation, Origin, Record, Rejection,
 };
 
@@ -440,7 +440,7 @@ fn receipts(report: &IdentityProbeReport, coverage: &mut CoverageRegistry) -> Re
 }
 
 pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
-    let report = zeppelin_embed::graph_identity_test_support::run_actual_probe(seed);
+    let report = volantis_db::graph_identity_test_support::run_actual_probe(seed);
     let sequence = sequence(&report.state)?;
     let observed = observation(&sequence, &report.state)?;
     sequence

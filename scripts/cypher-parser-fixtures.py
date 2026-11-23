@@ -54,7 +54,7 @@ notice='''# Syntax-only excerpts of 99 selected original openCypher TCK scenario
 '''
 full_notice = (root / "tck/features/clauses/with/With6.feature").read_text().split("#encoding:")[0]
 fixture = full_notice + notice + '\n---\n' + '\n---\n'.join(rows) + '\n'
-target = repo / "crates/zeppelin-embed-cypher/tests/fixtures/selected-tck-syntax.txt"
+target = repo / "crates/volantis-db-cypher/tests/fixtures/selected-tck-syntax.txt"
 if args.write:
     target.write_text(fixture)
 else:

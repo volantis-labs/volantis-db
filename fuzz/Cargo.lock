@@ -943,6 +943,59 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
+name = "volantis-db"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "roaring",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "volantis-db-cypher"
+version = "0.1.0"
+dependencies = [
+ "volantis-db",
+]
+
+[[package]]
+name = "volantis-db-ffi"
+version = "0.1.0"
+dependencies = [
+ "loom",
+ "volantis-db",
+ "volantis-db-cypher",
+ "volantis-db-text",
+]
+
+[[package]]
+name = "volantis-db-fuzz"
+version = "0.0.0"
+dependencies = [
+ "libfuzzer-sys",
+ "rand",
+ "rand_chacha",
+ "volantis-db",
+ "volantis-db-cypher",
+ "volantis-db-ffi",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "volantis-db-text"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "libc",
+ "mlx-rs",
+ "unicode-normalization-alignments",
+ "unicode-segmentation",
+ "unicode_categories",
+ "volantis-db",
+ "xxhash-rust",
+]
+
+[[package]]
 name = "wasip2"
 version = "1.0.2+wasi-0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -995,59 +1048,6 @@ name = "xxhash-rust"
 version = "0.8.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aee1b19627c7c60102ab80d3a9cbe18de90bfe03bfa6c3715447681f0e8c8af6"
-
-[[package]]
-name = "zeppelin-embed"
-version = "0.8.0"
-dependencies = [
- "libc",
- "roaring",
- "xxhash-rust",
-]
-
-[[package]]
-name = "zeppelin-embed-cypher"
-version = "0.8.0"
-dependencies = [
- "zeppelin-embed",
-]
-
-[[package]]
-name = "zeppelin-embed-ffi"
-version = "0.8.0"
-dependencies = [
- "loom",
- "zeppelin-embed",
- "zeppelin-embed-cypher",
- "zeppelin-embed-text",
-]
-
-[[package]]
-name = "zeppelin-embed-fuzz"
-version = "0.0.0"
-dependencies = [
- "libfuzzer-sys",
- "rand",
- "rand_chacha",
- "xxhash-rust",
- "zeppelin-embed",
- "zeppelin-embed-cypher",
- "zeppelin-embed-ffi",
-]
-
-[[package]]
-name = "zeppelin-embed-text"
-version = "0.8.0"
-dependencies = [
- "cc",
- "libc",
- "mlx-rs",
- "unicode-normalization-alignments",
- "unicode-segmentation",
- "unicode_categories",
- "xxhash-rust",
- "zeppelin-embed",
-]
 
 [[package]]
 name = "zerocopy"

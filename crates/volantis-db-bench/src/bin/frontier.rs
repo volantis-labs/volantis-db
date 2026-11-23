@@ -1,0 +1,357 @@
+//! Optimization-frontier harness command line.
+
+use std::error::Error;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+use volantis_db_bench::frontier::attestation::{
+    CampaignPreflightOutcome, FileAttestationSource, MachineStateProvenance,
+    default_attestation_path, preflight_with_attestation, system_machine_identifier,
+    write_operator_attestation,
+};
+use volantis_db_bench::frontier::calibration::{
+    CalibrationArtifact, CalibrationMachineContext, CalibrationRun, CalibrationTier,
+    CalibrationWritePolicy, default_calibration_path, persist_calibration,
+};
+use volantis_db_bench::frontier::cli::{
+    Command, DenominatorCommand, TuneCommand, parse_command,
+};
+use volantis_db_bench::frontier::ledger::{Ledger, LedgerSummary};
+use volantis_db_bench::frontier::measure::{
+    MeasurementConfig, StridedI8Workload, SyntheticI8Workload, SystemMachineProbe, Workload,
+    WorkloadSampler, measure_source_with_provenance,
+};
+use volantis_db_bench::frontier::roofline::{
+    ComputeCalibrationConfig, ComputeCalibrationOutcome, WIDE_LOAD_SINGLE_CORE_GBPS,
+    calibrate_compute_tiers_with_attestation,
+};
+use volantis_db_bench::frontier::tune::{
+    CandidateEvaluation, SearchConfig, SearchSpace, run_search,
+};
+use volantis_db_bench::frontier::variants::VariantRegistry;
+
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("frontier: {error}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Box<dyn Error>> {
+    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    match parse_command(&arguments)? {
+        Command::Attest => run_attest(),
+        Command::Tune(command) => run_tune(command),
+        Command::Report => run_report(),
+        Command::Denominators(command) => run_denominators(command),
+    }
+}
+
+fn run_attest() -> Result<(), Box<dyn Error>> {
+    let root = repository_root();
+    let path = default_attestation_path(&root);
+    let machine_identifier = system_machine_identifier()?;
+    write_operator_attestation(
+        &SystemMachineProbe,
+        &machine_identifier,
+        SystemTime::now(),
+        &path,
+    )?;
+    println!("operator attestation written: {}", path.display());
+    println!("machine identifier: {machine_identifier}");
+    println!("valid for 20 minutes; live pmset output was AC and nominal");
+    Ok(())
+}
+
+fn run_tune(command: TuneCommand) -> Result<(), Box<dyn Error>> {
+    let seed = command.seed;
+    let registry = VariantRegistry::from_kernel_knob_space()?;
+    println!("campaign: kernels-i8 (HARNESS SMOKE; not B1)");
+    println!("seed: {seed}");
+    println!("declared knob points: {}", registry.declared_points().len());
+    println!(
+        "materialized task-03 builds: {}",
+        registry.materialized().len()
+    );
+    println!("workload: synthetic-contiguous (PROVISIONAL)");
+    println!("workload: synthetic-strided (PROVISIONAL)");
+    let attestation = FileAttestationSource::new(default_attestation_path(&repository_root()));
+    match preflight_with_attestation(&SystemMachineProbe, &attestation) {
+        CampaignPreflightOutcome::Idle { reasons } => {
+            for reason in reasons {
+                println!("PREFLIGHT IDLE: {reason}");
+            }
+            println!("SMOKE IDLE: fail-closed; zero timings and zero ledger rows produced");
+            Ok(())
+        }
+        CampaignPreflightOutcome::Ready { provenance, .. } => {
+            run_ready_smoke(&registry, seed, provenance)
+        }
+    }
+}
+
+fn run_ready_smoke(
+    registry: &VariantRegistry,
+    seed: u64,
+    machine_state: MachineStateProvenance,
+) -> Result<(), Box<dyn Error>> {
+    let points = registry
+        .materialized()
+        .iter()
+        .map(|variant| variant.point())
+        .collect::<Vec<_>>();
+    let space = SearchSpace::new(points)?;
+    let config = SearchConfig {
+        seed,
+        exhaustive_limit: registry.materialized().len().max(1),
+        random_restarts: 1,
+        maximum_evaluations: registry.materialized().len(),
+    };
+    let mut contiguous = SyntheticI8Workload::new("synthetic-contiguous", 8_192, 768, seed)?;
+    let mut strided = StridedI8Workload::new("synthetic-strided", 8_192, 768, 3, seed)?;
+    let mut evaluation_error = None;
+    let search = run_search(&space, config, None, |point| {
+        let Some(variant) = registry
+            .materialized()
+            .iter()
+            .find(|candidate| candidate.point() == point)
+        else {
+            evaluation_error = Some("materialized point disappeared from registry".to_owned());
+            return CandidateEvaluation::incorrect(point.stable_id(), f64::MAX);
+        };
+        let correctness = contiguous
+            .execute(variant)
+            .map(|observation| observation.correct)
+            .and_then(|left| {
+                strided
+                    .execute(variant)
+                    .map(|observation| left && observation.correct)
+            });
+        let correctness_green = match correctness {
+            Ok(correctness_green) => correctness_green,
+            Err(error) => {
+                evaluation_error = Some(error.to_string());
+                false
+            }
+        };
+        let mut sampler = WorkloadSampler::new(&mut contiguous, variant);
+        match measure_source_with_provenance(
+            &mut sampler,
+            MeasurementConfig::strict(),
+            machine_state.clone(),
+        ) {
+            Ok(measurement) if correctness_green => {
+                CandidateEvaluation::correct(point.stable_id(), measurement.min_of_medians_ns)
+            }
+            Ok(measurement) => {
+                CandidateEvaluation::incorrect(point.stable_id(), measurement.min_of_medians_ns)
+            }
+            Err(error) => {
+                evaluation_error = Some(error.to_string());
+                CandidateEvaluation::incorrect(point.stable_id(), f64::MAX)
+            }
+        }
+    })?;
+    if let Some(error) = evaluation_error {
+        return Err(io::Error::other(error).into());
+    }
+    println!("trajectory: {}", search.trajectory.join(" -> "));
+    if let Some(winner) = search.ranking.first() {
+        println!(
+            "smoke winner: {} at {:.3} ns (PROVISIONAL; no ledger row)",
+            winner.variant, winner.median_ns
+        );
+    }
+    println!("SMOKE GREEN: tiny existing-build grid only; B1 was not run");
+    Ok(())
+}
+
+fn run_report() -> Result<(), Box<dyn Error>> {
+    let directory = repository_root().join("tasks/evidence/opt-ledger");
+    if !directory.exists() {
+        print_summary(LedgerSummary::default(), 0);
+        return Ok(());
+    }
+    let mut rows = Vec::new();
+    let mut files = 0;
+    for entry in fs::read_dir(&directory)? {
+        let path = entry?.path();
+        if !path.is_file() {
+            continue;
+        }
+        let ledger = Ledger::open(&path)?;
+        rows.extend(ledger.rows()?);
+        files += 1;
+    }
+    print_summary(LedgerSummary::from_rows(&rows), files);
+    Ok(())
+}
+
+fn print_summary(summary: LedgerSummary, files: usize) {
+    println!("frontier ledger report");
+    println!("ledger files: {files}");
+    println!("rows: {}", summary.rows);
+    println!("keep: {}", summary.keeps);
+    println!("revert: {}", summary.reverts);
+    println!("complete (PMU-attributed): {}", summary.complete);
+    println!("frontier-open: {}", summary.frontier_open);
+    println!("provisional synthetic-only: {}", summary.provisional);
+}
+
+fn run_denominators(options: DenominatorCommand) -> Result<(), Box<dyn Error>> {
+    println!("memory one-core wide-load denominator: {WIDE_LOAD_SINGLE_CORE_GBPS:.6} GB/s");
+    println!(
+        "memory provenance command: cargo run --release -p volantis-db-bench --bin platform-truth -- bandwidth-compare"
+    );
+    let attestation = FileAttestationSource::new(default_attestation_path(&repository_root()));
+    match calibrate_compute_tiers_with_attestation(
+        &SystemMachineProbe,
+        &attestation,
+        ComputeCalibrationConfig::evidence(),
+    )? {
+        ComputeCalibrationOutcome::Idle { reasons } => {
+            for reason in reasons {
+                println!("COMPUTE DENOMINATORS NOT MEASURED: {reason}");
+            }
+            println!("CALIBRATION IDLE: fail-closed; no timing loop executed");
+        }
+        ComputeCalibrationOutcome::Measured {
+            calibrations,
+            not_measured,
+        } => {
+            for calibration in &calibrations {
+                println!(
+                    "{}: {:.6} GMAC/s raw_medians_ns={:?} checksum={}",
+                    calibration.tier.as_str(),
+                    calibration.operations_per_second / 1_000_000_000.0,
+                    calibration.measurement.accepted_run_medians_ns,
+                    calibration.checksum
+                );
+            }
+            for (tier, reason) in not_measured {
+                println!("{}: {reason}", tier.as_str());
+            }
+            if options.persist {
+                let date = options.date.as_deref().ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "--persist requires caller-supplied --date YYYY-MM-DD",
+                    )
+                })?;
+                let tiers = calibrations
+                    .iter()
+                    .map(|calibration| {
+                        CalibrationTier::new(
+                            calibration.tier,
+                            calibration.operations_per_second / 1_000_000_000.0,
+                            vec![CalibrationRun {
+                                run: 1,
+                                gmac_per_second: calibration.operations_per_second
+                                    / 1_000_000_000.0,
+                                raw_medians_ns: calibration
+                                    .measurement
+                                    .accepted_run_medians_ns
+                                    .clone(),
+                                checksum: calibration.checksum,
+                            }],
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let command = denominator_command(date, options.allow_lower_ceiling);
+                let provenance = calibrations
+                    .first()
+                    .map(|calibration| &calibration.measurement.machine_state)
+                    .ok_or_else(|| {
+                        io::Error::other("no measured compute calibration provenance")
+                    })?;
+                let artifact = CalibrationArtifact::new(
+                    current_machine_context(provenance)?,
+                    date,
+                    command,
+                    tiers,
+                )?;
+                let policy = if options.allow_lower_ceiling {
+                    CalibrationWritePolicy::AllowLower {
+                        reason: "operator explicitly passed --allow-lower-ceiling".to_owned(),
+                    }
+                } else {
+                    CalibrationWritePolicy::UpwardOnly
+                };
+                let path = default_calibration_path();
+                persist_calibration(&path, &artifact, policy)?;
+                println!("PERSISTED COMPUTE CALIBRATION: {}", path.display());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn denominator_command(date: &str, allow_lower_ceiling: bool) -> String {
+    let override_flag = if allow_lower_ceiling {
+        " --allow-lower-ceiling"
+    } else {
+        ""
+    };
+    format!(
+        "cargo run --release -p volantis-db-bench --bin frontier -- denominators --persist --date {date}{override_flag}"
+    )
+}
+
+fn current_machine_context(
+    provenance: &MachineStateProvenance,
+) -> Result<CalibrationMachineContext, io::Error> {
+    let hardware = command_stdout("system_profiler", &["SPHardwareDataType"])?;
+    let state = match provenance {
+        MachineStateProvenance::DirectProbe => {
+            "established by direct fail-closed pmset preflight".to_owned()
+        }
+        MachineStateProvenance::OperatorAttestation {
+            timestamp,
+            machine_identifier,
+        } => format!("established by operator attestation at {timestamp} for {machine_identifier}"),
+    };
+    Ok(CalibrationMachineContext {
+        model_name: profiler_field(&hardware, "Model Name")?,
+        model_identifier: profiler_field(&hardware, "Model Identifier")?,
+        chip: profiler_field(&hardware, "Chip")?,
+        os_product_version: command_stdout("sw_vers", &["-productVersion"])?
+            .trim()
+            .to_owned(),
+        os_build: command_stdout("sw_vers", &["-buildVersion"])?
+            .trim()
+            .to_owned(),
+        power_state: format!("AC Power {state}"),
+        thermal_state: format!("Nominal thermal state {state}"),
+    })
+}
+
+fn command_stdout(program: &str, arguments: &[&str]) -> Result<String, io::Error> {
+    let output = std::process::Command::new(program)
+        .args(arguments)
+        .output()?;
+    if !output.status.success() {
+        return Err(io::Error::other(format!(
+            "{program} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    String::from_utf8(output.stdout)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+}
+
+fn profiler_field(output: &str, name: &str) -> Result<String, io::Error> {
+    output
+        .lines()
+        .find_map(|line| line.trim().strip_prefix(name))
+        .and_then(|value| value.strip_prefix(':'))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| io::Error::other(format!("system_profiler omitted {name}")))
+}
+
+fn repository_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}

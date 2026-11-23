@@ -10,7 +10,7 @@ use std::mem::size_of;
 use std::sync::OnceLock;
 
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed_ffi::*;
+use volantis_db_ffi::*;
 
 const SCRATCH_DIMS: usize = 64;
 
@@ -24,7 +24,7 @@ fn fixture() -> &'static Fixture {
     static FIXTURE: OnceLock<Fixture> = OnceLock::new();
     FIXTURE.get_or_init(|| {
         let path = std::env::temp_dir().join(format!(
-            "zeppelin-embed-fuzz-ffi-{}",
+            "volantis-db-fuzz-ffi-{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&path);
@@ -733,7 +733,7 @@ fn text_fixture() -> ZeHandle {
         let model = root.join("bert.zem");
         std::fs::write(
             &model,
-            include_bytes!("../../crates/zeppelin-embed-text/tests/fixtures/ze115/bert.zem"),
+            include_bytes!("../../crates/volantis-db-text/tests/fixtures/ze115/bert.zem"),
         )
         .expect("text fuzz model");
         let model = model.to_string_lossy().into_owned().into_bytes();

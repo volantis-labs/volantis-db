@@ -12,37 +12,37 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use tempfile::{TempDir, tempdir};
-use zeppelin_embed::epoch::{
+use volantis_db::epoch::{
     ComputeUnits, EmbeddingEpoch, EmbeddingRuntime, EmbeddingTower, Normalization, StoreEpoch,
 };
-use zeppelin_embed::fts::tokenizer::TokenizerConfig;
-use zeppelin_embed::ingest::{
+use volantis_db::fts::tokenizer::TokenizerConfig;
+use volantis_db::ingest::{
     DeleteBatch, DocId, DocumentVersion, IngestBatch, IngestDocument, IngestError, Revision,
     RowSource, SearchCandidate, SearchOutcome, SearchRequest,
 };
-use zeppelin_embed::kernels::vector_fault::{
+use volantis_db::kernels::vector_fault::{
     KernelFaultController, KernelOperationId, KernelScoreObservation, KernelScoreValue,
 };
-use zeppelin_embed::kernels::{Bit4Row, Bit4Rows4, KernelBackendId, KernelVariant};
-use zeppelin_embed::lifecycle::{
+use volantis_db::kernels::{Bit4Row, Bit4Rows4, KernelBackendId, KernelVariant};
+use volantis_db::lifecycle::{
     CancelToken, GraphSearchOptions, OpenOptions, QueryControl, QueryError, SearchOptions,
     SearchTier, Store, StoreError, StoreErrorKind, StoreTestDependencies, SystemMonotonicClock,
 };
-use zeppelin_embed::quant::{
+use volantis_db::quant::{
     Bit4Factors, Int8Vec, QuantError, QuantScheme as ProductQuantScheme, RescoreError,
     RescoreMetric, RescorePool, dequantize_bit4, dequantize_int8, dot_int8_query, est_dot_bit4,
     prepare_bit4_query, prepare_int8_query, quantize_bit4, quantize_int8, rescore_top_k,
 };
-use zeppelin_embed::scan::vector_fault::{
+use volantis_db::scan::vector_fault::{
     MissingRescoreSite, VectorCampaign, VectorFault, VectorFaultController, VectorFaultEffect,
     VectorFaultKind as ProductVectorFaultKind, VectorFaultReceipt, VectorFaultSite,
     VectorOperation as ProductVectorOperation, VectorRowSource, VectorSearchTier,
 };
-use zeppelin_embed::scan::{ScanError, ScanOptions};
-use zeppelin_embed::segment::SegmentId;
-use zeppelin_embed::tier::{MaintenanceBudget, MaintenanceStatus, TierThresholds};
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed_adversarial_oracle::vector_execution as independent;
+use volantis_db::scan::{ScanError, ScanOptions};
+use volantis_db::segment::SegmentId;
+use volantis_db::tier::{MaintenanceBudget, MaintenanceStatus, TierThresholds};
+use volantis_db::vfs::StdVfs;
+use volantis_db_adversarial_oracle::vector_execution as independent;
 
 use super::fault_vfs::{
     FaultEvent as ScheduledFaultEvent, FaultMode as ScheduledFaultMode,
@@ -1727,7 +1727,7 @@ struct GenericFaultLegRequest<'a> {
     open_options: &'a OpenOptions,
     query: &'a [f32],
     ingest_vector: Option<&'a [f32]>,
-    ingest_epoch: Option<zeppelin_embed::epoch::EpochIdentity>,
+    ingest_epoch: Option<volantis_db::epoch::EpochIdentity>,
     tier: SearchTier,
     seal_ingested: bool,
 }
@@ -2279,7 +2279,7 @@ fn primitive_fixture(
             VectorPrimitiveInputs::I27(pairs.iter().map(|pair| pair.input.clone()).collect())
         }
     };
-    let features = zeppelin_embed::kernels::detected_features();
+    let features = volantis_db::kernels::detected_features();
     VectorPrimitiveFixture {
         namespace: "vector-execution-v1",
         seed,
@@ -2407,7 +2407,7 @@ fn query_status(error: QueryError) -> independent::PrimitiveStatus {
             }
         }
         QueryError::Store(StoreError::Segment(
-            zeppelin_embed::segment::SegmentError::Geometry(detail),
+            volantis_db::segment::SegmentError::Geometry(detail),
         )) => independent::PrimitiveStatus::SegmentGeometry { detail },
         other => independent::PrimitiveStatus::SegmentGeometry {
             detail: other.to_string(),

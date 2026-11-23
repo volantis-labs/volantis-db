@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use libfuzzer_sys::fuzz_target;
 use rand::RngCore;
 
-#[path = "../../crates/zeppelin-embed/src/test_support.rs"]
+#[path = "../../crates/volantis-db/src/test_support.rs"]
 mod test_support;
 
 static SEEDED_DRAW: OnceLock<u64> = OnceLock::new();

@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-const { Store, ZeppelinError } = createRequire(import.meta.url)('..');
+const { Store, VolantisError } = createRequire(import.meta.url)('..');
 
 function isClosedError(error) {
-  return error instanceof ZeppelinError &&
+  return error instanceof VolantisError &&
     error.code === 'ZE_ERR_CLOSED' && error.errorCode === 3;
 }
 

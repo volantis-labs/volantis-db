@@ -1,5 +1,5 @@
 {
-  "schema": "zeppelin-embed-cross-binding-parity",
+  "schema": "volantis-db-cross-binding-parity",
   "version": 1,
   "seed": 25172023,
   "score_precision": 6,

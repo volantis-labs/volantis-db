@@ -51,7 +51,7 @@ jobs:
       - uses: pypa/cibuildwheel@v4.1.1
         env:
           CIBW_TEST_COMMAND: python -I bindings/python/tests/installed_smoke.py
-          CIBW_TEST_SOURCES: "bindings/python/tests/installed_smoke.py crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem"
+          CIBW_TEST_SOURCES: "bindings/python/tests/installed_smoke.py crates/volantis-db-text/tests/fixtures/ze115/gte.zem"
         with:
           package-dir: bindings/python
           output-dir: wheelhouse
@@ -59,7 +59,7 @@ jobs:
         run: python bindings/python/tests/verify_wheel.py wheelhouse/*.whl
       - uses: actions/upload-artifact@v4
         with:
-          name: zeppelin-embed-pypi
+          name: volantis-db-pypi
           path: wheelhouse/*.whl
           if-no-files-found: error
 
@@ -69,13 +69,13 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/zeppelin-embed
+      url: https://pypi.org/p/volantis-db
     permissions:
       id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: zeppelin-embed-pypi
+          name: volantis-db-pypi
           path: dist
       - name: Publish package distributions
         uses: pypa/gh-action-pypi-publish@release/v1

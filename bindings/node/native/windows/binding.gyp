@@ -12,20 +12,20 @@
 #  resolves both to absolute paths and passes them after `--`.
 {
   'variables': {
-    # Absolute path to zeppelin_embed_ffi.lib, the static *implementation*
-    # archive. Deliberately not zeppelin_embed_ffi.dll.lib, which is the DLL's
+    # Absolute path to volantis_db_ffi.lib, the static *implementation*
+    # archive. Deliberately not volantis_db_ffi.dll.lib, which is the DLL's
     # import library and carries no implementation: linking that would produce
-    # an addon that needs a Zeppelin DLL beside it at run time, which this
+    # an addon that needs a Volantis DB DLL beside it at run time, which this
     # package does not ship.
     'ze_ffi_lib%': '',
-    # Absolute path to crates/zeppelin-embed-ffi/include.
+    # Absolute path to crates/volantis-db-ffi/include.
     'ze_ffi_include%': '',
     'ze_exports_def%': '',
     'ze_link_options%': [],
   },
   'targets': [
     {
-      'target_name': 'zeppelin_embed',
+      'target_name': 'volantis_db',
       'sources': ['../addon.cc'],
       'include_dirs': ['<(ze_ffi_include)'],
       'libraries': [

@@ -58,7 +58,7 @@ is outside ±5% of `control.json`.
 ## H0 hybrid baseline
 
 ```bash
-cargo build --release -p zeppelin-embed-bench --bin hybrid-alpha
+cargo build --release -p volantis-db-bench --bin hybrid-alpha
 ZE_BEIR_DIR=/private/tmp/beir \
 ZE_SCIFACT_VECTORS="$RAGBENCH/scifact" \
 target/release/hybrid-alpha \

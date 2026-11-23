@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import test from 'node:test';
-const { Store, openNamespace, openNamespaceAsync, ZeppelinError } = createRequire(import.meta.url)('..');
-const cancelled = e => e instanceof ZeppelinError && e.code === 'ZE_ERR_CANCELLED';
+const { Store, openNamespace, openNamespaceAsync, VolantisError } = createRequire(import.meta.url)('..');
+const cancelled = e => e instanceof VolantisError && e.code === 'ZE_ERR_CANCELLED';
 async function fixture(fn) {
   const root = mkdtempSync(join(tmpdir(), 'ze249-'));
   const s = openNamespace(root, 'notes', {});
@@ -44,7 +44,7 @@ test('Store.maintain honors the wall-time budget', () => fixture(s => {
   assert.deepEqual(s.maintain({ wallTimeNs: 0n, bytes }),
     { ...emptyMaintenance, status: 1 });
   assert.throws(() => s.maintain({ wallTimeNs: 0n, bytes: bytes + 1n }),
-    e => e instanceof ZeppelinError && e.code === 'ZE_ERR_INVALID_ARGUMENT' && e.errorCode === 1);
+    e => e instanceof VolantisError && e.code === 'ZE_ERR_INVALID_ARGUMENT' && e.errorCode === 1);
 }));
 
 test('Store.maintainAsync honors the queued byte budget', () => fixture(async s => {
@@ -57,7 +57,7 @@ test('Store.maintainAsync honors the queued byte budget', () => fixture(async s 
   const snapshot = s.openSnapshot();
   try {
     await assert.rejects(snapshot.maintainAsync(budget),
-      e => e instanceof ZeppelinError && e.code === 'ZE_ERR_ACCESS_MODE');
+      e => e instanceof VolantisError && e.code === 'ZE_ERR_ACCESS_MODE');
   } finally {
     snapshot.close();
   }
@@ -72,7 +72,7 @@ test('async calls remain responsive and close safely', () => fixture(async s => 
   await tick;
   assert.equal(ticked, true);
   for (const r of outcomes) if (r.status === 'rejected') assert.equal(r.reason.code, 'ZE_ERR_CLOSED');
-  await assert.rejects(s.scanAsync(), e => e instanceof ZeppelinError && e.code === 'ZE_ERR_CLOSED');
+  await assert.rejects(s.scanAsync(), e => e instanceof VolantisError && e.code === 'ZE_ERR_CLOSED');
 }));
 test('query and scan AbortSignal preserve cancellation and complete-result races', () => fixture(async s => {
   await s.upsertAsync(Array.from({ length: 10000 }, (_, i) => ({ id: BigInt(i), text: 'hello world' })));
@@ -124,7 +124,7 @@ test('async open and mutation policies preserve ownership and errors', async () 
     await Promise.all([first, second]);
     assert.equal(s.get([1n], { text: true }).documents[0].text, 'original');
     await assert.rejects(s.upsertAsync([{ id: 1n, revision: 2n, expectedRevision: 99n, text: 'bad' }]), e => {
-      assert.ok(e instanceof ZeppelinError);
+      assert.ok(e instanceof VolantisError);
       assert.equal(e.code, 'ZE_ERR_REVISION_CONFLICT');
       assert.equal(e.conflict.id, 1n);
       return true;

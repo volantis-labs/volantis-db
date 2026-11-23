@@ -1182,6 +1182,86 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
+name = "volantis-db"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "libc",
+ "proptest",
+ "rand",
+ "rand_chacha",
+ "roaring",
+ "tempfile",
+ "volantis-db",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "volantis-db-adversarial-oracle"
+version = "0.1.0"
+
+[[package]]
+name = "volantis-db-bench"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "libc",
+ "serde_json",
+ "tempfile",
+ "volantis-db",
+ "volantis-db-text",
+]
+
+[[package]]
+name = "volantis-db-cypher"
+version = "0.1.0"
+dependencies = [
+ "volantis-db",
+]
+
+[[package]]
+name = "volantis-db-ffi"
+version = "0.1.0"
+dependencies = [
+ "loom",
+ "tempfile",
+ "volantis-db",
+ "volantis-db-adversarial-oracle",
+ "volantis-db-cypher",
+ "volantis-db-text",
+]
+
+[[package]]
+name = "volantis-db-text"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "libc",
+ "mlx-rs",
+ "tempfile",
+ "unicode-normalization-alignments",
+ "unicode-segmentation",
+ "unicode_categories",
+ "volantis-db",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "volantis-db-workspace-tests"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "rand",
+ "rand_chacha",
+ "tempfile",
+ "volantis-db",
+ "volantis-db-adversarial-oracle",
+ "volantis-db-bench",
+ "volantis-db-cypher",
+ "volantis-db-ffi",
+]
+
+[[package]]
 name = "wait-timeout"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1262,86 +1342,6 @@ name = "xxhash-rust"
 version = "0.8.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aee1b19627c7c60102ab80d3a9cbe18de90bfe03bfa6c3715447681f0e8c8af6"
-
-[[package]]
-name = "zeppelin-embed"
-version = "0.8.0"
-dependencies = [
- "criterion",
- "libc",
- "proptest",
- "rand",
- "rand_chacha",
- "roaring",
- "tempfile",
- "xxhash-rust",
- "zeppelin-embed",
-]
-
-[[package]]
-name = "zeppelin-embed-adversarial-oracle"
-version = "0.8.0"
-
-[[package]]
-name = "zeppelin-embed-bench"
-version = "0.8.0"
-dependencies = [
- "criterion",
- "libc",
- "serde_json",
- "tempfile",
- "zeppelin-embed",
- "zeppelin-embed-text",
-]
-
-[[package]]
-name = "zeppelin-embed-cypher"
-version = "0.8.0"
-dependencies = [
- "zeppelin-embed",
-]
-
-[[package]]
-name = "zeppelin-embed-ffi"
-version = "0.8.0"
-dependencies = [
- "loom",
- "tempfile",
- "zeppelin-embed",
- "zeppelin-embed-adversarial-oracle",
- "zeppelin-embed-cypher",
- "zeppelin-embed-text",
-]
-
-[[package]]
-name = "zeppelin-embed-text"
-version = "0.8.0"
-dependencies = [
- "cc",
- "libc",
- "mlx-rs",
- "tempfile",
- "unicode-normalization-alignments",
- "unicode-segmentation",
- "unicode_categories",
- "xxhash-rust",
- "zeppelin-embed",
-]
-
-[[package]]
-name = "zeppelin-embed-workspace-tests"
-version = "0.8.0"
-dependencies = [
- "proptest",
- "rand",
- "rand_chacha",
- "tempfile",
- "zeppelin-embed",
- "zeppelin-embed-adversarial-oracle",
- "zeppelin-embed-bench",
- "zeppelin-embed-cypher",
- "zeppelin-embed-ffi",
-]
 
 [[package]]
 name = "zerocopy"

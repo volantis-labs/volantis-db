@@ -4,7 +4,7 @@ import inspect
 import json
 from pathlib import Path
 
-import zeppelin_embed as api
+import volantis_db as api
 
 
 def _has_public_api(path: str) -> bool:

@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::indexing_slicing)]
 //! ZE-553 measurement helper. Not shipped. Copy to
-//! crates/zeppelin-embed-text/examples/ to build.
+//! crates/volantis-db-text/examples/ to build.
 //!
 //! Embeds one text per input line with the shipped runtimes and writes
 //! the exact token ids plus L2-normalized f32 vectors, so a CPU runtime
@@ -18,11 +18,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-use zeppelin_embed_text::bundle::Bundle;
-use zeppelin_embed_text::runtime::ModelRuntime;
-use zeppelin_embed_text::runtime::coreml::{ComputeUnits, CoreMlRuntime};
-use zeppelin_embed_text::runtime::mlx::MlxRuntime;
-use zeppelin_embed_text::tower::{TokenBatch, TowerRole};
+use volantis_db_text::bundle::Bundle;
+use volantis_db_text::runtime::ModelRuntime;
+use volantis_db_text::runtime::coreml::{ComputeUnits, CoreMlRuntime};
+use volantis_db_text::runtime::mlx::MlxRuntime;
+use volantis_db_text::tower::{TokenBatch, TowerRole};
 
 const DOC_MAX: usize = 510;
 const BATCH: usize = 32;

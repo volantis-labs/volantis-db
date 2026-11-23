@@ -4,8 +4,8 @@ use std::ffi::CStr;
 use std::mem::size_of;
 
 use tempfile::tempdir;
-use zeppelin_embed_adversarial_oracle::ffi_bindings::{FfiInput, FfiObserved};
-use zeppelin_embed_ffi::{
+use volantis_db_adversarial_oracle::ffi_bindings::{FfiInput, FfiObserved};
+use volantis_db_ffi::{
     ZE_ABI_VERSION, ZeDocId, ZeErrorCode, ZeHandle, ZeIngestDocument, ZeIngestRequest,
     ZeMutationReport, ZeOpenRequest, ZeSearchRequest, ZeSearchResult, ZeStateReport,
     arm_abi_panic_probe, ze_abi_version, ze_cancel_token_cancel, ze_cancel_token_create,
@@ -354,7 +354,7 @@ pub fn run_ffi_operation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zeppelin_embed_adversarial_oracle::ffi_bindings as oracle;
+    use volantis_db_adversarial_oracle::ffi_bindings as oracle;
 
     #[test]
     fn ffi_public_operations_pass_exact_checkers() {

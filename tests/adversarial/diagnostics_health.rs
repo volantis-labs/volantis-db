@@ -3,13 +3,13 @@
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 
 use tempfile::tempdir;
-use zeppelin_embed::diag::{HealthFaultKind, HealthStatus};
-use zeppelin_embed::ingest::{
+use volantis_db::diag::{HealthFaultKind, HealthStatus};
+use volantis_db::ingest::{
     DocId, DocumentVersion, IngestBatch, IngestDocument, Revision, SearchRequest,
 };
-use zeppelin_embed::lifecycle::{CancelToken, OpenOptions, QueryControl, SearchOptions, Store};
-use zeppelin_embed::segment::layout::RegionKind;
-use zeppelin_embed_adversarial_oracle::diagnostics_health::{
+use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl, SearchOptions, Store};
+use volantis_db::segment::layout::RegionKind;
+use volantis_db_adversarial_oracle::diagnostics_health::{
     DiagnosticsInput, DiagnosticsObserved,
 };
 
@@ -334,7 +334,7 @@ pub fn run_diagnostics_operation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zeppelin_embed_adversarial_oracle::diagnostics_health as oracle;
+    use volantis_db_adversarial_oracle::diagnostics_health as oracle;
 
     #[test]
     fn diagnostics_public_operations_pass_exact_checkers() {

@@ -10,7 +10,7 @@ function doubleLoad(packagePath, root) {
   const original = process.dlopen;
   let nativeLoads = 0;
   process.dlopen = function (module, filename, ...args) {
-    if (filename.endsWith('zeppelin_embed.node')) nativeLoads += 1;
+    if (filename.endsWith('volantis_db.node')) nativeLoads += 1;
     return original.call(this, module, filename, ...args);
   };
   const stores = new Set();

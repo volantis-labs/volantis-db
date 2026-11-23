@@ -21,11 +21,11 @@ case "$ARTIFACT" in
 esac
 BUILD_DIR="$ROOT_DIR/target/macos-sdk$SUFFIX"
 CARGO_DIR="$BUILD_DIR/cargo-macos-$MACOS_DEPLOYMENT_TARGET"
-STAGE_DIR="$BUILD_DIR/zeppelin-embed$SUFFIX-macos-arm64"
-ARCHIVE="$BUILD_DIR/zeppelin-embed$SUFFIX-macos-arm64.tar.gz"
+STAGE_DIR="$BUILD_DIR/volantis-db$SUFFIX-macos-arm64"
+ARCHIVE="$BUILD_DIR/volantis-db$SUFFIX-macos-arm64.tar.gz"
 TARGET_TRIPLE="aarch64-apple-darwin"
 RUST_OUTPUT="$CARGO_DIR/$TARGET_TRIPLE/release"
-LIBRARY_NAME="libzeppelin_embed${SUFFIX//-/_}_ffi"
+LIBRARY_NAME="libvolantis_db${SUFFIX//-/_}_ffi"
 
 mkdir -p "$BUILD_DIR"
 rm -rf "$STAGE_DIR"
@@ -37,12 +37,12 @@ if [ -n "$PREBUILT_DIR" ]; then
     RUST_OUTPUT="$PREBUILT_DIR"
 else
     CARGO_BUILD_JOBS=3 MACOSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" \
-        cargo build --locked --release --no-default-features -p zeppelin-embed-ffi \
+        cargo build --locked --release --no-default-features -p volantis-db-ffi \
         --target "$TARGET_TRIPLE" --target-dir "$CARGO_DIR" ${features[@]+"${features[@]}"}
 fi
 
-static_library="$RUST_OUTPUT/libzeppelin_embed_ffi.a"
-dynamic_library="$RUST_OUTPUT/libzeppelin_embed_ffi.dylib"
+static_library="$RUST_OUTPUT/libvolantis_db_ffi.a"
+dynamic_library="$RUST_OUTPUT/libvolantis_db_ffi.dylib"
 test -f "$static_library"
 test -f "$dynamic_library"
 python3 "$ROOT_DIR/scripts/release/check-macos-minos.py" "$MACOS_DEPLOYMENT_TARGET" "$static_library" "$dynamic_library"
@@ -50,7 +50,7 @@ lipo "$static_library" -verify_arch arm64
 lipo "$dynamic_library" -verify_arch arm64
 
 python3 "$ROOT_DIR/scripts/release/core_header.py" \
-    "$ROOT_DIR/crates/zeppelin-embed-ffi/include/zeppelin_embed.h" \
+    "$ROOT_DIR/crates/volantis-db-ffi/include/volantis_db.h" \
     "$STAGE_DIR/include" --artifact "$ARTIFACT"
 python3 "$ROOT_DIR/scripts/release/package-native.py" archive \
     "$static_library" "$STAGE_DIR/lib/$LIBRARY_NAME.a"
@@ -72,7 +72,7 @@ for path in sys.argv[2:-1]:
     m.check_exports(Path(path), sys.argv[-1])
 CHECK
 
-if [ "$ARTIFACT" = legacy ] && grep -En 'ZeText|ze_text_' "$STAGE_DIR/include/zeppelin_embed.h"; then
+if [ "$ARTIFACT" = legacy ] && grep -En 'ZeText|ze_text_' "$STAGE_DIR/include/volantis_db.h"; then
     echo "ERROR: core SDK header exposes the optional text ABI" >&2
     exit 1
 fi

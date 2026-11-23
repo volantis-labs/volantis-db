@@ -2,12 +2,12 @@
 //! exercise the new deterministic seam in every seeded fault-runner episode.
 
 use rand::RngCore;
-use zeppelin_embed::epoch::{ComputeUnits, EmbeddingRuntime, EmbeddingTower, Normalization};
-use zeppelin_embed::property_graph::{
+use volantis_db::epoch::{ComputeUnits, EmbeddingRuntime, EmbeddingTower, Normalization};
+use volantis_db::property_graph::{
     CanonicalContents, CanonicalEmbedding, CanonicalError, CanonicalFingerprint, GraphName,
     GraphProperty, NodeId, PropertyData, PropertyValue, compare_canonical_streams,
 };
-use zeppelin_embed_adversarial_oracle::graph_contents::{Contents, Observation, Value, check};
+use volantis_db_adversarial_oracle::graph_contents::{Contents, Observation, Value, check};
 
 use super::coverage::CoverageRegistry;
 

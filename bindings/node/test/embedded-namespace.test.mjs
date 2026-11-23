@@ -28,7 +28,7 @@ test('embedded namespace resolves a pinned model and searches chunks and graph n
   const original = process.env.ZE_MODEL_CACHE;
   let store;
   try {
-    const bytes = readFileSync(new URL('../../../crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem',import.meta.url));
+    const bytes = readFileSync(new URL('../../../crates/volantis-db-text/tests/fixtures/ze115/gte.zem',import.meta.url));
     const sha = b => createHash('sha256').update(b).digest('hex');
     const manifest = Buffer.from(JSON.stringify({format:1,name:'tiny',bundle:'tiny.zem',query_coreml:null,
       files:[{path:'tiny.zem',size:bytes.length,sha256:sha(bytes)}]}));
@@ -36,7 +36,7 @@ test('embedded namespace resolves a pinned model and searches chunks and graph n
     process.env.ZE_MODEL_CACHE = join(root,'cache');
     const entry = join(process.env.ZE_MODEL_CACHE,'fixture%2Ftiny',revision);
     mkdirSync(entry,{recursive:true});
-    writeFileSync(join(entry,'zeppelin-model.json'),manifest);
+    writeFileSync(join(entry,'volantis-model.json'),manifest);
     writeFileSync(join(entry,'tiny.zem'),bytes);
     const spec = {embeddedModel:{repo:'fixture/tiny',revision,manifestSha256:sha(manifest)},
       attributes:[{id:1,name:'speaker',type:'u64',nullable:false}]};

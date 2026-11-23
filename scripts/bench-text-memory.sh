@@ -10,8 +10,8 @@ sysctl hw.model hw.memsize machdep.cpu.brand_string > "$run/hardware.txt"
 sw_vers >> "$run/hardware.txt"
 git rev-parse HEAD >> "$run/hardware.txt"
 test "$(sysctl -n hw.memsize)" = 8589934592
-model_dir="${ZE_MODEL_CACHE:-$HOME/Library/Caches/zeppelin-embed/models}/volantis-labs%2Fvolantis-db-clean71-arctic-m-v2/d64b817c4021a3f1b9bded3152d9afdf9ac813e7"
-bundle="$model_dir/zeppelin-embed-clean71-v1-arctic-m-v2.zem"
+model_dir="${ZE_MODEL_CACHE:-$HOME/Library/Caches/volantis-db/models}/volantis-labs%2Fvolantis-db-clean71-arctic-m-v2/5833eb696dbc41def2421a7fb97d58f92db94fab"
+bundle="$model_dir/volantis-db-clean71-v1-arctic-m-v2.zem"
 test -f "$bundle"
 test -d "${bundle%.zem}.mlmodelc"
 unset ZE_QUERY_COREML
@@ -28,7 +28,7 @@ with (root / "corpus.jsonl").open("w") as f:
 (root / "queries.jsonl").write_text('{"_id":"q","text":"team plan"}\n')
 (root / "qrels/test.tsv").write_text("query-id\tcorpus-id\tscore\nq\t0\t1\n")
 PY
-cargo build --locked --release -p zeppelin-embed-bench --features text --bin text-user-bench
+cargo build --locked --release -p volantis-db-bench --features text --bin text-user-bench
 build="${CARGO_TARGET_DIR:-target}/release"
 python3 scripts/release/stage-metallib.py "$build" "$build/mlx.metallib"
 for mib in 256 512 1024; do

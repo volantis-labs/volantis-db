@@ -1,6 +1,6 @@
 import Foundation
 import Darwin
-import ZeppelinEmbed
+import VolantisDB
 
 // Public Swift API measurement, including owned value conversion in cypher/apply.
 @main
@@ -197,7 +197,7 @@ struct GraphWorkload {
       "work_raw": result.metadata.globalWork.map { ["kind": UInt64($0.kind), "value": $0.units] },
       "reports_raw": result.metadata.reports.map { ["call_id": UInt64($0.call_id), "precision": UInt64($0.precision), "coverage": UInt64($0.coverage), "candidate_count": $0.candidate_count, "cross_scored_count": $0.cross_scored_count, "fallback_count": $0.fallback_count] }]
   }
-  static func timed(_ store: ZeppelinStore, source: String, batch: GraphBatch?, plan: GraphPlan? = nil,
+  static func timed(_ store: VolantisStore, source: String, batch: GraphBatch?, plan: GraphPlan? = nil,
     sample: Int, participant: Int, scheduleIndex: Int) async throws -> [String: Any] {
     let start = DispatchTime.now().uptimeNanoseconds
     var result: GraphResult?
@@ -228,7 +228,7 @@ struct GraphWorkload {
     let writes = try String(contentsOfFile: writeList, encoding: .utf8).split(separator: "\n").map(String.init)
     guard reads.count == 100, writes.count == 200 else { throw Failure(description: "mixed requires 100 frozen cases and 200 distinct writes") }
     let tower = EmbeddingTower(modelID: "ze73-fixture", modelVersion: "1", weightsDigest: Data([0x73]), dimensions: 768, maxTokens: 512, runtime: .cpuReference, computeUnits: .cpu)
-    let store = try await ZeppelinStore.openWithEpoch(at: URL(fileURLWithPath: path), epoch: Epoch(embedding: EmbeddingEpoch(document: tower, query: tower)), options: OpenOptions(durabilityMode: .durable, commitTier: .durable, maxResidentBytes: 256 << 20))
+    let store = try await VolantisStore.openWithEpoch(at: URL(fileURLWithPath: path), epoch: Epoch(embedding: EmbeddingEpoch(document: tower, query: tower)), options: OpenOptions(durabilityMode: .durable, commitTier: .durable, maxResidentBytes: 256 << 20))
     _ = try await store.enableGraph()
     let barrier = Barrier()
     try await withThrowingTaskGroup(of: Void.self) { group in
@@ -315,7 +315,7 @@ struct GraphWorkload {
       weightsDigest: Data([0x73]), dimensions: 768, maxTokens: 512,
       runtime: .cpuReference, computeUnits: .cpu)
     FileHandle.standardError.write(Data("ZE-77 Swift phase: open\n".utf8))
-    let store = try await ZeppelinStore.openWithEpoch(at: URL(fileURLWithPath: args[0]), epoch: Epoch(embedding: EmbeddingEpoch(document: tower, query: tower)), options: OpenOptions(durabilityMode: .durable, commitTier: .durable, maxResidentBytes: 256 << 20))
+    let store = try await VolantisStore.openWithEpoch(at: URL(fileURLWithPath: args[0]), epoch: Epoch(embedding: EmbeddingEpoch(document: tower, query: tower)), options: OpenOptions(durabilityMode: .durable, commitTier: .durable, maxResidentBytes: 256 << 20))
     _ = try await store.enableGraph()
     FileHandle.standardError.write(Data("ZE-77 Swift phase: opened; entering public requests\n".utf8))
     for i in 0..<(warmups + samples) {

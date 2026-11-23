@@ -5,13 +5,13 @@ use super::{
 };
 use rand::RngCore;
 use std::{collections::BTreeMap, path::Path};
-use zeppelin_embed::property_graph::storage::{
+use volantis_db::property_graph::storage::{
     allocation::{AllocationError, ArtifactAllocator, EntropyProvider, artifact_path},
     artifact::{self, ArtifactId, Block, BlockKind, ContainerKind},
 };
-use zeppelin_embed::property_graph::{GraphGeneration, StoreInstanceId};
-use zeppelin_embed::vfs::{CountingVfs, StdVfs};
-use zeppelin_embed_adversarial_oracle::property_graph_storage::{
+use volantis_db::property_graph::{GraphGeneration, StoreInstanceId};
+use volantis_db::vfs::{CountingVfs, StdVfs};
+use volantis_db_adversarial_oracle::property_graph_storage::{
     Case, Observation, Outcome, check,
 };
 

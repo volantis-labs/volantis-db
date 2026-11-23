@@ -13,9 +13,9 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed::lifecycle::{OpenOptions, Store, StoreError};
-use zeppelin_embed::manifest::decode_manifest;
-use zeppelin_embed::verify::verify_store;
+use volantis_db::lifecycle::{OpenOptions, Store, StoreError};
+use volantis_db::manifest::decode_manifest;
+use volantis_db::verify::verify_store;
 
 fn directory() -> &'static PathBuf {
     static DIRECTORY: OnceLock<PathBuf> = OnceLock::new();

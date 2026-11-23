@@ -1,4 +1,4 @@
-use zeppelin_embed_adversarial_oracle::graph_adjacency_store::{
+use volantis_db_adversarial_oracle::graph_adjacency_store::{
     AdjacencyRange, AdjacencyRow, DegreeQuery, Direction, EntityKind, Model, ObservationPlan,
     Operation, RelationshipRange, RelationshipRow,
 };
@@ -114,7 +114,7 @@ fn restrict_delete_requires_every_live_self_and_parallel_edge_to_be_deleted() {
             ],
         ),
         Err(
-            zeppelin_embed_adversarial_oracle::graph_adjacency_store::Error::State(
+            volantis_db_adversarial_oracle::graph_adjacency_store::Error::State(
                 "incident_relationship"
             )
         )

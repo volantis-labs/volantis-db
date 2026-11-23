@@ -35,3 +35,10 @@ tests/windows-electron/dist/
 tests/windows-electron/.staging/
 scripts/release-local.sh
 *.profraw
+
+# Agent and planning files stay local
+CLAUDE.md
+AGENTS.md
+
+# Local ticket tracker: database and backups stay local.
+/tracker/

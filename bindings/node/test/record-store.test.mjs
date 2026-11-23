@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { ZeppelinError, listNamespaces, openNamespace } = require('..');
+const { VolantisError, listNamespaces, openNamespace } = require('..');
 
 function temporaryRoot(prefix) {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -36,7 +36,7 @@ test('creates, reopens, validates, and lists namespaces', () => {
           attributes: [{ id: 1, name: 'rank', type: 'i64', nullable: false }],
         }),
       (error) =>
-        error instanceof ZeppelinError &&
+        error instanceof VolantisError &&
         error.code === 'ZE_ERR_SCHEMA_MISMATCH',
     );
     assert.deepEqual(listNamespaces(root), ['records']);
@@ -62,7 +62,7 @@ test('reopens a namespace with an added nullable attribute and filters on it', (
   });
   const ids = (page) => page.documents.map((stored) => stored.id);
   const schemaMismatch = (name) => (error) =>
-    error instanceof ZeppelinError &&
+    error instanceof VolantisError &&
     error.code === 'ZE_ERR_SCHEMA_MISMATCH' &&
     error.message.includes(`'${name}'`);
   let store;
@@ -261,7 +261,7 @@ test('scan rejects a stale cursor instead of restarting', () => {
     assert.throws(
       () => store.scan({ limit: 1, cursor: first.cursor }),
       (error) =>
-        error instanceof ZeppelinError && error.code === 'ZE_ERR_SCAN_STALE',
+        error instanceof VolantisError && error.code === 'ZE_ERR_SCAN_STALE',
     );
   } finally {
     store.close();
@@ -371,7 +371,7 @@ test('record-only namespaces upsert, get, and scan without vector search', () =>
           { k: 1 },
         ),
       (error) =>
-        error instanceof ZeppelinError &&
+        error instanceof VolantisError &&
         error.code === 'ZE_ERR_NO_VECTOR_SPACE',
     );
   } finally {
@@ -392,7 +392,7 @@ test('malformed filters throw typed errors without hanging', () => {
       },
     ]);
     const typedInvalid = (error) =>
-      error instanceof ZeppelinError && error.code === 'ZE_ERR_INVALID_ARGUMENT';
+      error instanceof VolantisError && error.code === 'ZE_ERR_INVALID_ARGUMENT';
 
     assert.throws(
       () => store.count({ filter: { op: 'and', children: new Array(1) } }),

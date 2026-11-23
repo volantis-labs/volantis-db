@@ -15,11 +15,11 @@ snapshots are not supported.
 
 Please report suspected vulnerabilities privately. When GitHub private
 vulnerability reporting is available, use the repository's
-[private vulnerability report](https://github.com/zepdb/zeppelin-embed/security/advisories/new)
+[private vulnerability report](https://github.com/volantis-labs/volantis-db/security/advisories/new)
 form.
 
 If that form is unavailable, open a
-[GitHub issue](https://github.com/zepdb/zeppelin-embed/issues) that asks the
+[GitHub issue](https://github.com/volantis-labs/volantis-db/issues) that asks the
 maintainers to arrange a private reporting channel. Do not include the
 vulnerability, reproduction steps, proof of concept, or other sensitive details
 in that issue.
@@ -43,11 +43,11 @@ agreed through that private discussion.
 
 ## Scope
 
-This policy covers security-impacting defects in released Zeppelin Embed code
+This policy covers security-impacting defects in released Volantis DB code
 and project-produced artifacts, including the Rust core, persistent storage
 formats, C ABI, and official language bindings. Reports about dependencies are
-in scope when the dependency behavior is reachable through Zeppelin Embed.
+in scope when the dependency behavior is reachable through Volantis DB.
 
 Unsupported versions, unmodified third-party software, benchmark tooling, test
-fixtures, and embedding models that Zeppelin Embed does not distribute are
+fixtures, and embedding models that Volantis DB does not distribute are
 outside this policy's scope.

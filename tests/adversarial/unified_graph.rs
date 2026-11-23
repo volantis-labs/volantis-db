@@ -78,9 +78,9 @@ pub fn run(operation: Operation, seed: u64, coverage: &mut CoverageRegistry) -> 
 fn enable_graph(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
     use super::fault_vfs::{FaultEvent, FaultMode, FaultSchedule, FaultSite, Layer, ScheduledVfs};
     use std::sync::Arc;
-    use zeppelin_embed::lifecycle::{Store, StoreTestDependencies, SystemMonotonicClock};
-    use zeppelin_embed::manifest::decode_manifest;
-    use zeppelin_embed::vfs::StdVfs;
+    use volantis_db::lifecycle::{Store, StoreTestDependencies, SystemMonotonicClock};
+    use volantis_db::manifest::decode_manifest;
+    use volantis_db::vfs::StdVfs;
     let root = tempfile::tempdir().map_err(|error| error.to_string())?;
     for (ordinal, (site, needle)) in [
         (FaultSite::Write, ".zgraph"),
@@ -174,10 +174,10 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
 fn mixed_batch(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
     use super::fault_vfs::{FaultEvent, FaultMode, FaultSchedule, FaultSite, Layer, ScheduledVfs};
     use std::sync::Arc;
-    use zeppelin_embed::graph_recovery_test_support::{apply_mixed_batch, mixed_node_present};
-    use zeppelin_embed::lifecycle::{Store, StoreTestDependencies, SystemMonotonicClock};
-    use zeppelin_embed::property_graph::NodeId;
-    use zeppelin_embed::vfs::StdVfs;
+    use volantis_db::graph_recovery_test_support::{apply_mixed_batch, mixed_node_present};
+    use volantis_db::lifecycle::{Store, StoreTestDependencies, SystemMonotonicClock};
+    use volantis_db::property_graph::NodeId;
+    use volantis_db::vfs::StdVfs;
     let root = tempfile::tempdir().map_err(|e| e.to_string())?;
     let batch = fixture::batch(vec![
         fixture::document(91, "mixed orchard"),
@@ -188,8 +188,8 @@ fn mixed_batch(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String>
         &clean_path,
         fixture::options(false)
             .with_durability(
-                zeppelin_embed::lifecycle::durability::DurabilityMode::Durable,
-                zeppelin_embed::lifecycle::durability::CommitTier::Durable,
+                volantis_db::lifecycle::durability::DurabilityMode::Durable,
+                volantis_db::lifecycle::durability::CommitTier::Durable,
             )
             .with_schema(fixture::schema()),
     )
@@ -241,8 +241,8 @@ fn mixed_batch(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String>
             &path,
             fixture::options(false)
                 .with_durability(
-                    zeppelin_embed::lifecycle::durability::DurabilityMode::Durable,
-                    zeppelin_embed::lifecycle::durability::CommitTier::Durable,
+                    volantis_db::lifecycle::durability::DurabilityMode::Durable,
+                    volantis_db::lifecycle::durability::CommitTier::Durable,
                 )
                 .with_schema(fixture::schema()),
             StoreTestDependencies::new(vfs.clone(), Arc::new(SystemMonotonicClock)),
@@ -272,8 +272,8 @@ fn mixed_batch(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String>
             let recovered = Store::open(
                 &path,
                 fixture::options(read_only).with_durability(
-                    zeppelin_embed::lifecycle::durability::DurabilityMode::Durable,
-                    zeppelin_embed::lifecycle::durability::CommitTier::Durable,
+                    volantis_db::lifecycle::durability::DurabilityMode::Durable,
+                    volantis_db::lifecycle::durability::CommitTier::Durable,
                 ),
             )
             .map_err(|e| e.to_string())?;
@@ -302,17 +302,17 @@ fn mixed_batch(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String>
     Ok(())
 }
 
-#[path = "../../crates/zeppelin-embed/tests/test_support/namespace_model.rs"]
+#[path = "../../crates/volantis-db/tests/test_support/namespace_model.rs"]
 mod namespace_model;
 
 fn embedded_batch(
     seed: u64,
     coverage: &mut CoverageRegistry,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use zeppelin_embed::ingest::{DocId, DocumentVersion, IngestDocument, Revision};
-    use zeppelin_embed::lifecycle::embedded::NeighbourOptions;
-    use zeppelin_embed::lifecycle::{CancelToken, QueryControl, QueryError};
-    use zeppelin_embed::lifecycle::{
+    use volantis_db::ingest::{DocId, DocumentVersion, IngestDocument, Revision};
+    use volantis_db::lifecycle::embedded::NeighbourOptions;
+    use volantis_db::lifecycle::{CancelToken, QueryControl, QueryError};
+    use volantis_db::lifecycle::{
         DocumentFields, NamespaceMutation, OpenOptions, Store, StoreError, namespace_batch,
     };
     let root = tempfile::tempdir()?;

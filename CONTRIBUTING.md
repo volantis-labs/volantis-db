@@ -1,6 +1,6 @@
-# Contributing to Zeppelin Embed
+# Contributing to Volantis DB
 
-Thank you for helping improve Zeppelin Embed. The project targets macOS and
+Thank you for helping improve Volantis DB. The project targets macOS and
 Apple silicon while keeping the Rust core portable and covered by CI on macOS
 and Linux.
 
@@ -10,8 +10,8 @@ Install Rust 1.93 or newer. The checked-in `rust-toolchain.toml` selects the
 required compiler and components.
 
 ```bash
-git clone https://github.com/zepdb/zeppelin-embed.git
-cd zeppelin-embed
+git clone https://github.com/volantis-labs/volantis-db.git
+cd volantis-db
 cargo test --workspace
 ```
 
@@ -27,7 +27,7 @@ failure, make the smallest correction, and rerun the affected tests.
 Run focused tests while iterating. For example:
 
 ```bash
-cargo test -p zeppelin-embed test_name
+cargo test -p volantis-db test_name
 ```
 
 Every randomized test must use the repository's seeded test support so a
@@ -80,6 +80,6 @@ to review as one coherent change.
 
 ## License
 
-Zeppelin Embed is licensed under the [GNU General Public License v3.0](LICENSE).
+Volantis DB is licensed under the [GNU General Public License v3.0](LICENSE).
 By submitting a contribution, you agree that it may be distributed under that
 license and confirm that you have the right to submit it.

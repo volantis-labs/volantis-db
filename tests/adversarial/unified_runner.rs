@@ -1,11 +1,11 @@
 //! The existing runner Store owns both document and graph mutations.
 use super::*;
-use zeppelin_embed::graph_recovery_test_support::{
+use volantis_db::graph_recovery_test_support::{
     apply_unified_batch, configure_unified_runner, unified_graph_enabled,
 };
-use zeppelin_embed::property_graph::query::completed::{GraphQueryOptions, Value};
-use zeppelin_embed::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
-use zeppelin_embed::property_graph::{
+use volantis_db::property_graph::query::completed::{GraphQueryOptions, Value};
+use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
+use volantis_db::property_graph::{
     ApplicationKey, CanonicalContents, EntityKind, GraphName, GraphProperty, GraphRevision,
     NodeRef, PropertyData, PropertyValue,
 };
@@ -59,7 +59,7 @@ pub fn check_unified(model: &Model, observed: &UnifiedObservation) -> Result<(),
 #[derive(Debug)]
 enum UnifiedError {
     Store(StoreError),
-    Graph(Box<zeppelin_embed::property_graph::GraphStoreError>),
+    Graph(Box<volantis_db::property_graph::GraphStoreError>),
     Invalid(String),
 }
 impl std::fmt::Display for UnifiedError {
@@ -145,7 +145,7 @@ impl RealEngine {
             ),
             _ => None,
         };
-        zeppelin_embed::property_graph::with_local_refs(|refs| {
+        volantis_db::property_graph::with_local_refs(|refs| {
             let requests = [
                 StructuredWrite {
                     key: ApplicationKey::new(EntityKind::Node, "ze358", &a_key).unwrap(),
@@ -188,7 +188,7 @@ impl RealEngine {
     }
 
     pub(super) fn observe_unified(&mut self) -> Result<UnifiedObservation, String> {
-        use zeppelin_embed::lifecycle::{DocumentFields, DocumentScanRequest};
+        use volantis_db::lifecycle::{DocumentFields, DocumentScanRequest};
         let store = self.store()?;
         let generation = store.snapshot().map_err(|e| e.to_string())?.generation();
         let mut documents = Vec::new();
@@ -232,13 +232,13 @@ impl RealEngine {
                     true,
                 ),
             ] {
-                let result = zeppelin_embed_cypher::execute(
+                let result = volantis_db_cypher::execute(
                     store,
                     &QueryControl::Cancel(CancelToken::new()),
                     &GraphQueryOptions::default(),
                     query,
                     &[],
-                    zeppelin_embed_cypher::CompileLimits::default(),
+                    volantis_db_cypher::CompileLimits::default(),
                 )
                 .map_err(|e| e.to_string())?;
                 let node_id = |row, column| -> Result<u32, String> {
@@ -270,13 +270,13 @@ impl RealEngine {
                     3,
                 ),
             ] {
-                let result = zeppelin_embed_cypher::execute(
+                let result = volantis_db_cypher::execute(
                     store,
                     &QueryControl::Cancel(CancelToken::new()),
                     &GraphQueryOptions::default(),
                     query,
                     &[],
-                    zeppelin_embed_cypher::CompileLimits::default(),
+                    volantis_db_cypher::CompileLimits::default(),
                 )
                 .map_err(|e| e.to_string())?;
                 for row in 0..result.metadata().rows {
@@ -569,7 +569,7 @@ pub fn exercise_unified_faults(seed: u64, coverage: &mut CoverageRegistry) -> Re
             return Err(format!("wrong operation/path fire: {events:?}"));
         }
         if mode == FaultMode::TornWrite {
-            use zeppelin_embed::wal::{header::WAL_HEADER_LEN, record::decode_record};
+            use volantis_db::wal::{header::WAL_HEADER_LEN, record::decode_record};
             let clean_wal =
                 std::fs::read(clean.directory.join("wal.ze")).map_err(|e| e.to_string())?;
             let fault_wal =
@@ -662,8 +662,8 @@ pub fn exercise_unified_faults(seed: u64, coverage: &mut CoverageRegistry) -> Re
 }
 
 fn node_text_preparation_cancel(root: &Path, seed: u64) -> Result<(), String> {
-    use zeppelin_embed::fts::{index::DEFAULT_FIELD, search::TermQuery};
-    use zeppelin_embed::property_graph::GraphStoreErrorKind;
+    use volantis_db::fts::{index::DEFAULT_FIELD, search::TermQuery};
+    use volantis_db::property_graph::GraphStoreErrorKind;
     let (engine, _) = fault_fixture(root.join("node-text"), FaultSchedule::default(), true)?;
     let store = engine.store()?;
     let term = if seed & 1 == 0 { "amber" } else { "cedar" };
@@ -702,11 +702,11 @@ fn node_text_preparation_cancel(root: &Path, seed: u64) -> Result<(), String> {
             })
             .map_err(|e| e.to_string())
     };
-    let zeppelin_embed::property_graph::EntityId::Node(id) = entity else {
+    let volantis_db::property_graph::EntityId::Node(id) = entity else {
         return Err("node receipt expected".into());
     };
     let token = CancelToken::new();
-    zeppelin_embed::graph_structured_write_test_support::cancel_node_text_preparation(
+    volantis_db::graph_structured_write_test_support::cancel_node_text_preparation(
         token.clone(),
     );
     let error = store
@@ -773,8 +773,8 @@ impl RealEngine {
         &self,
         source: u32,
         target: u32,
-    ) -> Result<(u64, bool), Box<zeppelin_embed::property_graph::GraphStoreError>> {
-        use zeppelin_embed::property_graph::NodeId;
+    ) -> Result<(u64, bool), Box<volantis_db::property_graph::GraphStoreError>> {
+        use volantis_db::property_graph::NodeId;
         let properties = [GraphProperty::new(
             GraphName::new("k").unwrap(),
             PropertyValue::new(PropertyData::I64(358)).unwrap(),
@@ -822,7 +822,7 @@ pub fn exercise_document_operation(
     coverage: &mut CoverageRegistry,
 ) -> Result<(), String> {
     use super::super::unified_graph::Operation;
-    use zeppelin_embed::property_graph::catalog::{OnDelete, RelationshipRule, RelationshipRules};
+    use volantis_db::property_graph::catalog::{OnDelete, RelationshipRule, RelationshipRules};
     let root = tempfile::tempdir().map_err(|error| error.to_string())?;
     let path = root.path().join(format!("documents-{seed}"));
     let (mut engine, mut model) = if matches!(operation, Operation::DocumentDelete) {
@@ -830,7 +830,7 @@ pub fn exercise_document_operation(
             relationship_type: GraphName::new("ZE358_DOC_LINK").unwrap(),
             on_delete: OnDelete::Restrict,
         }];
-        let store = zeppelin_embed::graph_recovery_test_support::create_with_relationship_rules(
+        let store = volantis_db::graph_recovery_test_support::create_with_relationship_rules(
             &path,
             RealEngine::options(ModelEpoch::A),
             Some(declared_store_epoch().embedding.document),
@@ -898,7 +898,7 @@ pub fn exercise_document_operation(
                 let error = engine
                     .store()?
                     .delete(DeleteBatch::new(vec![DocId::new(u128::from(doc_id))]));
-                if !matches!(error, Err(IngestError::Graph(ref error)) if error.kind() == zeppelin_embed::property_graph::query::completed::GraphQueryErrorKind::Constraint)
+                if !matches!(error, Err(IngestError::Graph(ref error)) if error.kind() == volantis_db::property_graph::query::completed::GraphQueryErrorKind::Constraint)
                 {
                     return Err(format!(
                         "Restrict did not return a typed constraint: {error:?}"
@@ -933,7 +933,7 @@ pub fn exercise_document_operation(
                 }
                 let before = file_image(&engine.directory)?;
                 let error = engine.document_relationship(source, target);
-                if !matches!(error, Err(ref error) if error.kind() == zeppelin_embed::property_graph::GraphStoreErrorKind::Constraint)
+                if !matches!(error, Err(ref error) if error.kind() == volantis_db::property_graph::GraphStoreErrorKind::Constraint)
                 {
                     return Err(format!(
                         "missing document endpoint did not return a typed constraint: {error:?}"
@@ -1013,18 +1013,18 @@ pub fn probe_unified_refusals() -> Result<(), String> {
         vec![1.0],
     );
     let before = file_image(&path)?;
-    let documents = [zeppelin_embed::property_graph::GraphNodeDocument {
+    let documents = [volantis_db::property_graph::GraphNodeDocument {
         item_index: 0,
         document: document.clone().with_text("x".repeat(1_048_576)),
     }];
     let error = store
         .graph_apply(
-            zeppelin_embed::property_graph::GraphBatch::with_node_documents(&writes, &documents),
+            volantis_db::property_graph::GraphBatch::with_node_documents(&writes, &documents),
             &QueryControl::Cancel(CancelToken::new()),
         )
         .err()
         .ok_or("oversized mixed WAL run committed")?;
-    if error.kind() != zeppelin_embed::property_graph::GraphStoreErrorKind::Limit
+    if error.kind() != volantis_db::property_graph::GraphStoreErrorKind::Limit
         || !error.nothing_committed()
         || file_image(&path)? != before
         || store
@@ -1035,13 +1035,13 @@ pub fn probe_unified_refusals() -> Result<(), String> {
     {
         return Err(format!("mixed WAL admission limit violated: {error}"));
     }
-    let documents = [zeppelin_embed::property_graph::GraphNodeDocument {
+    let documents = [volantis_db::property_graph::GraphNodeDocument {
         item_index: 0,
         document: document.with_text("small comment"),
     }];
     store
         .graph_apply(
-            zeppelin_embed::property_graph::GraphBatch::with_node_documents(&writes, &documents),
+            volantis_db::property_graph::GraphBatch::with_node_documents(&writes, &documents),
             &QueryControl::Cancel(CancelToken::new()),
         )
         .map_err(|e| e.to_string())?;

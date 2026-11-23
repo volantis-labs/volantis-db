@@ -12,7 +12,7 @@ const {
   TextStore,
   openNamespace,
   verify,
-} = require('@zepdb/zeppelin-embed');
+} = require('volantis-db');
 
 const directory = mkdtempSync(join(tmpdir(), 'zeppelin-node-installed-'));
 const store = new Store(join(directory, 'index'));
@@ -68,11 +68,11 @@ try {
     [1n],
   );
 
-  // Store verification and the installed `zeppelin-verify` command. Verify
+  // Store verification and the installed `volantis-verify` command. Verify
   // is read-only, so it runs beside the open writer.
   const notes = join(directory, 'records', 'notes');
   assert.equal(verify(notes).ok, true);
-  const bin = join(dirname(require.resolve('@zepdb/zeppelin-embed')), 'bin', 'zeppelin-verify.js');
+  const bin = join(dirname(require.resolve('volantis-db')), 'bin', 'volantis-verify.js');
   const cli = spawnSync(process.execPath, [bin, notes], { encoding: 'utf8' });
   assert.equal(cli.status, 0, cli.stderr);
   assert.equal(JSON.parse(cli.stdout).ok, true);
@@ -131,7 +131,7 @@ try {
     } finally { text.close(); }
   } else {
     assert.throws(() => TextStore.open('unused', 'unused'), error =>
-      error.name === 'ZeppelinError' && error.code === 'ZE_ERR_UNSUPPORTED' && /macOS arm64 only/.test(error.message));
+      error.name === 'VolantisError' && error.code === 'ZE_ERR_UNSUPPORTED' && /macOS arm64 only/.test(error.message));
   }
 } finally { rmSync(textRoot, {recursive: true, force: true}); }
 console.log(`installed text API: ${process.platform}-${process.arch} ok`);

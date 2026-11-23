@@ -3,7 +3,7 @@
 
 use super::coverage::CoverageRegistry;
 use std::collections::BTreeSet;
-use zeppelin_embed::property_graph::query::query_entry_test_support::run_actual_probe;
+use volantis_db::property_graph::query::query_entry_test_support::run_actual_probe;
 
 const RECEIPTS: [&str; 14] = [
     "incident.fire",

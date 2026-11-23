@@ -1,4 +1,4 @@
-use zeppelin_embed_adversarial_oracle::storage_durability::*;
+use volantis_db_adversarial_oracle::storage_durability::*;
 
 fn refusal(result: Result<(), CheckFailure>, checker: &str, detail: &str) {
     let error = result.unwrap_err();

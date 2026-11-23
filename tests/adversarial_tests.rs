@@ -94,34 +94,34 @@ use adversarial::profiles::{
 };
 use adversarial::program::{CrashBoundary, Op, PredicateKind, Program};
 use adversarial::runner::{Invariant, SelfTestBug};
-use zeppelin_embed::epoch::{
+use volantis_db::epoch::{
     ComputeUnits, EmbeddingEpoch, EmbeddingRuntime, EmbeddingTower, Normalization, StoreEpoch,
 };
-use zeppelin_embed::fts::index::DEFAULT_FIELD;
-use zeppelin_embed::fts::search::TermQuery;
-use zeppelin_embed::fts::tokenizer::TokenizerConfig;
-use zeppelin_embed::fusion::{FusionError, HybridQuery};
-use zeppelin_embed::graph::build::GraphBuildError;
-use zeppelin_embed::graph::search::GraphSearchProfile;
-use zeppelin_embed::ingest::{
+use volantis_db::fts::index::DEFAULT_FIELD;
+use volantis_db::fts::search::TermQuery;
+use volantis_db::fts::tokenizer::TokenizerConfig;
+use volantis_db::fusion::{FusionError, HybridQuery};
+use volantis_db::graph::build::GraphBuildError;
+use volantis_db::graph::search::GraphSearchProfile;
+use volantis_db::ingest::{
     DocId, DocumentVersion, IngestBatch, IngestDocument, Revision, SearchRequest,
 };
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::{
     CancelToken, Deadline, GraphSearchOptions, ManualMonotonicClock, OpenOptions, QueryControl,
     QueryError, SearchOptions, SearchTier, Store, StoreError, StoreTestDependencies,
 };
-use zeppelin_embed::meta::{
+use volantis_db::meta::{
     Predicate, PredicateValue, RangeBound, RangePredicate, Schema, TIMESTAMP_COLUMN,
 };
-use zeppelin_embed::planner::{
+use volantis_db::planner::{
     FilteredSearchError, MetadataControllerError, MetadataTestArm, MetadataTestController,
 };
-use zeppelin_embed::scan::ScanOptions;
-use zeppelin_embed::segment::SegmentError;
-use zeppelin_embed::tier::{
+use volantis_db::scan::ScanOptions;
+use volantis_db::segment::SegmentError;
+use volantis_db::tier::{
     MaintenanceBudget, MaintenanceError, MaintenanceReport, MaintenanceStatus, TierThresholds,
 };
-use zeppelin_embed::vfs::{StdVfs, Vfs};
+use volantis_db::vfs::{StdVfs, Vfs};
 
 #[test]
 fn pre_cancelled_query_returns_typed_error_for_every_query_op_kind() {
@@ -319,8 +319,8 @@ fn cancel_after_nth_read_returns_cancelled_or_the_exact_result_never_partial() {
             if line.is_empty() {
                 continue;
             }
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line)
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line)
                     .expect("parse cancel fault record");
             if record["type"].as_str() == Some("generic")
                 && record["layer"].as_str() == Some("cancel")
@@ -509,8 +509,8 @@ fn cancel_layer_can_catch_a_graph_search_that_returns_partial_candidates() {
                 if line.is_empty() {
                     return None;
                 }
-                let record: zeppelin_embed_bench::harness_json::Value =
-                    zeppelin_embed_bench::harness_json::from_slice(line)
+                let record: volantis_db_bench::harness_json::Value =
+                    volantis_db_bench::harness_json::from_slice(line)
                         .expect("parse graph cancel fault");
                 (record["type"].as_str() == Some("generic")
                     && record["layer"].as_str() == Some("cancel")
@@ -584,8 +584,8 @@ fn fts_pre_cancelled_probe_is_credited_as_a_generic_cancel_event() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .any(|line| {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line)
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line)
                     .expect("parse FTS cancellation fault");
             record["type"].as_str() == Some("feature")
                 && record["campaign"].as_str() == Some("fts")
@@ -770,30 +770,30 @@ fn clean_control_helper_runs_the_clean_leg_without_any_scheduled_event() {
     let outcome = adversarial::runner::run_with_clean_control(
         &fixture,
         |store| {
-            let document = zeppelin_embed::ingest::IngestDocument::new(
-                zeppelin_embed::ingest::DocumentVersion::new(
-                    zeppelin_embed::ingest::DocId::new(1),
-                    zeppelin_embed::ingest::Revision::new(1),
+            let document = volantis_db::ingest::IngestDocument::new(
+                volantis_db::ingest::DocumentVersion::new(
+                    volantis_db::ingest::DocId::new(1),
+                    volantis_db::ingest::Revision::new(1),
                 ),
                 vec![1.0],
             );
             store
                 .store()?
-                .ingest(zeppelin_embed::ingest::IngestBatch::new(vec![document]))
+                .ingest(volantis_db::ingest::IngestBatch::new(vec![document]))
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         },
         |store| {
-            let document = zeppelin_embed::ingest::IngestDocument::new(
-                zeppelin_embed::ingest::DocumentVersion::new(
-                    zeppelin_embed::ingest::DocId::new(1),
-                    zeppelin_embed::ingest::Revision::new(1),
+            let document = volantis_db::ingest::IngestDocument::new(
+                volantis_db::ingest::DocumentVersion::new(
+                    volantis_db::ingest::DocId::new(1),
+                    volantis_db::ingest::Revision::new(1),
                 ),
                 vec![1.0],
             );
             store
                 .store()?
-                .ingest(zeppelin_embed::ingest::IngestBatch::new(vec![document]))
+                .ingest(volantis_db::ingest::IngestBatch::new(vec![document]))
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         },
@@ -989,8 +989,8 @@ fn runner_helper_accounting_child() {
         .expect("read helper program records")
         .lines()
         .filter_map(|line| {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_str(line).expect("parse helper program");
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_str(line).expect("parse helper program");
             Some((
                 record["op"].as_u64()?,
                 record["operation"].as_str()?.to_owned(),
@@ -1001,8 +1001,8 @@ fn runner_helper_accounting_child() {
         .expect("read helper fault records")
         .lines()
         .filter_map(|line| {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_str(line).expect("parse helper fault");
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_str(line).expect("parse helper fault");
             (record["type"].as_str() == Some("feature") && record["fired"].as_bool() == Some(true))
                 .then(|| record["op"].as_u64())
                 .flatten()
@@ -1013,8 +1013,8 @@ fn runner_helper_accounting_child() {
         .expect("read helper control records")
         .lines()
         .filter(|line| {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_str(line).expect("parse helper control");
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_str(line).expect("parse helper control");
             if campaign == CampaignKind::MetadataFilterPlanner {
                 !record["fault"].is_null()
             } else {
@@ -1354,7 +1354,7 @@ fn consolidation_merge_enospc_is_typed_and_publishes_nothing() {
         matches!(
             &faulted.status,
             MaintenanceStatus::Failed(MaintenanceError::Consolidate(
-                zeppelin_embed::graph::consolidate::ConsolidateError::Segment(_)
+                volantis_db::graph::consolidate::ConsolidateError::Segment(_)
             ))
         ),
         "merge ENOSPC was not a typed consolidation failure: {:?}",
@@ -1726,8 +1726,8 @@ fn busy_layer_surfaces_second_writer_when_content_shares_the_operation() {
             let op_index = shared_operations.into_iter().find(|op_index| {
                 ["busy", "content"].into_iter().all(|layer| {
                     faults.lines().any(|line| {
-                        let record = zeppelin_embed_bench::harness_json::from_str::<
-                            zeppelin_embed_bench::harness_json::Value,
+                        let record = volantis_db_bench::harness_json::from_str::<
+                            volantis_db_bench::harness_json::Value,
                         >(line)
                         .expect("parse fault JSONL record");
                         record["type"].as_str() == Some("generic")
@@ -2029,7 +2029,7 @@ fn clock_jump_past_budget_mid_query_returns_typed_deadline_error_and_no_rows() {
     assert!(
         matches!(
             result,
-            Err(zeppelin_embed::planner::FilteredSearchError::Query(
+            Err(volantis_db::planner::FilteredSearchError::Query(
                 QueryError::Timeout { partial: false }
             ))
         ),
@@ -2134,8 +2134,8 @@ fn clock_tick_does_not_consume_or_surface_a_product_read_fault() {
     let clock = ScheduledQueryClock::new(manual_clock, scheduled.clone());
     scheduled.set_operation(0);
     clock.arm_query();
-    let _ = zeppelin_embed::lifecycle::MonotonicClock::now(&clock);
-    let _ = zeppelin_embed::lifecycle::MonotonicClock::now(&clock);
+    let _ = volantis_db::lifecycle::MonotonicClock::now(&clock);
+    let _ = volantis_db::lifecycle::MonotonicClock::now(&clock);
     clock
         .finish_query()
         .expect("clock dispatch must not surface a product VFS error");
@@ -2177,7 +2177,7 @@ fn clock_events_fire_independently_of_the_armed_read_count() {
             scheduled.set_operation(0);
             clock.arm_query();
             for _ in 0..read_count {
-                let _ = zeppelin_embed::lifecycle::MonotonicClock::now(&clock);
+                let _ = volantis_db::lifecycle::MonotonicClock::now(&clock);
             }
             clock.finish_query().expect("finish scheduled clock reads");
             let event = scheduled.events().remove(0);
@@ -2196,7 +2196,7 @@ fn clock_events_fire_independently_of_the_armed_read_count() {
 fn run_clock_filtered_query(
     event: FaultEvent,
 ) -> (
-    Result<Vec<u128>, zeppelin_embed::planner::FilteredSearchError>,
+    Result<Vec<u128>, volantis_db::planner::FilteredSearchError>,
     usize,
 ) {
     let (result, fire_count, _) = run_clock_filtered_query_timed(event);
@@ -2206,7 +2206,7 @@ fn run_clock_filtered_query(
 fn run_clock_filtered_query_timed(
     event: FaultEvent,
 ) -> (
-    Result<Vec<u128>, zeppelin_embed::planner::FilteredSearchError>,
+    Result<Vec<u128>, volantis_db::planner::FilteredSearchError>,
     usize,
     Duration,
 ) {
@@ -2244,11 +2244,11 @@ fn run_clock_filtered_query_timed(
     let query = [0.0_f32, 0.0];
     store
         .search_filtered(
-            zeppelin_embed::ingest::SearchRequest::new(&query),
+            volantis_db::ingest::SearchRequest::new(&query),
             &Predicate::Exists(TIMESTAMP_COLUMN),
             8,
             SearchOptions::new(ScanOptions { thread_budget: 1 }).with_tier(SearchTier::Exact),
-            QueryControl::Cancel(zeppelin_embed::lifecycle::CancelToken::new()),
+            QueryControl::Cancel(volantis_db::lifecycle::CancelToken::new()),
         )
         .expect("prewarm clock query views");
     scheduled.set_operation(op_index);
@@ -2258,7 +2258,7 @@ fn run_clock_filtered_query_timed(
     clock.arm_query();
     let started = Instant::now();
     let result = store.search_filtered(
-        zeppelin_embed::ingest::SearchRequest::new(&query),
+        volantis_db::ingest::SearchRequest::new(&query),
         &Predicate::Exists(TIMESTAMP_COLUMN),
         8,
         SearchOptions::new(ScanOptions { thread_budget: 1 }).with_tier(SearchTier::Exact),
@@ -2323,8 +2323,8 @@ fn clock_layer_events_are_real_not_synthesized() {
     .expect("read clock fault receipts");
     let observed = records
         .lines()
-        .map(|line| -> zeppelin_embed_bench::harness_json::Value {
-            zeppelin_embed_bench::harness_json::from_str(line).expect("parse clock fault receipt")
+        .map(|line| -> volantis_db_bench::harness_json::Value {
+            volantis_db_bench::harness_json::from_str(line).expect("parse clock fault receipt")
         })
         .filter(|record| {
             record["type"].as_str() == Some("generic") && record["layer"].as_str() == Some("clock")
@@ -2386,7 +2386,7 @@ fn clock_layer_can_catch_a_deadline_checked_only_before_the_scan() {
     assert!(
         matches!(
             result,
-            Err(zeppelin_embed::planner::FilteredSearchError::Query(
+            Err(volantis_db::planner::FilteredSearchError::Query(
                 QueryError::Timeout { partial: false }
             ))
         ),
@@ -2423,7 +2423,7 @@ fn deadline_probe_is_refused_before_the_query_executor_begins() {
         .expect("construct admission deadline");
     manual_clock.advance(Duration::from_secs(120));
     let result = store.search_filtered(
-        zeppelin_embed::ingest::SearchRequest::new(&[0.0, 0.0]),
+        volantis_db::ingest::SearchRequest::new(&[0.0, 0.0]),
         &Predicate::Exists(TIMESTAMP_COLUMN),
         1,
         SearchOptions::new(ScanOptions { thread_budget: 1 }).with_tier(SearchTier::Exact),
@@ -2432,7 +2432,7 @@ fn deadline_probe_is_refused_before_the_query_executor_begins() {
     assert!(
         matches!(
             result,
-            Err(zeppelin_embed::planner::FilteredSearchError::Query(
+            Err(volantis_db::planner::FilteredSearchError::Query(
                 QueryError::Timeout { partial: false }
             ))
         ),
@@ -2740,8 +2740,8 @@ fn unmatched_cancel_stays_unfired_in_faults_jsonl_and_earns_no_coverage() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .expect("parse unmatched cancel fault")
         })
@@ -2849,8 +2849,8 @@ fn faults_jsonl_tags_generic_events_with_type_and_layer() {
         fire_count: 0,
         path: None,
     };
-    let record: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_str(&event.json_line())
+    let record: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_str(&event.json_line())
             .expect("parse generic fault JSON");
 
     assert_eq!(record["type"].as_str(), Some("generic"));
@@ -3123,13 +3123,13 @@ fn reproduction_line_omits_profile_unless_overridden() {
     let seed_only = adversarial::runner::reproduction_for(CampaignKind::Fts, 17, None);
     assert_eq!(
         seed_only,
-        "ZE_ADV_CAMPAIGN=fts ZE_ADV_SEED=17 cargo test -p zeppelin-embed-workspace-tests --test adversarial_tests run -- --ignored --exact --nocapture"
+        "ZE_ADV_CAMPAIGN=fts ZE_ADV_SEED=17 cargo test -p volantis-db-workspace-tests --test adversarial_tests run -- --ignored --exact --nocapture"
     );
     let overridden =
         adversarial::runner::reproduction_for(CampaignKind::Fts, 17, Some(FaultProfile::Full));
     assert_eq!(
         overridden,
-        "ZE_ADV_PROFILE=full ZE_ADV_CAMPAIGN=fts ZE_ADV_SEED=17 cargo test -p zeppelin-embed-workspace-tests --test adversarial_tests run -- --ignored --exact --nocapture"
+        "ZE_ADV_PROFILE=full ZE_ADV_CAMPAIGN=fts ZE_ADV_SEED=17 cargo test -p volantis-db-workspace-tests --test adversarial_tests run -- --ignored --exact --nocapture"
     );
 }
 
@@ -3185,8 +3185,8 @@ fn crash_after_first_wal_directory_sync_preserves_the_model_batch() {
     let faults = String::from_utf8(outcome.faults_bytes).expect("fault receipts are UTF-8");
     assert!(
         faults.lines().any(|line| {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_str(line).expect("fault receipt");
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_str(line).expect("fault receipt");
             record["op"].as_u64() == Some(1)
                 && record["layer"].as_str() == Some("crash")
                 && record["site"].as_str() == Some("sync")
@@ -3304,7 +3304,7 @@ fn run_reproduction_line_is_seed_only_when_profile_is_not_overridden() {
     );
     assert_eq!(
         line,
-        "ZE_ADV_SEED=17 cargo test -p zeppelin-embed-workspace-tests --test adversarial_tests run -- --ignored --exact --nocapture"
+        "ZE_ADV_SEED=17 cargo test -p volantis-db-workspace-tests --test adversarial_tests run -- --ignored --exact --nocapture"
     );
 }
 
@@ -3519,7 +3519,7 @@ fn clean_ingest_batch_runs_i20_exact_checker() {
 #[test]
 fn i20_batch_atomicity_checker_rejects_one_visible_row_from_failed_batch() {
     let error =
-        zeppelin_embed_adversarial_oracle::ingest_retention::i20_visible_subset_plant_error()
+        volantis_db_adversarial_oracle::ingest_retention::i20_visible_subset_plant_error()
             .expect("valid I20 independent checker plant");
     assert!(
         error.contains("I20.batch-atomicity.v1 visible subset 1/2"),
@@ -3530,7 +3530,7 @@ fn i20_batch_atomicity_checker_rejects_one_visible_row_from_failed_batch() {
 #[test]
 fn i21_seal_checker_rejects_a_missing_document() {
     let error =
-        zeppelin_embed_adversarial_oracle::ingest_retention::i21_missing_document_plant_error()
+        volantis_db_adversarial_oracle::ingest_retention::i21_missing_document_plant_error()
             .expect("valid I21 independent checker plant");
     assert!(
         error.contains("I21.seal-multiset.v1 missing document 21@2"),
@@ -3571,7 +3571,7 @@ fn clean_seal_runs_i21_exact_multiset_checker() {
 #[test]
 fn i22_retention_checker_rejects_inclusive_cutoff_drop() {
     let error =
-        zeppelin_embed_adversarial_oracle::ingest_retention::i22_inclusive_cutoff_drop_plant_error(
+        volantis_db_adversarial_oracle::ingest_retention::i22_inclusive_cutoff_drop_plant_error(
         )
         .expect("valid I22 independent checker plant");
     assert!(
@@ -3613,7 +3613,7 @@ fn clean_retention_runs_i22_exact_boundary_checker() {
 #[test]
 fn i23_purge_checker_rejects_completed_sentinel_hit() {
     let error =
-        zeppelin_embed_adversarial_oracle::ingest_retention::i23_completed_sentinel_hit_plant_error()
+        volantis_db_adversarial_oracle::ingest_retention::i23_completed_sentinel_hit_plant_error()
             .expect("valid I23 independent checker plant");
     assert!(
         error.contains("I23.purge-proof.v1 completed purge left sentinel in segment-0001.zseg@128"),
@@ -3946,7 +3946,7 @@ fn independent_oracle_is_a_std_only_source_and_dependency_boundary() {
         manifest_path.display()
     );
     let manifest = std::fs::read_to_string(&manifest_path).expect("read oracle manifest");
-    assert!(manifest.contains("name = \"zeppelin-embed-adversarial-oracle\""));
+    assert!(manifest.contains("name = \"volantis-db-adversarial-oracle\""));
     assert_eq!(
         manifest
             .split_once("[dependencies]")
@@ -3955,9 +3955,9 @@ fn independent_oracle_is_a_std_only_source_and_dependency_boundary() {
         "independent oracle must remain std-only"
     );
     for forbidden in [
-        "zeppelin-embed =",
-        "zeppelin-embed-ffi =",
-        "zeppelin-embed-bench =",
+        "volantis-db =",
+        "volantis-db-ffi =",
+        "volantis-db-bench =",
         "xxhash-rust =",
         "path = \"../../crates/",
     ] {
@@ -3981,8 +3981,8 @@ fn independent_oracle_is_a_std_only_source_and_dependency_boundary() {
             }
             let source = std::fs::read_to_string(&path).expect("read oracle source");
             for forbidden in [
-                "zeppelin_embed",
-                "zeppelin-embed",
+                "volantis_db",
+                "volantis-db",
                 "crate::fts",
                 "crate::fusion",
                 "crate::planner",
@@ -4216,7 +4216,7 @@ fn isolated_vfs_probes_cannot_issue_feature_fault_receipts() {
 
 #[test]
 fn production_feature_receipt_boundary_is_hidden_and_fact_complete() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../crates/zeppelin-embed/src");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../crates/volantis-db/src");
     let source_path = root.join("adversarial_test_support.rs");
     assert!(
         source_path.is_file(),
@@ -4315,8 +4315,8 @@ fn every_storage_fault_fires_through_its_exact_campaign_operation() {
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
         {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line)
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line)
                     .expect("parse typed storage receipt record");
             assert_eq!(record["campaign"], "storage-durability");
             assert!(record["operation"].is_string());
@@ -4411,7 +4411,7 @@ fn storage_list_omission_can_fire() {
         adversarial::campaign::FeatureFault::StorageListDeleteOmission,
         |seed| {
             adversarial::storage_durability::omission_case_for_schedule(seed, 0).subsite
-                == zeppelin_embed_adversarial_oracle::storage_durability::OmissionSubsite::List
+                == volantis_db_adversarial_oracle::storage_durability::OmissionSubsite::List
         },
     );
 }
@@ -4423,7 +4423,7 @@ fn storage_delete_omission_can_fire() {
         FaultProfile::IoErrors,
         |seed| {
             adversarial::storage_durability::omission_case_for_schedule(seed, 1).subsite
-                == zeppelin_embed_adversarial_oracle::storage_durability::OmissionSubsite::Delete
+                == volantis_db_adversarial_oracle::storage_durability::OmissionSubsite::Delete
         },
     );
 }
@@ -4524,7 +4524,7 @@ fn storage_shared_subcases_require_validated_production_receipts() {
             }
             adversarial::campaign::FeatureFault::StorageListDeleteOmission => {
                 if adversarial::storage_durability::omission_case_for_schedule(seed, 0).subsite
-                    == zeppelin_embed_adversarial_oracle::storage_durability::OmissionSubsite::Delete
+                    == volantis_db_adversarial_oracle::storage_durability::OmissionSubsite::Delete
                 {
                     "feature_fault.storage-durability.list-delete-omission.site.delete"
                 } else {
@@ -4622,8 +4622,8 @@ fn storage_observation_stream_retains_child_and_cleanup_intermediate_facts() {
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
             .map(|line| {
-                zeppelin_embed_bench::harness_json::from_slice::<
-                    zeppelin_embed_bench::harness_json::Value,
+                volantis_db_bench::harness_json::from_slice::<
+                    volantis_db_bench::harness_json::Value,
                 >(line)
                 .expect("parse storage observation")
             })
@@ -4758,8 +4758,8 @@ fn metadata_feature_episode_uses_exact_i36_i39_adapters() {
     assert_eq!(outcome.feature_faults_fired, 0);
     assert_eq!(outcome.expected_feature_fault_receipts, 0);
     assert_eq!(outcome.same_seed_clean_controls, 0);
-    let metadata: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let metadata: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(artifacts.path().join(format!(
                 "metadata-filter-planner/seed-{seed}-none/episode.json"
             )))
@@ -4867,14 +4867,14 @@ fn metadata_i38_pruned_source_is_independently_proved_and_attested() {
     let mut planted = observed.clone();
     planted.pruned_sources.clear();
     let error =
-        zeppelin_embed_adversarial_oracle::metadata_filter_planner::compare_i38(&input, &planted)
+        volantis_db_adversarial_oracle::metadata_filter_planner::compare_i38(&input, &planted)
             .expect_err("removing a proven pruned source must reject its production receipt");
     assert!(
         error.contains("I38.pruning-soundness.v2")
             && error.contains("orphan Pruned execution receipt"),
         "wrong I38 plant failure: {error}"
     );
-    zeppelin_embed_adversarial_oracle::metadata_filter_planner::compare_i38(&input, &observed)
+    volantis_db_adversarial_oracle::metadata_filter_planner::compare_i38(&input, &observed)
         .expect("unmodified public pruning evidence must pass I38");
 }
 
@@ -4960,8 +4960,8 @@ fn vector_forced_child_replay_retains_typed_binary_product_receipt() {
     let outcome =
         adversarial::runner::run_program_for(campaign, seed, FaultProfile::None, artifacts.path())
             .expect("vector forced child episode");
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &outcome.family_artifact_bytes["fixture.json"],
         )
         .expect("parse vector fixture");
@@ -5027,15 +5027,15 @@ fn vector_kernel_operation_uses_exact_i24_and_real_store_selection() {
             .expect("I24 operation episode");
     let oracle = String::from_utf8(outcome.oracle_bytes).expect("oracle JSON is UTF-8");
     let expected_records =
-        zeppelin_embed::kernels::KernelVariant::available().count() * 15 * 17 + 1;
+        volantis_db::kernels::KernelVariant::available().count() * 15 * 17 + 1;
     assert_eq!(
         oracle
             .matches("\"checker_id\":\"I24.kernel-contract-parity.v1\"")
             .count(),
         expected_records
     );
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             outcome
                 .family_artifact_bytes
                 .get("fixture.json")
@@ -5126,7 +5126,7 @@ fn expected_vector_family_coverage() -> BTreeSet<String> {
         "neon-dotprod-u4-prefetch",
         "avx2",
     ];
-    let available = zeppelin_embed::kernels::KernelVariant::available()
+    let available = volantis_db::kernels::KernelVariant::available()
         .map(|variant| variant.backend_id().as_str())
         .collect::<BTreeSet<_>>();
     let mut expected = BTreeSet::new();
@@ -5157,7 +5157,7 @@ fn expected_vector_family_coverage() -> BTreeSet<String> {
     expected.insert("I24.f32.cancellation-heavy-alternating-magnitude".to_owned());
     expected.insert(format!(
         "I24.store-selected.{}",
-        zeppelin_embed::kernels::KernelVariant::selected()
+        volantis_db::kernels::KernelVariant::selected()
             .backend_id()
             .as_str()
     ));
@@ -5351,8 +5351,8 @@ fn feature_episode_writes_schema_v3_replay_metadata() {
             .expect("feature metadata episode");
     assert_eq!(outcome.campaign, campaign);
     let directory = root.path().join(format!("fts/seed-{seed}-none"));
-    let metadata: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let metadata: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(directory.join("episode.json")).expect("episode metadata"),
         )
         .expect("parse episode metadata");
@@ -5371,7 +5371,7 @@ fn feature_episode_writes_schema_v3_replay_metadata() {
     assert!(metadata["attestation"]["evidence_digests"].is_object());
     assert_eq!(
         metadata["attestation"]["replay_artifacts"],
-        zeppelin_embed_bench::harness_json::json!([
+        volantis_db_bench::harness_json::json!([
             "program.jsonl",
             "faults.jsonl",
             "violations.json",
@@ -5438,8 +5438,8 @@ fn storage_replay_declares_every_family_evidence_stream() {
     let directory = root
         .path()
         .join(format!("storage-durability/seed-{seed}-none"));
-    let metadata: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let metadata: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(directory.join("episode.json")).expect("storage episode metadata"),
         )
         .expect("parse storage episode metadata");
@@ -5463,8 +5463,8 @@ fn storage_replay_declares_every_family_evidence_stream() {
             "storage episode omitted {name}"
         );
     }
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(directory.join("storage-fixture.json"))
                 .expect("storage fixture evidence"),
         )
@@ -5494,8 +5494,8 @@ fn storage_replay_declares_every_family_evidence_stream() {
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
         {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line)
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line)
                     .unwrap_or_else(|error| panic!("parse {name}: {error}"));
             if name == "storage-observations.jsonl" {
                 assert!(
@@ -5556,8 +5556,8 @@ fn storage_replay_declares_every_family_evidence_stream() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .expect("parse storage artifact index evidence");
         assert!(
             record["role"].as_str().is_some(),
@@ -5586,8 +5586,8 @@ fn storage_replay_declares_every_family_evidence_stream() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .expect("parse storage mutation evidence");
         if record["campaign"] == "storage-durability" {
             assert!(
@@ -5601,8 +5601,8 @@ fn storage_replay_declares_every_family_evidence_stream() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .expect("parse storage oracle evidence");
         assert!(
             record["expected"].is_object(),
@@ -5642,8 +5642,8 @@ fn storage_fixture_artifact_executes_literal_family_bytes() {
     let outcome =
         adversarial::runner::run_program_for(campaign, seed, FaultProfile::None, root.path())
             .expect("storage retained-fixture episode");
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &outcome.family_artifact_bytes["storage-fixture.json"],
         )
         .expect("parse storage fixture artifact");
@@ -5695,7 +5695,7 @@ fn storage_oracle_i19_plant_is_rejected() {
 #[test]
 fn ingest_retention_old_summary_without_oracle_attestation_is_rejected() {
     let error = validate_ingest_retention_oracle_attestation_shape(
-        &zeppelin_embed_bench::harness_json::json!({}),
+        &volantis_db_bench::harness_json::json!({}),
     )
     .expect_err("legacy generic ingest-retention summary was accepted");
     assert_eq!(
@@ -5795,8 +5795,8 @@ fn ingest_retention_replay_compares_oracle_controls_and_receipts() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .expect("parse retained ingest oracle row")
         })
@@ -5805,7 +5805,7 @@ fn ingest_retention_replay_compares_oracle_controls_and_receipts() {
         .iter_mut()
         .find(|record| {
             record["checker_id"].as_str()
-                == Some(zeppelin_embed_adversarial_oracle::ingest_retention::I22_CHECKER_ID)
+                == Some(volantis_db_adversarial_oracle::ingest_retention::I22_CHECKER_ID)
         })
         .expect("retained ingest oracle includes I22");
     let mut observed = decode_storage_hex(
@@ -5824,16 +5824,16 @@ fn ingest_retention_replay_compares_oracle_controls_and_receipts() {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    i22["oracle_observed_bytes"] = zeppelin_embed_bench::harness_json::Value::String(observed_hex);
-    i22["oracle_observed_digest"] = zeppelin_embed_bench::harness_json::Value::String(format!(
+    i22["oracle_observed_bytes"] = volantis_db_bench::harness_json::Value::String(observed_hex);
+    i22["oracle_observed_digest"] = volantis_db_bench::harness_json::Value::String(format!(
         "ingest-v{}:{:016x}",
-        zeppelin_embed_adversarial_oracle::ingest_retention::INGEST_CANONICAL_VERSION,
-        zeppelin_embed_adversarial_oracle::ingest_retention::canonical_digest(&observed),
+        volantis_db_adversarial_oracle::ingest_retention::INGEST_CANONICAL_VERSION,
+        volantis_db_adversarial_oracle::ingest_retention::canonical_digest(&observed),
     ));
     let mut mutated_oracle = Vec::new();
     for line in &oracle_lines {
         mutated_oracle.extend_from_slice(
-            &zeppelin_embed_bench::harness_json::to_vec(line)
+            &volantis_db_bench::harness_json::to_vec(line)
                 .expect("serialize mutated ingest oracle row"),
         );
         mutated_oracle.push(b'\n');
@@ -5929,8 +5929,8 @@ fn ingest_retention_oracle_rows_bind_operation_fault_invocation_identity() {
     adversarial::runner::run_program_for(campaign, seed, FaultProfile::Full, root.path())
         .expect("ingest-retention case-identity episode");
     let directory = episode_artifact_directory(root.path(), campaign, seed, FaultProfile::Full);
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(directory.join("fixture.json"))
                 .expect("read ingest case-identity fixture"),
         )
@@ -5951,8 +5951,8 @@ fn ingest_retention_oracle_rows_bind_operation_fault_invocation_identity() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line)
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line)
                     .expect("parse ingest case-identity oracle row");
             record["case_identity"]
                 .as_str()
@@ -6129,8 +6129,8 @@ fn ingest_retention_receipt_checksum_rejects_effect_drift() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .expect("parse merged ingest receipt")
         })
@@ -6139,11 +6139,11 @@ fn ingest_retention_receipt_checksum_rejects_effect_drift() {
         .as_i64()
         .expect("retention receipt cutoff");
     lines[0]["record"]["effect"]["cutoff"] =
-        zeppelin_embed_bench::harness_json::Value::from(cutoff.saturating_add(1));
+        volantis_db_bench::harness_json::Value::from(cutoff.saturating_add(1));
     let mut mutated = Vec::new();
     for line in &lines {
         mutated.extend_from_slice(
-            &zeppelin_embed_bench::harness_json::to_vec(line)
+            &volantis_db_bench::harness_json::to_vec(line)
                 .expect("serialize mutated ingest receipt"),
         );
         mutated.push(b'\n');
@@ -6182,8 +6182,8 @@ fn ingest_retention_observations_are_typed_canonical_records() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .expect("parse retained ingest typed observation")
         })
@@ -6193,7 +6193,7 @@ fn ingest_retention_observations_are_typed_canonical_records() {
         assert_eq!(
             record["canonical_version"].as_u64(),
             Some(
-                zeppelin_embed_adversarial_oracle::ingest_retention::INGEST_CANONICAL_VERSION
+                volantis_db_adversarial_oracle::ingest_retention::INGEST_CANONICAL_VERSION
                     as u64
             ),
             "ingest observation omitted its canonical version"
@@ -6214,7 +6214,7 @@ fn ingest_retention_observations_are_typed_canonical_records() {
         )
         .expect("decode ingest observation observed bytes");
         let replay =
-            zeppelin_embed_adversarial_oracle::ingest_retention::replay_canonical_comparison(
+            volantis_db_adversarial_oracle::ingest_retention::replay_canonical_comparison(
                 checker_id, &input, &observed,
             )
             .expect("replay typed ingest observation");
@@ -6261,8 +6261,8 @@ fn ingest_retention_final_verifier_rejects_fabricated_receipt_credit() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let mut summary: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let mut summary: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(artifacts.path().join("campaign-summary.json")).unwrap_or_else(
                 |error| panic!("missing ingest campaign summary: {error}; {transcript}"),
             ),
@@ -6277,7 +6277,7 @@ fn ingest_retention_final_verifier_rejects_fabricated_receipt_credit() {
         })
         .unwrap_or_else(|| panic!("one-episode campaign selected no ingest fault: {transcript}"));
     summary["attestation"]["ingest_retention_oracle_attestation"]["faults"][&selected_fault]["production_receipts"] =
-        zeppelin_embed_bench::harness_json::json!(0);
+        volantis_db_bench::harness_json::json!(0);
 
     let error = verify_feature_summary_attestation(artifacts.path(), campaign, 1, &summary)
         .expect_err("final verifier accepted fabricated ingest receipt credit");
@@ -6299,8 +6299,8 @@ fn ingest_retention_oracle_rows_replay_the_family_canonical_bytes() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .expect("parse ingest-retention oracle row")
         })
@@ -6330,7 +6330,7 @@ fn ingest_retention_oracle_rows_replay_the_family_canonical_bytes() {
             "{invariant} omitted retained observed bytes"
         );
         let replay =
-            zeppelin_embed_adversarial_oracle::ingest_retention::replay_canonical_comparison(
+            volantis_db_adversarial_oracle::ingest_retention::replay_canonical_comparison(
                 row["checker_id"].as_str().expect("ingest checker id"),
                 &input,
                 &observed,
@@ -6404,8 +6404,8 @@ fn vector_replay_declares_every_family_evidence_stream() {
             "vector episode did not write {name}"
         );
     }
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &outcome.family_artifact_bytes["fixture.json"],
         )
         .expect("parse canonical vector fixture");
@@ -6419,8 +6419,8 @@ fn vector_replay_declares_every_family_evidence_stream() {
         assert!(operation["documents"].is_array());
         assert!(operation["public_schedule"].is_array());
     }
-    let inventory: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let inventory: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &outcome.family_artifact_bytes["backend-inventory.json"],
         )
         .expect("parse vector backend inventory");
@@ -6428,13 +6428,13 @@ fn vector_replay_declares_every_family_evidence_stream() {
     assert!(inventory["unavailable"].is_array());
     assert!(inventory["selected"].is_array());
     assert!(inventory["invocation_counts"].is_object());
-    let episode: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&outcome.episode_bytes)
+    let episode: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&outcome.episode_bytes)
             .expect("parse vector episode summary");
     let vector_attestation = &episode["attestation"]["vector_oracle_attestation"];
     assert_eq!(
         vector_attestation["oracle_contract"],
-        zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT
+        volantis_db_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT
     );
     assert!(vector_attestation["fixture_digest"].is_string());
     assert!(vector_attestation["per_invariant_comparisons"].is_object());
@@ -6456,8 +6456,8 @@ fn vector_replay_declares_every_family_evidence_stream() {
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
         {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line)
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line)
                     .unwrap_or_else(|error| panic!("parse {name} record: {error}"));
             assert!(record["input"].is_object(), "{name} input is not typed");
             assert!(
@@ -6482,8 +6482,8 @@ fn vector_replay_declares_every_family_evidence_stream() {
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
         {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line)
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line)
                     .unwrap_or_else(|error| panic!("parse {name}: {error}"));
             if record["campaign"] == "vector-execution" {
                 assert!(record[field].is_object(), "{name} retained debug text");
@@ -6495,8 +6495,8 @@ fn vector_replay_declares_every_family_evidence_stream() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .expect("parse vector oracle evidence");
         assert!(
             record["expected"].is_object(),
@@ -6518,8 +6518,8 @@ fn vector_fixture_artifact_executes_literal_family_bytes() {
     let outcome =
         adversarial::runner::run_program_for(campaign, 6, FaultProfile::None, root.path())
             .expect("vector retained-fixture episode");
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &outcome.family_artifact_bytes["fixture.json"],
         )
         .expect("parse vector fixture artifact");
@@ -6558,8 +6558,8 @@ fn vector_retained_replay_rejects_a_mutated_literal_fixture() {
     let directory = root.path().join("vector-execution/seed-6-none");
     replay_vector_retained_episode(&directory).expect("replay retained vector fixture bytes");
     let fixture_path = directory.join("fixture.json");
-    let mut fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let mut fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(&fixture_path).expect("read retained vector fixture"),
         )
         .expect("parse retained vector fixture");
@@ -6569,12 +6569,12 @@ fn vector_retained_replay_rejects_a_mutated_literal_fixture() {
     let mut planted = retained.as_bytes().to_vec();
     planted[16] = if planted[16] == b'0' { b'1' } else { b'0' };
     fixture["operations"][0]["retained_fixture_hex"] =
-        zeppelin_embed_bench::harness_json::Value::String(
+        volantis_db_bench::harness_json::Value::String(
             String::from_utf8(planted).expect("planted fixture remains hex text"),
         );
     std::fs::write(
         &fixture_path,
-        zeppelin_embed_bench::harness_json::to_vec(&fixture)
+        volantis_db_bench::harness_json::to_vec(&fixture)
             .expect("serialize planted vector fixture"),
     )
     .expect("write planted vector fixture");
@@ -6610,16 +6610,16 @@ fn vector_oracle_record_rejects_a_stale_family_canonical_digest() {
         .split(|byte| *byte == b'\n')
         .find(|line| !line.is_empty())
         .expect("vector episode emitted an oracle row");
-    let mut record: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(line).expect("parse vector oracle row");
+    let mut record: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(line).expect("parse vector oracle row");
     record
         .as_object_mut()
         .expect("vector oracle row is an object")
         .insert(
             "oracle_input_digest".to_owned(),
-            zeppelin_embed_bench::harness_json::Value::String(format!(
+            volantis_db_bench::harness_json::Value::String(format!(
                 "{}:{}",
-                zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION,
+                volantis_db_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION,
                 "0".repeat(64)
             )),
         );
@@ -6655,8 +6655,8 @@ fn vector_replay_executes_the_retained_independent_checker() {
         .split(|byte| *byte == b'\n')
         .find(|line| !line.is_empty())
         .expect("vector episode emitted an oracle row");
-    let mut record: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(line).expect("parse vector oracle row");
+    let mut record: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(line).expect("parse vector oracle row");
     let mut observed = decode_storage_hex(
         record["oracle_observed_bytes"]
             .as_str()
@@ -6670,20 +6670,20 @@ fn vector_replay_executes_the_retained_independent_checker() {
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     let observed_digest =
-        zeppelin_embed_adversarial_oracle::vector_execution::canonical_sha256(&observed)
+        volantis_db_adversarial_oracle::vector_execution::canonical_sha256(&observed)
             .into_iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
     let object = record.as_object_mut().expect("vector oracle row object");
     object.insert(
         "oracle_observed_bytes".to_owned(),
-        zeppelin_embed_bench::harness_json::Value::String(observed_hex),
+        volantis_db_bench::harness_json::Value::String(observed_hex),
     );
     object.insert(
         "oracle_observed_digest".to_owned(),
-        zeppelin_embed_bench::harness_json::Value::String(format!(
+        volantis_db_bench::harness_json::Value::String(format!(
             "{}:{observed_digest}",
-            zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION,
+            volantis_db_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION,
         )),
     );
 
@@ -6718,14 +6718,14 @@ fn metadata_replay_executes_the_retained_independent_checker() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .find(|line| {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .is_ok_and(|record| record["invariant"] == "I36")
         })
         .expect("metadata episode emitted an I36 oracle row");
-    let mut record: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(line).expect("parse metadata oracle row");
+    let mut record: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(line).expect("parse metadata oracle row");
     let mut observed = decode_storage_hex(
         record["oracle_observed_bytes"]
             .as_str()
@@ -6741,15 +6741,15 @@ fn metadata_replay_executes_the_retained_independent_checker() {
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     let observed_digest =
-        zeppelin_embed_adversarial_oracle::metadata_filter_planner::canonical_digest(&observed);
+        volantis_db_adversarial_oracle::metadata_filter_planner::canonical_digest(&observed);
     let object = record.as_object_mut().expect("metadata oracle row object");
     object.insert(
         "oracle_observed_bytes".to_owned(),
-        zeppelin_embed_bench::harness_json::Value::String(observed_hex),
+        volantis_db_bench::harness_json::Value::String(observed_hex),
     );
     object.insert(
         "oracle_observed_digest".to_owned(),
-        zeppelin_embed_bench::harness_json::Value::String(format!(
+        volantis_db_bench::harness_json::Value::String(format!(
             "metadata-v1:{observed_digest:016x}",
         )),
     );
@@ -6786,16 +6786,16 @@ fn vector_replay_metadata_rejects_a_stale_nested_canonical_contract() {
         .path()
         .join(format!("vector-execution/seed-{seed}-none"));
     let path = directory.join("episode.json");
-    let mut episode: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let mut episode: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(&path).expect("read vector episode metadata"),
         )
         .expect("parse vector episode metadata");
     episode["attestation"]["vector_oracle_attestation"]["per_invariant_comparisons"]["I24"]["canonical_version"] =
-        zeppelin_embed_bench::harness_json::json!("stale");
+        volantis_db_bench::harness_json::json!("stale");
     std::fs::write(
         &path,
-        zeppelin_embed_bench::harness_json::to_vec_pretty(&episode)
+        volantis_db_bench::harness_json::to_vec_pretty(&episode)
             .expect("serialize planted vector episode metadata"),
     )
     .expect("write planted vector episode metadata");
@@ -6844,8 +6844,8 @@ fn metadata_replay_declares_fixture_and_query_evidence() {
             "metadata replay did not write {name}"
         );
     }
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &outcome.family_artifact_bytes["metadata-fixture.json"],
         )
         .expect("parse metadata fixture evidence");
@@ -6886,8 +6886,8 @@ fn metadata_replay_declares_fixture_and_query_evidence() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let query: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let query: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .expect("parse metadata query evidence");
         assert!(
             query["predicate"].is_object(),
@@ -6901,8 +6901,8 @@ fn metadata_replay_declares_fixture_and_query_evidence() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let control: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let control: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .expect("parse metadata control evidence");
         if control["campaign"] == "metadata-filter-planner" {
             assert!(
@@ -6932,8 +6932,8 @@ fn metadata_replay_declares_fixture_and_query_evidence() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .expect("parse metadata oracle evidence");
         assert!(record["expected"].is_object() || record["expected"].is_array());
         assert!(
@@ -6948,8 +6948,8 @@ fn metadata_replay_declares_fixture_and_query_evidence() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .expect("parse metadata fixture mutation")
         })
@@ -7001,8 +7001,8 @@ fn metadata_fixture_artifact_executes_literal_family_bytes() {
     let outcome =
         adversarial::runner::run_program_for(campaign, seed, FaultProfile::None, root.path())
             .expect("metadata retained-fixture episode");
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &outcome.family_artifact_bytes["metadata-fixture.json"],
         )
         .expect("parse metadata fixture artifact");
@@ -7101,8 +7101,8 @@ fn metadata_retained_replay_rejects_a_mutated_same_seed_control_digest() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .expect("parse retained metadata control")
         })
@@ -7115,11 +7115,11 @@ fn metadata_retained_replay_rejects_a_mutated_same_seed_control_digest() {
         .as_u64()
         .expect("metadata normalized schedule digest");
     control["control"]["normalized_schedule_digest"] =
-        zeppelin_embed_bench::harness_json::json!(digest ^ 1);
+        volantis_db_bench::harness_json::json!(digest ^ 1);
     let mut bytes = Vec::new();
     for record in records {
         bytes.extend_from_slice(
-            &zeppelin_embed_bench::harness_json::to_vec(&record)
+            &volantis_db_bench::harness_json::to_vec(&record)
                 .expect("serialize planted metadata control"),
         );
         bytes.push(b'\n');
@@ -7149,11 +7149,11 @@ fn metadata_replay_self_test_rejects_every_independent_stream_mutation() {
 
 #[test]
 fn metadata_verifier_rejects_a_zero_normalized_schedule_digest() {
-    let directory = zeppelin_embed_bench::harness_json::json!({
+    let directory = volantis_db_bench::harness_json::json!({
         "digest": 17,
         "files": [{"relative_path": "wal.ze", "byte_length": 8, "digest": 19}],
     });
-    let control = zeppelin_embed_bench::harness_json::json!({
+    let control = volantis_db_bench::harness_json::json!({
         "normalized_schedule_digest": 0,
         "directory_relation": "distinct-byte-identical",
         "outcome": "clean-succeeded-fault-refused-retry-equivalent",
@@ -7175,7 +7175,7 @@ fn metadata_verifier_rejects_a_zero_normalized_schedule_digest() {
 
 #[test]
 fn metadata_verifier_rejects_an_empty_checksum_rewrite_ledger() {
-    let mutation = zeppelin_embed_bench::harness_json::json!({
+    let mutation = volantis_db_bench::harness_json::json!({
         "source": "sealed-a",
         "region": {"code": 1, "name": "columns"},
         "region_offset": 64,
@@ -7216,7 +7216,7 @@ fn metadata_merged_verifier_rejects_a_zero_schedule_digest() {
         b"",
     )
     .expect("write empty merged fixture mutations");
-    let row = zeppelin_embed_bench::harness_json::json!({
+    let row = volantis_db_bench::harness_json::json!({
         "record": {
             "campaign": "metadata-filter-planner",
             "control": {
@@ -7248,7 +7248,7 @@ fn metadata_merged_verifier_rejects_a_zero_schedule_digest() {
 #[test]
 fn storage_merged_verifier_rejects_a_missing_production_receipt() {
     let root = tempfile::tempdir().expect("storage merged evidence root");
-    let fault = zeppelin_embed_bench::harness_json::json!({
+    let fault = volantis_db_bench::harness_json::json!({
         "seed": 7,
         "profile": "none",
         "record": {
@@ -7265,7 +7265,7 @@ fn storage_merged_verifier_rejects_a_missing_production_receipt() {
         format!("{fault}\n"),
     )
     .expect("write selected storage fault");
-    let control = zeppelin_embed_bench::harness_json::json!({
+    let control = volantis_db_bench::harness_json::json!({
         "seed": 7,
         "profile": "none",
         "record": {
@@ -7310,7 +7310,7 @@ fn storage_merged_verifier_rejects_a_missing_production_receipt() {
 #[test]
 fn storage_merged_verifier_rejects_a_mutated_receipt_digest() {
     let root = tempfile::tempdir().expect("storage merged receipt root");
-    let fault = zeppelin_embed_bench::harness_json::json!({
+    let fault = volantis_db_bench::harness_json::json!({
         "seed": 7,
         "profile": "none",
         "record": {
@@ -7327,7 +7327,7 @@ fn storage_merged_verifier_rejects_a_mutated_receipt_digest() {
         format!("{fault}\n"),
     )
     .expect("write selected storage fault");
-    let control = zeppelin_embed_bench::harness_json::json!({
+    let control = volantis_db_bench::harness_json::json!({
         "seed": 7,
         "profile": "none",
         "record": {
@@ -7353,7 +7353,7 @@ fn storage_merged_verifier_rejects_a_mutated_receipt_digest() {
         format!("{control}\n"),
     )
     .expect("write storage same-seed control");
-    let receipt = zeppelin_embed_bench::harness_json::json!({
+    let receipt = volantis_db_bench::harness_json::json!({
         "seed": 7,
         "profile": "none",
         "record": {
@@ -7376,7 +7376,7 @@ fn storage_merged_verifier_rejects_a_mutated_receipt_digest() {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    let artifact = zeppelin_embed_bench::harness_json::json!({
+    let artifact = volantis_db_bench::harness_json::json!({
         "seed": 7,
         "profile": "none",
         "record": {
@@ -7404,8 +7404,8 @@ fn storage_merged_verifier_rejects_a_mutated_receipt_digest() {
 #[test]
 fn feature_replay_ledger_rejects_a_digest_mismatch() {
     let root = tempfile::tempdir().expect("replay ledger root");
-    let row = zeppelin_embed_bench::harness_json::json!({
-        "schema": "zeppelin-embed-adversarial-replay",
+    let row = volantis_db_bench::harness_json::json!({
+        "schema": "volantis-db-adversarial-replay",
         "version": 1,
         "campaign": "metadata-filter-planner",
         "seed": 0,
@@ -7667,13 +7667,13 @@ fn merged_evidence_reopens_and_rejects_a_corrupted_durable_stream() {
 #[test]
 fn legacy_replay_artifacts_are_implicit_overall() {
     for fixture in [
-        zeppelin_embed_bench::harness_json::json!({"version": 2}),
-        zeppelin_embed_bench::harness_json::json!({"schema": "zeppelin-embed-adversarial-failure", "version": 1}),
+        volantis_db_bench::harness_json::json!({"version": 2}),
+        volantis_db_bench::harness_json::json!({"schema": "volantis-db-adversarial-failure", "version": 1}),
     ] {
         let directory = tempfile::tempdir().expect("legacy replay directory");
         std::fs::write(
             directory.path().join("legacy.json"),
-            zeppelin_embed_bench::harness_json::to_vec(&fixture).expect("legacy fixture JSON"),
+            volantis_db_bench::harness_json::to_vec(&fixture).expect("legacy fixture JSON"),
         )
         .expect("write legacy fixture");
         assert_eq!(
@@ -7689,8 +7689,8 @@ fn feature_replay_rejects_schema_v3_without_independent_oracle_attestation() {
     let directory = tempfile::tempdir().expect("feature replay directory");
     std::fs::write(
         directory.path().join("episode.json"),
-        zeppelin_embed_bench::harness_json::to_vec(&zeppelin_embed_bench::harness_json::json!({
-            "schema": "zeppelin-embed-adversarial-episode",
+        volantis_db_bench::harness_json::to_vec(&volantis_db_bench::harness_json::json!({
+            "schema": "volantis-db-adversarial-episode",
             "version": 3,
             "campaign": "fts",
             "seed": 7,
@@ -7707,8 +7707,8 @@ fn feature_replay_rejects_schema_v3_without_independent_oracle_attestation() {
 #[test]
 fn completed_feature_summary_rejects_pre_attestation_schema_v3() {
     let root = tempfile::tempdir().expect("old feature summary root");
-    let summary = zeppelin_embed_bench::harness_json::json!({
-        "schema": "zeppelin-embed-adversarial-campaign",
+    let summary = volantis_db_bench::harness_json::json!({
+        "schema": "volantis-db-adversarial-campaign",
         "version": 3,
         "campaign": "fts",
         "complete": true,
@@ -7723,15 +7723,15 @@ fn completed_feature_summary_rejects_pre_attestation_schema_v3() {
 #[test]
 fn metadata_summary_rejects_a_generic_feature_attestation_explicitly() {
     let root = tempfile::tempdir().expect("generic metadata summary root");
-    let summary = zeppelin_embed_bench::harness_json::json!({
-        "schema": "zeppelin-embed-adversarial-campaign",
+    let summary = volantis_db_bench::harness_json::json!({
+        "schema": "volantis-db-adversarial-campaign",
         "version": 3,
         "campaign": "metadata-filter-planner",
         "complete": true,
         "episodes": 1,
         "start_seed": 0,
         "attestation": {
-            "oracle_contract_version": zeppelin_embed_adversarial_oracle::ORACLE_CONTRACT_VERSION,
+            "oracle_contract_version": volantis_db_adversarial_oracle::ORACLE_CONTRACT_VERSION,
             "oracle_contract": "metadata-filter-planner-oracle-v2",
             "harness_git_revision": adversarial::artifacts::harness_git_revision(),
         },
@@ -7751,7 +7751,7 @@ fn metadata_summary_rejects_a_generic_feature_attestation_explicitly() {
 
 #[test]
 fn feature_oracle_attestation_rejects_a_wrong_checker_version() {
-    let record = zeppelin_embed_bench::harness_json::json!({
+    let record = volantis_db_bench::harness_json::json!({
         "invariant": "I36",
         "checker_id": "generic-marker-v1",
         "operation": "columns",
@@ -8218,8 +8218,8 @@ fn simulated_crash_event_fires_at_a_sampled_ingest_and_store_reopens() {
             .expect("fault records are UTF-8")
             .lines()
             .any(|line| {
-                let record: zeppelin_embed_bench::harness_json::Value =
-                    zeppelin_embed_bench::harness_json::from_str(line)
+                let record: volantis_db_bench::harness_json::Value =
+                    volantis_db_bench::harness_json::from_str(line)
                         .expect("parse crash fault record");
                 record["op"].as_u64() == Some(op_index as u64)
                     && record["layer"].as_str() == Some("crash")
@@ -8374,8 +8374,8 @@ fn real_crash_child_rebuilds_the_schedule_from_seed() {
         .expect("child wrote faults.jsonl");
     assert!(
         faults.lines().any(|line| {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_str(line)
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_str(line)
                     .expect("parse child fault record");
             record["id"].as_str() == Some(event_id.as_str())
                 && record["fired"].as_bool() == Some(true)
@@ -8660,8 +8660,8 @@ fn replay() {
     }
     let metadata_path = expected.join("episode.json");
     let (seed, profile) = if metadata_path.is_file() {
-        let metadata: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(
+        let metadata: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(
                 &std::fs::read(&metadata_path).expect("read retained replay metadata"),
             )
             .expect("parse retained replay metadata");
@@ -8826,8 +8826,8 @@ fn replay_storage_retained_episode(expected: &Path) -> Result<String, String> {
         "episode.json",
         "storage-fixture.json",
     ] {
-        zeppelin_embed_bench::harness_json::from_slice::<
-            zeppelin_embed_bench::harness_json::Value,
+        volantis_db_bench::harness_json::from_slice::<
+            volantis_db_bench::harness_json::Value,
         >(&artifacts[name])
         .map_err(|error| format!("parse retained storage artifact {name}: {error}"))?;
     }
@@ -8849,8 +8849,8 @@ fn replay_storage_retained_episode(expected: &Path) -> Result<String, String> {
             .filter(|line| !line.is_empty())
             .enumerate()
         {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .map_err(|error| {
                 format!(
@@ -8860,8 +8860,8 @@ fn replay_storage_retained_episode(expected: &Path) -> Result<String, String> {
             })?;
         }
     }
-    let episode: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&artifacts["episode.json"])
+    let episode: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&artifacts["episode.json"])
             .map_err(|error| format!("parse retained storage episode: {error}"))?;
     if episode["campaign"].as_str() != Some(campaign.key()) {
         return Err("retained storage episode campaign differs".to_owned());
@@ -8869,8 +8869,8 @@ fn replay_storage_retained_episode(expected: &Path) -> Result<String, String> {
     let seed = episode["seed"]
         .as_u64()
         .ok_or_else(|| "retained storage episode seed is absent".to_owned())?;
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&artifacts["storage-fixture.json"])
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&artifacts["storage-fixture.json"])
             .map_err(|error| format!("parse retained storage fixture: {error}"))?;
     if fixture["seed"].as_u64() != Some(seed)
         || fixture["namespace"].as_str() != Some("adversarial::storage-durability::v1")
@@ -8914,7 +8914,7 @@ fn replay_storage_retained_episode(expected: &Path) -> Result<String, String> {
             adversarial::storage_durability::RetainedStorageOperationEvidence::WalPrefix(
                 evidence,
             ) => {
-                zeppelin_embed_adversarial_oracle::storage_durability::check_i16(
+                volantis_db_adversarial_oracle::storage_durability::check_i16(
                     &evidence.expected,
                     &evidence.observed,
                 )
@@ -8922,7 +8922,7 @@ fn replay_storage_retained_episode(expected: &Path) -> Result<String, String> {
                 if decoded.format_case.is_some() {
                     let (expected, observed) =
                         adversarial::storage_durability::format_dtos_from_wal_prefix(&evidence)?;
-                    zeppelin_embed_adversarial_oracle::storage_durability::check_i18(
+                    volantis_db_adversarial_oracle::storage_durability::check_i18(
                         &expected, &observed,
                     )
                     .map_err(|error| format!("retained storage I18 checker failed: {error:?}"))?;
@@ -8930,13 +8930,13 @@ fn replay_storage_retained_episode(expected: &Path) -> Result<String, String> {
             }
             adversarial::storage_durability::RetainedStorageOperationEvidence::Publication(
                 evidence,
-            ) => zeppelin_embed_adversarial_oracle::storage_durability::check_i15(
+            ) => volantis_db_adversarial_oracle::storage_durability::check_i15(
                 &evidence.expected,
                 &evidence.observed,
             )
             .map_err(|error| format!("retained storage I15 checker failed: {error:?}"))?,
             adversarial::storage_durability::RetainedStorageOperationEvidence::Retry(evidence) => {
-                zeppelin_embed_adversarial_oracle::storage_durability::check_i17(
+                volantis_db_adversarial_oracle::storage_durability::check_i17(
                     &evidence.expected,
                     &evidence.observed,
                 )
@@ -8944,14 +8944,14 @@ fn replay_storage_retained_episode(expected: &Path) -> Result<String, String> {
             }
             adversarial::storage_durability::RetainedStorageOperationEvidence::FormatCheck(
                 evidence,
-            ) => zeppelin_embed_adversarial_oracle::storage_durability::check_i18(
+            ) => volantis_db_adversarial_oracle::storage_durability::check_i18(
                 &evidence.expected,
                 &evidence.observed,
             )
             .map_err(|error| format!("retained storage I18 checker failed: {error:?}"))?,
             adversarial::storage_durability::RetainedStorageOperationEvidence::OrphanCleanup(
                 evidence,
-            ) => zeppelin_embed_adversarial_oracle::storage_durability::check_i19(
+            ) => volantis_db_adversarial_oracle::storage_durability::check_i19(
                 &evidence.expected,
                 &evidence.observed,
             )
@@ -8980,8 +8980,8 @@ fn replay_storage_retained_episode(expected: &Path) -> Result<String, String> {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse retained storage oracle row: {error}"))?;
         validate_feature_oracle_record(campaign, &record)
             .map_err(|error| format!("replay drifted artifact=oracle.jsonl: {error}"))?;
@@ -9010,8 +9010,8 @@ fn replay_metadata_retained_episode(expected: &Path) -> Result<String, String> {
         "episode.json",
         "metadata-fixture.json",
     ] {
-        zeppelin_embed_bench::harness_json::from_slice::<
-            zeppelin_embed_bench::harness_json::Value,
+        volantis_db_bench::harness_json::from_slice::<
+            volantis_db_bench::harness_json::Value,
         >(&artifacts[name])
         .map_err(|error| format!("parse retained metadata artifact {name}: {error}"))?;
     }
@@ -9030,8 +9030,8 @@ fn replay_metadata_retained_episode(expected: &Path) -> Result<String, String> {
             .filter(|line| !line.is_empty())
             .enumerate()
         {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .map_err(|error| {
                 format!(
@@ -9041,14 +9041,14 @@ fn replay_metadata_retained_episode(expected: &Path) -> Result<String, String> {
             })?;
         }
     }
-    let episode: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&artifacts["episode.json"])
+    let episode: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&artifacts["episode.json"])
             .map_err(|error| format!("parse retained metadata episode: {error}"))?;
     if episode["campaign"].as_str() != Some(campaign.key()) {
         return Err("retained metadata episode campaign differs".to_owned());
     }
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&artifacts["metadata-fixture.json"])
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&artifacts["metadata-fixture.json"])
             .map_err(|error| format!("parse retained metadata fixture: {error}"))?;
     let operations = fixture["operations"]
         .as_array()
@@ -9127,8 +9127,8 @@ fn replay_metadata_retained_episode(expected: &Path) -> Result<String, String> {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse retained metadata oracle row: {error}"))?;
         validate_feature_oracle_record(campaign, &record)?;
         let key = (
@@ -9218,8 +9218,8 @@ fn replay_ingest_retained_episode(expected: &Path) -> Result<String, String> {
             .map_err(|error| format!("read retained ingest artifact {name}: {error}"))?;
         artifacts.insert(name.to_owned(), bytes);
     }
-    let episode: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&artifacts["episode.json"])
+    let episode: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&artifacts["episode.json"])
             .map_err(|error| format!("parse retained ingest episode: {error}"))?;
     if episode["campaign"].as_str() != Some(campaign.key()) {
         return Err("retained ingest episode campaign differs".to_owned());
@@ -9241,8 +9241,8 @@ fn replay_ingest_retained_episode(expected: &Path) -> Result<String, String> {
     }
     #[cfg(not(unix))]
     return Err("delete-where replay requires Unix process signals".to_owned());
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&artifacts["fixture.json"])
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&artifacts["fixture.json"])
             .map_err(|error| format!("parse retained ingest fixture: {error}"))?;
     if fixture["campaign"].as_str() != Some(campaign.key()) {
         return Err("retained ingest fixture campaign differs".to_owned());
@@ -9292,8 +9292,8 @@ fn replay_ingest_retained_episode(expected: &Path) -> Result<String, String> {
         }
         let expected_record =
             adversarial::ingest_retention::retained_ingest_fixture_record_json(&decoded)?;
-        let expected_record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_str(&expected_record)
+        let expected_record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_str(&expected_record)
                 .map_err(|error| format!("parse replayed ingest fixture record: {error}"))?;
         if &expected_record != operation_record {
             return Err(format!(
@@ -9317,25 +9317,25 @@ fn replay_ingest_retained_episode(expected: &Path) -> Result<String, String> {
             adversarial::ingest_retention::run_ingest_operation_from_fixture(&retained_bytes)?;
         match &replayed {
             adversarial::ingest_retention::IngestOperationEvidence::I20(evidence) => {
-                zeppelin_embed_adversarial_oracle::ingest_retention::compare_i20(
+                volantis_db_adversarial_oracle::ingest_retention::compare_i20(
                     &evidence.expected,
                     &evidence.observed,
                 )?;
             }
             adversarial::ingest_retention::IngestOperationEvidence::I21(evidence) => {
-                zeppelin_embed_adversarial_oracle::ingest_retention::compare_i21(
+                volantis_db_adversarial_oracle::ingest_retention::compare_i21(
                     &evidence.expected,
                     &evidence.observed,
                 )?;
             }
             adversarial::ingest_retention::IngestOperationEvidence::I22(evidence) => {
-                zeppelin_embed_adversarial_oracle::ingest_retention::compare_i22(
+                volantis_db_adversarial_oracle::ingest_retention::compare_i22(
                     &evidence.expected,
                     &evidence.observed,
                 )?;
             }
             adversarial::ingest_retention::IngestOperationEvidence::I23(evidence) => {
-                zeppelin_embed_adversarial_oracle::ingest_retention::compare_i23(
+                volantis_db_adversarial_oracle::ingest_retention::compare_i23(
                     &evidence.expected,
                     &evidence.observed,
                 )?;
@@ -9349,8 +9349,8 @@ fn replay_ingest_retained_episode(expected: &Path) -> Result<String, String> {
                 decoded.operation.key()
             ));
         }
-        let observation: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_str(&replayed_observation)
+        let observation: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_str(&replayed_observation)
                 .map_err(|error| format!("parse replayed ingest observation: {error}"))?;
         replayed_observations.push(observation);
         if let Some(control) = adversarial::runner::ingest_retention_control_json_for_evidence(
@@ -9409,8 +9409,8 @@ fn replay_ingest_retained_episode(expected: &Path) -> Result<String, String> {
         .filter(|line| !line.is_empty())
         .enumerate()
     {
-        let record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse retained ingest oracle row: {error}"))?;
         validate_feature_oracle_record(campaign, &record)
             .map_err(|error| format!("replay drifted artifact=oracle.jsonl: {error}"))?;
@@ -9474,8 +9474,8 @@ fn replay_vector_retained_episode(expected: &Path) -> Result<String, String> {
         "backend-inventory.json",
         "episode-summary.json",
     ] {
-        zeppelin_embed_bench::harness_json::from_slice::<
-            zeppelin_embed_bench::harness_json::Value,
+        volantis_db_bench::harness_json::from_slice::<
+            volantis_db_bench::harness_json::Value,
         >(&artifacts[name])
         .map_err(|error| format!("parse retained vector artifact {name}: {error}"))?;
     }
@@ -9497,8 +9497,8 @@ fn replay_vector_retained_episode(expected: &Path) -> Result<String, String> {
             .filter(|line| !line.is_empty())
             .enumerate()
         {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .map_err(|error| {
                 format!(
@@ -9513,8 +9513,8 @@ fn replay_vector_retained_episode(expected: &Path) -> Result<String, String> {
             "retained vector episode summary differs byte-for-byte from episode.json".to_owned(),
         );
     }
-    let episode: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&artifacts["episode.json"])
+    let episode: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&artifacts["episode.json"])
             .map_err(|error| format!("parse retained vector episode: {error}"))?;
     if episode["campaign"].as_str() != Some(campaign.key()) {
         return Err("retained vector episode campaign differs".to_owned());
@@ -9522,8 +9522,8 @@ fn replay_vector_retained_episode(expected: &Path) -> Result<String, String> {
     let seed = episode["seed"]
         .as_u64()
         .ok_or_else(|| "retained vector episode seed is absent".to_owned())?;
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&artifacts["fixture.json"])
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&artifacts["fixture.json"])
             .map_err(|error| format!("parse retained vector fixture: {error}"))?;
     let operations = fixture["operations"]
         .as_array()
@@ -9600,8 +9600,8 @@ fn replay_vector_retained_episode(expected: &Path) -> Result<String, String> {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse retained vector oracle row: {error}"))?;
         validate_feature_oracle_record(campaign, &record)?;
         let input_hex = record["oracle_input_bytes"]
@@ -9611,7 +9611,7 @@ fn replay_vector_retained_episode(expected: &Path) -> Result<String, String> {
             .as_str()
             .ok_or_else(|| "retained vector oracle row omitted observed bytes".to_owned())?;
         let replayed =
-            zeppelin_embed_adversarial_oracle::vector_execution::replay_canonical_comparison(
+            volantis_db_adversarial_oracle::vector_execution::replay_canonical_comparison(
                 &decode_storage_hex(input_hex)?,
                 &decode_storage_hex(observed_hex)?,
             )?;
@@ -9746,8 +9746,8 @@ fn replay_campaign_episode(
             replay_evidence_digest(&replayed)
         }
     };
-    let row = zeppelin_embed_bench::harness_json::json!({
-        "schema": "zeppelin-embed-adversarial-replay",
+    let row = volantis_db_bench::harness_json::json!({
+        "schema": "volantis-db-adversarial-replay",
         "version": 1,
         "campaign": campaign.key(),
         "seed": outcome.seed,
@@ -9757,7 +9757,7 @@ fn replay_campaign_episode(
         "expected_digest": expected_digest,
         "observed_digest": observed_digest,
     });
-    let mut bytes = zeppelin_embed_bench::harness_json::to_vec(&row)
+    let mut bytes = volantis_db_bench::harness_json::to_vec(&row)
         .map_err(|error| format!("serialize feature replay ledger row: {error}"))?;
     bytes.push(b'\n');
     let path = root.join("replayed-seeds.jsonl");
@@ -9827,8 +9827,8 @@ fn storage_replay_executes_the_retained_literal_fixture() {
     assert_eq!(replayed, replay_evidence_digest(&outcome));
 
     let fixture_path = directory.join("storage-fixture.json");
-    let mut fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let mut fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(&fixture_path).expect("read retained storage fixture"),
         )
         .expect("parse retained storage fixture");
@@ -9838,12 +9838,12 @@ fn storage_replay_executes_the_retained_literal_fixture() {
     let mut planted = retained.as_bytes().to_vec();
     planted[32] = if planted[32] == b'0' { b'1' } else { b'0' };
     fixture["retained_operations"][0]["retained_fixture_hex"] =
-        zeppelin_embed_bench::harness_json::Value::String(
+        volantis_db_bench::harness_json::Value::String(
             String::from_utf8(planted).expect("planted storage fixture remains hex"),
         );
     std::fs::write(
         &fixture_path,
-        zeppelin_embed_bench::harness_json::to_vec(&fixture)
+        volantis_db_bench::harness_json::to_vec(&fixture)
             .expect("serialize planted storage fixture"),
     )
     .expect("write planted storage fixture");
@@ -10300,8 +10300,8 @@ fn campaign_replays_each_feature_episode_before_attestation() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let summary: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let summary: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(artifacts.path().join("campaign-summary.json")).unwrap_or_else(
                 |error| panic!("missing feature campaign summary: {error}; {transcript}"),
             ),
@@ -10319,8 +10319,8 @@ fn campaign_replays_each_feature_episode_before_attestation() {
         .unwrap_or_else(|error| panic!("missing durable replay ledger: {error}; {transcript}"));
     let rows = replay_ledger.lines().collect::<Vec<_>>();
     assert_eq!(rows.len(), 1, "{transcript}");
-    let row: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_str(rows[0]).expect("parse replay ledger row");
+    let row: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_str(rows[0]).expect("parse replay ledger row");
     assert_eq!(row["campaign"], "metadata-filter-planner");
     assert_eq!(row["seed"], 0);
     assert_eq!(row["profile"], "none");
@@ -10416,8 +10416,8 @@ impl CampaignAttestationCounters {
 }
 
 impl CampaignFailure {
-    fn json(&self) -> zeppelin_embed_bench::harness_json::Value {
-        zeppelin_embed_bench::harness_json::json!({
+    fn json(&self) -> volantis_db_bench::harness_json::Value {
+        volantis_db_bench::harness_json::json!({
             "seed": self.seed,
             "profile": self.profile.key(),
             "kind": self.kind.key(),
@@ -10454,8 +10454,8 @@ fn campaign_records_failed_seeds_continues_and_fails_qualification_at_the_end() 
         "a campaign with failed seeds must fail qualification after it finishes: {transcript}"
     );
 
-    let summary: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let summary: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(artifacts.path().join("campaign-summary.json"))
                 .expect("completed campaign summary"),
         )
@@ -10553,8 +10553,8 @@ fn feature_campaign_with_failed_episodes_still_reaches_a_verdict() {
         "the campaign did not reach a final verdict: {transcript}"
     );
 
-    let summary: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let summary: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(artifacts.path().join("campaign-summary.json"))
                 .expect("completed campaign summary"),
         )
@@ -10575,8 +10575,8 @@ fn feature_campaign_with_failed_episodes_still_reaches_a_verdict() {
     let replayed = ledger
         .lines()
         .map(|line| {
-            let row: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_str(line).expect("replay ledger row");
+            let row: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_str(line).expect("replay ledger row");
             row["seed"].as_u64().expect("replay ledger seed")
         })
         .collect::<BTreeSet<_>>();
@@ -10623,8 +10623,8 @@ fn exploratory_feature_campaign_reports_missing_coverage_and_fails_qualification
         transcript.contains("ADV_CAMPAIGN_COVERAGE_INCOMPLETE campaign=storage-durability"),
         "{transcript}"
     );
-    let summary: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let summary: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(artifacts.path().join("campaign-summary.json"))
                 .expect("exploratory summary"),
         )
@@ -10652,7 +10652,7 @@ fn exploratory_feature_campaign_reports_missing_coverage_and_fails_qualification
     assert_eq!(summary["attestation"]["oracle_contract_version"], 1);
     assert_eq!(
         summary["attestation"]["oracle_contract"],
-        zeppelin_embed_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION
+        volantis_db_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION
     );
     assert!(
         summary["attestation"]["harness_git_revision"]
@@ -10848,8 +10848,8 @@ fn release_feature_campaign_refuses_incomplete_coverage() {
         .output()
         .expect("run release coverage probe");
     assert!(!output.status.success());
-    let summary: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let summary: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(artifacts.path().join("campaign-summary.json"))
                 .expect("release summary"),
         )
@@ -10894,8 +10894,8 @@ fn release_feature_campaign_rejects_real_violations() {
         .output()
         .expect("run release coverage probe");
     assert!(!output.status.success());
-    let summary: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let summary: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(artifacts.path().join("campaign-summary.json"))
                 .expect("release summary"),
         )
@@ -10965,7 +10965,7 @@ fn missing_campaign_coverage(campaign: CampaignKind, coverage: &CoverageRegistry
         }
         if campaign == CampaignKind::VectorExecution {
             missing.extend(
-                zeppelin_embed::kernels::KernelVariant::available()
+                volantis_db::kernels::KernelVariant::available()
                     .map(|variant| format!("kernel.backend.{}", variant.backend_id().as_str()))
                     .filter(|key| coverage.count(key) == 0),
             );
@@ -11098,9 +11098,9 @@ fn preserve_campaign_failure(
     );
     partial_artifacts |= ensure_failure_artifact(
         &destination.join("episode.json"),
-        &zeppelin_embed_bench::harness_json::to_vec_pretty(
-            &zeppelin_embed_bench::harness_json::json!({
-                "schema": "zeppelin-embed-adversarial-episode",
+        &volantis_db_bench::harness_json::to_vec_pretty(
+            &volantis_db_bench::harness_json::json!({
+                "schema": "volantis-db-adversarial-episode",
                 "version": 3,
                 "campaign": campaign.key(),
                 "seed": seed,
@@ -11109,8 +11109,8 @@ fn preserve_campaign_failure(
         )
         .expect("serialize fallback episode metadata"),
     );
-    let failure = zeppelin_embed_bench::harness_json::json!({
-        "schema": "zeppelin-embed-adversarial-episode-failure",
+    let failure = volantis_db_bench::harness_json::json!({
+        "schema": "volantis-db-adversarial-episode-failure",
         "version": 2,
         "campaign": campaign.key(),
         "seed": seed,
@@ -11122,7 +11122,7 @@ fn preserve_campaign_failure(
     });
     write_file_synced(
         &destination.join("failure.json"),
-        &zeppelin_embed_bench::harness_json::to_vec_pretty(&failure)
+        &volantis_db_bench::harness_json::to_vec_pretty(&failure)
             .expect("serialize campaign failure"),
     );
     File::open(&failures_root)
@@ -11926,53 +11926,53 @@ fn metadata_campaign_comparison_counts_include_same_operation_fault_multiplicity
 
 #[test]
 fn graph_campaign_oracle_rows_bind_all_eight_exact_checkers() {
-    let empty = zeppelin_embed_bench::harness_json::json!({});
+    let empty = volantis_db_bench::harness_json::json!({});
     let canonical =
-        zeppelin_embed_bench::harness_json::to_vec(&empty).expect("canonical empty graph evidence");
+        volantis_db_bench::harness_json::to_vec(&empty).expect("canonical empty graph evidence");
     let digest = adversarial::artifacts::evidence_digest(&[&canonical]);
     for (invariant, checker_id, operation) in [
         (
             "I28",
-            zeppelin_embed_adversarial_oracle::vamana_graph::I28_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I28_CHECKER_ID,
             "shape",
         ),
         (
             "I29",
-            zeppelin_embed_adversarial_oracle::vamana_graph::I29_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I29_CHECKER_ID,
             "entry-points",
         ),
         (
             "I30",
-            zeppelin_embed_adversarial_oracle::vamana_graph::I30_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I30_CHECKER_ID,
             "search",
         ),
         (
             "I31",
-            zeppelin_embed_adversarial_oracle::vamana_graph::I31_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I31_CHECKER_ID,
             "search",
         ),
         (
             "I32",
-            zeppelin_embed_adversarial_oracle::vamana_graph::I32_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I32_CHECKER_ID,
             "bounded-build",
         ),
         (
             "I33",
-            zeppelin_embed_adversarial_oracle::vamana_graph::I33_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I33_CHECKER_ID,
             "publication",
         ),
         (
             "I34",
-            zeppelin_embed_adversarial_oracle::vamana_graph::I34_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I34_CHECKER_ID,
             "checkpoint",
         ),
         (
             "I35",
-            zeppelin_embed_adversarial_oracle::vamana_graph::I35_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I35_CHECKER_ID,
             "filtered-search",
         ),
     ] {
-        let record = zeppelin_embed_bench::harness_json::json!({
+        let record = volantis_db_bench::harness_json::json!({
             "invariant": invariant,
             "checker_id": checker_id,
             "operation": operation,
@@ -11980,7 +11980,7 @@ fn graph_campaign_oracle_rows_bind_all_eight_exact_checkers() {
             "observed": {},
             "input_digest": digest,
             "observed_digest": digest,
-            "canonical_version": zeppelin_embed_adversarial_oracle::ORACLE_CONTRACT_VERSION,
+            "canonical_version": volantis_db_adversarial_oracle::ORACLE_CONTRACT_VERSION,
             "oracle_input_digest": digest,
             "oracle_observed_digest": digest,
             "passed": true,
@@ -11995,176 +11995,176 @@ fn graph_campaign_oracle_rows_bind_all_eight_exact_checkers() {
 
 #[test]
 fn remaining_direct_family_oracle_rows_bind_their_exact_checkers() {
-    let empty = zeppelin_embed_bench::harness_json::json!({});
+    let empty = volantis_db_bench::harness_json::json!({});
     let canonical =
-        zeppelin_embed_bench::harness_json::to_vec(&empty).expect("canonical empty evidence");
+        volantis_db_bench::harness_json::to_vec(&empty).expect("canonical empty evidence");
     let digest = adversarial::artifacts::evidence_digest(&[&canonical]);
     let bindings = [
         (
             CampaignKind::Fts,
             "I40",
-            zeppelin_embed_adversarial_oracle::fts::I40_CHECKER_ID,
+            volantis_db_adversarial_oracle::fts::I40_CHECKER_ID,
             "tokenizer",
         ),
         (
             CampaignKind::Fts,
             "I41",
-            zeppelin_embed_adversarial_oracle::fts::I41_CHECKER_ID,
+            volantis_db_adversarial_oracle::fts::I41_CHECKER_ID,
             "regions",
         ),
         (
             CampaignKind::Fts,
             "I42",
-            zeppelin_embed_adversarial_oracle::fts::I42_CHECKER_ID,
+            volantis_db_adversarial_oracle::fts::I42_CHECKER_ID,
             "bm25",
         ),
         (
             CampaignKind::Fts,
             "I43",
-            zeppelin_embed_adversarial_oracle::fts::I43_CHECKER_ID,
+            volantis_db_adversarial_oracle::fts::I43_CHECKER_ID,
             "pruning",
         ),
         (
             CampaignKind::Fts,
             "I44",
-            zeppelin_embed_adversarial_oracle::fts::I44_CHECKER_ID,
+            volantis_db_adversarial_oracle::fts::I44_CHECKER_ID,
             "extras",
         ),
         (
             CampaignKind::HybridFusion,
             "I45",
-            zeppelin_embed_adversarial_oracle::hybrid_fusion::I45_CHECKER_ID,
+            volantis_db_adversarial_oracle::hybrid_fusion::I45_CHECKER_ID,
             "provenance",
         ),
         (
             CampaignKind::HybridFusion,
             "I46",
-            zeppelin_embed_adversarial_oracle::hybrid_fusion::I46_CHECKER_ID,
+            volantis_db_adversarial_oracle::hybrid_fusion::I46_CHECKER_ID,
             "normalization",
         ),
         (
             CampaignKind::HybridFusion,
             "I47",
-            zeppelin_embed_adversarial_oracle::hybrid_fusion::I47_CHECKER_ID,
+            volantis_db_adversarial_oracle::hybrid_fusion::I47_CHECKER_ID,
             "bounded-fusion",
         ),
         (
             CampaignKind::HybridFusion,
             "I48",
-            zeppelin_embed_adversarial_oracle::hybrid_fusion::I48_CHECKER_ID,
+            volantis_db_adversarial_oracle::hybrid_fusion::I48_CHECKER_ID,
             "rrf-fallback",
         ),
         (
             CampaignKind::HybridFusion,
             "I49",
-            zeppelin_embed_adversarial_oracle::hybrid_fusion::I49_CHECKER_ID,
+            volantis_db_adversarial_oracle::hybrid_fusion::I49_CHECKER_ID,
             "legs",
         ),
         (
             CampaignKind::TieringMaintenance,
             "I50",
-            zeppelin_embed_adversarial_oracle::tiering_maintenance::I50_CHECKER_ID,
+            volantis_db_adversarial_oracle::tiering_maintenance::I50_CHECKER_ID,
             "policy",
         ),
         (
             CampaignKind::TieringMaintenance,
             "I51",
-            zeppelin_embed_adversarial_oracle::tiering_maintenance::I51_CHECKER_ID,
+            volantis_db_adversarial_oracle::tiering_maintenance::I51_CHECKER_ID,
             "transition",
         ),
         (
             CampaignKind::TieringMaintenance,
             "I52",
-            zeppelin_embed_adversarial_oracle::tiering_maintenance::I52_CHECKER_ID,
+            volantis_db_adversarial_oracle::tiering_maintenance::I52_CHECKER_ID,
             "budget",
         ),
         (
             CampaignKind::TieringMaintenance,
             "I53",
-            zeppelin_embed_adversarial_oracle::tiering_maintenance::I53_CHECKER_ID,
+            volantis_db_adversarial_oracle::tiering_maintenance::I53_CHECKER_ID,
             "publication",
         ),
         (
             CampaignKind::LifecycleAccounting,
             "I54",
-            zeppelin_embed_adversarial_oracle::lifecycle_accounting::I54_CHECKER_ID,
+            volantis_db_adversarial_oracle::lifecycle_accounting::I54_CHECKER_ID,
             "deadline",
         ),
         (
             CampaignKind::LifecycleAccounting,
             "I55",
-            zeppelin_embed_adversarial_oracle::lifecycle_accounting::I55_CHECKER_ID,
+            volantis_db_adversarial_oracle::lifecycle_accounting::I55_CHECKER_ID,
             "cancellation",
         ),
         (
             CampaignKind::LifecycleAccounting,
             "I56",
-            zeppelin_embed_adversarial_oracle::lifecycle_accounting::I56_CHECKER_ID,
+            volantis_db_adversarial_oracle::lifecycle_accounting::I56_CHECKER_ID,
             "close-drain",
         ),
         (
             CampaignKind::LifecycleAccounting,
             "I57",
-            zeppelin_embed_adversarial_oracle::lifecycle_accounting::I57_CHECKER_ID,
+            volantis_db_adversarial_oracle::lifecycle_accounting::I57_CHECKER_ID,
             "locking",
         ),
         (
             CampaignKind::LifecycleAccounting,
             "I58",
-            zeppelin_embed_adversarial_oracle::lifecycle_accounting::I58_CHECKER_ID,
+            volantis_db_adversarial_oracle::lifecycle_accounting::I58_CHECKER_ID,
             "accounting",
         ),
         (
             CampaignKind::DiagnosticsHealth,
             "I63",
-            zeppelin_embed_adversarial_oracle::diagnostics_health::I63_CHECKER_ID,
+            volantis_db_adversarial_oracle::diagnostics_health::I63_CHECKER_ID,
             "health",
         ),
         (
             CampaignKind::DiagnosticsHealth,
             "I64",
-            zeppelin_embed_adversarial_oracle::diagnostics_health::I64_CHECKER_ID,
+            volantis_db_adversarial_oracle::diagnostics_health::I64_CHECKER_ID,
             "self-check",
         ),
         (
             CampaignKind::DiagnosticsHealth,
             "I65",
-            zeppelin_embed_adversarial_oracle::diagnostics_health::I65_CHECKER_ID,
+            volantis_db_adversarial_oracle::diagnostics_health::I65_CHECKER_ID,
             "recovery",
         ),
         (
             CampaignKind::FfiBindings,
             "I66",
-            zeppelin_embed_adversarial_oracle::ffi_bindings::I66_CHECKER_ID,
+            volantis_db_adversarial_oracle::ffi_bindings::I66_CHECKER_ID,
             "validation",
         ),
         (
             CampaignKind::FfiBindings,
             "I67",
-            zeppelin_embed_adversarial_oracle::ffi_bindings::I67_CHECKER_ID,
+            volantis_db_adversarial_oracle::ffi_bindings::I67_CHECKER_ID,
             "ownership",
         ),
         (
             CampaignKind::FfiBindings,
             "I68",
-            zeppelin_embed_adversarial_oracle::ffi_bindings::I68_CHECKER_ID,
+            volantis_db_adversarial_oracle::ffi_bindings::I68_CHECKER_ID,
             "containment",
         ),
         (
             CampaignKind::FfiBindings,
             "I69",
-            zeppelin_embed_adversarial_oracle::ffi_bindings::I69_CHECKER_ID,
+            volantis_db_adversarial_oracle::ffi_bindings::I69_CHECKER_ID,
             "deadline",
         ),
         (
             CampaignKind::FfiBindings,
             "I70",
-            zeppelin_embed_adversarial_oracle::ffi_bindings::I70_CHECKER_ID,
+            volantis_db_adversarial_oracle::ffi_bindings::I70_CHECKER_ID,
             "parity",
         ),
     ];
     for (campaign, invariant, checker_id, operation) in bindings {
-        let record = zeppelin_embed_bench::harness_json::json!({
+        let record = volantis_db_bench::harness_json::json!({
             "invariant": invariant,
             "checker_id": checker_id,
             "operation": operation,
@@ -12172,7 +12172,7 @@ fn remaining_direct_family_oracle_rows_bind_their_exact_checkers() {
             "observed": {},
             "input_digest": digest,
             "observed_digest": digest,
-            "canonical_version": zeppelin_embed_adversarial_oracle::ORACLE_CONTRACT_VERSION,
+            "canonical_version": volantis_db_adversarial_oracle::ORACLE_CONTRACT_VERSION,
             "oracle_input_digest": digest,
             "oracle_observed_digest": digest,
             "passed": true,
@@ -12389,8 +12389,8 @@ fn storage_summary_reconciles_checkers_controls_and_receipts() {
         outcome.integrated_feature_fault_receipts,
         outcome.feature_faults_fired as u64
     );
-    let episode: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&outcome.episode_bytes)
+    let episode: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&outcome.episode_bytes)
             .expect("parse reconciled storage episode metadata");
     let storage = &episode["attestation"]["storage_oracle_attestation"];
     assert_eq!(
@@ -12408,7 +12408,7 @@ fn storage_summary_reconciles_checkers_controls_and_receipts() {
 
 #[test]
 fn storage_campaign_executes_every_required_format_and_omission_case() {
-    use zeppelin_embed_adversarial_oracle::storage_durability::{OmissionSubsite, OrphanKind};
+    use volantis_db_adversarial_oracle::storage_durability::{OmissionSubsite, OrphanKind};
 
     let campaign = CampaignKind::StorageDurability;
     let required = CampaignSpec::for_kind(campaign)
@@ -12630,7 +12630,7 @@ fn storage_campaign_attestation_embeds_the_strict_family_ledger() {
             .expect("storage feature attestation");
     assert_eq!(
         attestation["oracle_contract_versions"]["storage-durability"].as_str(),
-        Some(zeppelin_embed_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION),
+        Some(volantis_db_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION),
         "storage campaign attestation omitted its named oracle contract version"
     );
     validate_storage_oracle_attestation_shape(&attestation["storage_oracle_attestation"])
@@ -12648,8 +12648,8 @@ fn storage_episode_writes_complete_attestation() {
     )
     .expect("storage episode attestation run");
     assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
-    let episode: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&outcome.episode_bytes)
+    let episode: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&outcome.episode_bytes)
             .expect("parse storage episode.json");
     let storage = &episode["attestation"]["storage_oracle_attestation"];
     assert!(
@@ -12666,8 +12666,8 @@ fn storage_episode_serializes_the_shared_base_and_five_ordered_forks() {
     let outcome =
         adversarial::runner::run_program_for(campaign, seed, FaultProfile::None, root.path())
             .expect("storage shared-base episode");
-    let fixture: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let fixture: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             outcome
                 .family_artifact_bytes
                 .get("storage-fixture.json")
@@ -12725,16 +12725,16 @@ fn storage_replay_metadata_rejects_a_stale_nested_checker_contract() {
         .path()
         .join(format!("storage-durability/seed-{seed}-none"));
     let path = directory.join("episode.json");
-    let mut episode: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(
+    let mut episode: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(
             &std::fs::read(&path).expect("read storage episode metadata"),
         )
         .expect("parse storage episode metadata");
     episode["attestation"]["storage_oracle_attestation"]["per_invariant_comparisons"]["I15"]["checker_id"] =
-        zeppelin_embed_bench::harness_json::json!("stale-checker");
+        volantis_db_bench::harness_json::json!("stale-checker");
     std::fs::write(
         &path,
-        zeppelin_embed_bench::harness_json::to_vec_pretty(&episode)
+        volantis_db_bench::harness_json::to_vec_pretty(&episode)
             .expect("serialize planted storage episode metadata"),
     )
     .expect("write planted storage episode metadata");
@@ -12816,7 +12816,7 @@ fn vector_campaign_attestation_embeds_the_exact_family_ledger() {
             coverage.hit(fault.coverage_key());
         }
     }
-    for backend in zeppelin_embed::kernels::KernelVariant::available() {
+    for backend in volantis_db::kernels::KernelVariant::available() {
         coverage.hit(format!("kernel.backend.{}", backend.backend_id().as_str()));
     }
     let attestation =
@@ -12905,11 +12905,11 @@ fn metadata_campaign_attestation_reports_the_exact_family_ledger() {
     assert_eq!(metadata["version"], 1);
     assert_eq!(
         metadata["required_invariants"],
-        zeppelin_embed_bench::harness_json::json!(["I36", "I37", "I38", "I39"])
+        volantis_db_bench::harness_json::json!(["I36", "I37", "I38", "I39"])
     );
     assert_eq!(
         metadata["invariants"]["I36"]["checker_id"],
-        zeppelin_embed_adversarial_oracle::metadata_filter_planner::I36_CHECKER_ID
+        volantis_db_adversarial_oracle::metadata_filter_planner::I36_CHECKER_ID
     );
     assert!(metadata["oracle_source_digest"].is_string());
     assert!(metadata["repository"]["dirty_state"].is_string());
@@ -12961,7 +12961,7 @@ fn metadata_oracle_attestation_rejects_a_stale_checker_ledger() {
     };
     let mut metadata = metadata_oracle_attestation_json(1, &counters, &BTreeMap::new(), None);
     metadata["invariants"]["I36"]["checker_id"] =
-        zeppelin_embed_bench::harness_json::json!("generic-marker-v1");
+        volantis_db_bench::harness_json::json!("generic-marker-v1");
 
     let error = validate_metadata_oracle_attestation_shape(&metadata)
         .expect_err("stale metadata checker ledger was accepted");
@@ -12997,24 +12997,24 @@ fn metadata_oracle_attestation_rejects_wrong_fault_receipt_cardinality() {
     };
     let mut metadata =
         metadata_oracle_attestation_json(1, &counters, &BTreeMap::new(), Some(&coverage));
-    metadata["replayed_seeds"] = zeppelin_embed_bench::harness_json::json!(1);
+    metadata["replayed_seeds"] = volantis_db_bench::harness_json::json!(1);
     validate_metadata_oracle_attestation_shape(&metadata)
         .expect("complete metadata attestation fixture");
 
     metadata["faults"]["selectivity-boundary"]["production_receipts"] =
-        zeppelin_embed_bench::harness_json::json!(1);
+        volantis_db_bench::harness_json::json!(1);
     let error = validate_metadata_oracle_attestation_shape(&metadata)
         .expect_err("wrong metadata receipt cardinality was accepted");
     assert!(error.contains("selectivity-boundary"), "{error}");
 
     metadata["faults"]["selectivity-boundary"]["production_receipts"] =
-        zeppelin_embed_bench::harness_json::json!(2);
-    metadata["replayed_seeds"] = zeppelin_embed_bench::harness_json::json!(0);
+        volantis_db_bench::harness_json::json!(2);
+    metadata["replayed_seeds"] = volantis_db_bench::harness_json::json!(0);
     let error = validate_metadata_oracle_attestation_shape(&metadata)
         .expect_err("incomplete metadata replay was accepted");
     assert!(error.contains("replayed_seeds"), "{error}");
 
-    metadata["replayed_seeds"] = zeppelin_embed_bench::harness_json::json!(1);
+    metadata["replayed_seeds"] = volantis_db_bench::harness_json::json!(1);
     let comparisons = BTreeMap::from([
         ("I36".to_owned(), 1),
         (
@@ -13167,7 +13167,7 @@ fn metadata_attestation_rejects_duplicate_i37_oracle_case_identity() {
 
 #[test]
 fn retained_storage_summary_without_family_attestation_is_rejected() {
-    let old_summary = zeppelin_embed_bench::harness_json::json!({});
+    let old_summary = volantis_db_bench::harness_json::json!({});
     let error = validate_storage_oracle_attestation_shape(&old_summary)
         .expect_err("legacy generic storage summary was accepted");
     assert_eq!(
@@ -13178,7 +13178,7 @@ fn retained_storage_summary_without_family_attestation_is_rejected() {
 
 #[test]
 fn retained_vector_summary_without_family_attestation_is_rejected() {
-    let old_summary = zeppelin_embed_bench::harness_json::json!({});
+    let old_summary = volantis_db_bench::harness_json::json!({});
     let error = validate_vector_oracle_attestation_shape(&old_summary)
         .expect_err("legacy generic vector summary was accepted");
     assert_eq!(
@@ -13190,7 +13190,7 @@ fn retained_vector_summary_without_family_attestation_is_rejected() {
 #[test]
 fn feature_summary_verifier_requires_the_nested_vector_attestation() {
     let root = tempfile::tempdir().expect("vector verifier root");
-    let summary = zeppelin_embed_bench::harness_json::json!({
+    let summary = volantis_db_bench::harness_json::json!({
         "attestation": {"vector_oracle_attestation": {}},
     });
     let error =
@@ -13251,7 +13251,7 @@ fn vector_attestation_rejects_an_empty_runtime_backend_inventory() {
     ]);
     let mut vector =
         vector_oracle_attestation_json(1, &counters, &evidence_digests, Some(&coverage));
-    let detected = zeppelin_embed::kernels::detected_features();
+    let detected = volantis_db::kernels::detected_features();
     let features = vector["backend_inventory"]["features"]
         .as_object()
         .expect("vector runtime features must be named booleans");
@@ -13266,7 +13266,7 @@ fn vector_attestation_rejects_an_empty_runtime_backend_inventory() {
     ] {
         assert_eq!(features[name].as_bool(), Some(expected), "feature {name}");
     }
-    vector["backend_inventory"]["available"] = zeppelin_embed_bench::harness_json::json!([]);
+    vector["backend_inventory"]["available"] = volantis_db_bench::harness_json::json!([]);
 
     let error = validate_vector_oracle_attestation_shape(&vector)
         .expect_err("empty vector runtime backend inventory was accepted");
@@ -13331,7 +13331,7 @@ fn storage_oracle_attestation_has_exact_checker_case_and_receipt_catalogs() {
 
 #[test]
 fn storage_attestation_rejects_a_case_count_not_present_in_merged_coverage() {
-    let storage = zeppelin_embed_bench::harness_json::json!({
+    let storage = volantis_db_bench::harness_json::json!({
         "operations": {"publication": {"executions": 1}},
         "faults": {},
         "format_cases": {"wal-header": 2},
@@ -13398,7 +13398,7 @@ fn storage_attestation_rejects_a_receipt_count_not_present_in_merged_receipts() 
 
 #[test]
 fn vector_attestation_rejects_a_site_count_not_present_in_merged_coverage() {
-    let vector = zeppelin_embed_bench::harness_json::json!({
+    let vector = volantis_db_bench::harness_json::json!({
         "same_seed_controls": {
             "operations": {"kernel-parity": 1},
             "faults": {"forced-dispatch-backend": 1},
@@ -13438,7 +13438,7 @@ fn vector_attestation_rejects_a_site_count_not_present_in_merged_coverage() {
 
 #[test]
 fn vector_attestation_accepts_repeated_backend_coverage() {
-    let vector = zeppelin_embed_bench::harness_json::json!({
+    let vector = volantis_db_bench::harness_json::json!({
         "same_seed_controls": {
             "operations": {},
             "faults": {},
@@ -13472,7 +13472,7 @@ fn vector_attestation_accepts_repeated_backend_coverage() {
 
 #[test]
 fn vector_attestation_rejects_a_comparison_count_not_present_in_merged_oracle() {
-    let vector = zeppelin_embed_bench::harness_json::json!({
+    let vector = volantis_db_bench::harness_json::json!({
         "per_invariant_comparisons": {
             "I24": {"comparisons": 2},
             "I25": {"comparisons": 1},
@@ -13494,7 +13494,7 @@ fn vector_attestation_rejects_a_comparison_count_not_present_in_merged_oracle() 
 
 #[test]
 fn vector_attestation_rejects_a_generic_pair_count_not_present_in_merged_controls() {
-    let vector = zeppelin_embed_bench::harness_json::json!({
+    let vector = volantis_db_bench::harness_json::json!({
         "generic_fault_pairs": {
             "scheduled": 2,
             "clean_fired": 2,
@@ -13523,12 +13523,12 @@ fn vector_attestation_rejects_a_generic_pair_count_not_present_in_merged_control
 fn merged_stream_json(
     merged: &adversarial::artifacts::MergedEvidenceStats,
     name: &str,
-) -> zeppelin_embed_bench::harness_json::Value {
+) -> volantis_db_bench::harness_json::Value {
     let stream = merged
         .streams
         .get(name)
         .unwrap_or_else(|| panic!("merged evidence omitted {name}"));
-    zeppelin_embed_bench::harness_json::json!({
+    volantis_db_bench::harness_json::json!({
         "records": stream.records,
         "bytes": stream.bytes,
         "digest": stream.digest,
@@ -13536,10 +13536,10 @@ fn merged_stream_json(
 }
 
 fn validate_ingest_retention_oracle_attestation_shape(
-    ingest: &zeppelin_embed_bench::harness_json::Value,
+    ingest: &volantis_db_bench::harness_json::Value,
 ) -> Result<(), String> {
     if ingest["oracle_contract_version"].as_str()
-        != Some(zeppelin_embed_adversarial_oracle::ingest_retention::ORACLE_CONTRACT_VERSION)
+        != Some(volantis_db_adversarial_oracle::ingest_retention::ORACLE_CONTRACT_VERSION)
     {
         return Err("ingest-retention attestation missing: oracle_contract_version".to_owned());
     }
@@ -13560,7 +13560,7 @@ fn validate_ingest_retention_oracle_attestation_shape(
         return Err("ingest-retention repository attestation differs".to_owned());
     }
     let exact_object = |label: &str,
-                        value: &zeppelin_embed_bench::harness_json::Value,
+                        value: &volantis_db_bench::harness_json::Value,
                         expected: &[&str]|
      -> Result<(), String> {
         let observed = value
@@ -13597,19 +13597,19 @@ fn validate_ingest_retention_oracle_attestation_shape(
     for (invariant, checker_id) in [
         (
             "I20",
-            zeppelin_embed_adversarial_oracle::ingest_retention::I20_CHECKER_ID,
+            volantis_db_adversarial_oracle::ingest_retention::I20_CHECKER_ID,
         ),
         (
             "I21",
-            zeppelin_embed_adversarial_oracle::ingest_retention::I21_CHECKER_ID,
+            volantis_db_adversarial_oracle::ingest_retention::I21_CHECKER_ID,
         ),
         (
             "I22",
-            zeppelin_embed_adversarial_oracle::ingest_retention::I22_CHECKER_ID,
+            volantis_db_adversarial_oracle::ingest_retention::I22_CHECKER_ID,
         ),
         (
             "I23",
-            zeppelin_embed_adversarial_oracle::ingest_retention::I23_CHECKER_ID,
+            volantis_db_adversarial_oracle::ingest_retention::I23_CHECKER_ID,
         ),
     ] {
         let record = &ingest["invariants"][invariant];
@@ -13694,10 +13694,10 @@ fn validate_ingest_retention_oracle_attestation_shape(
 }
 
 fn validate_vector_oracle_attestation_shape(
-    vector: &zeppelin_embed_bench::harness_json::Value,
+    vector: &volantis_db_bench::harness_json::Value,
 ) -> Result<(), String> {
     if vector["oracle_contract"].as_str()
-        != Some(zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT)
+        != Some(volantis_db_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT)
     {
         return Err("vector-execution attestation missing: oracle_contract".to_owned());
     }
@@ -13725,7 +13725,7 @@ fn validate_vector_oracle_attestation_shape(
     }
 
     let exact_keys = |label: &str,
-                      value: &zeppelin_embed_bench::harness_json::Value,
+                      value: &volantis_db_bench::harness_json::Value,
                       expected: BTreeSet<String>|
      -> Result<(), String> {
         let observed = value
@@ -13753,19 +13753,19 @@ fn validate_vector_oracle_attestation_shape(
     for (invariant, checker_id) in [
         (
             "I24",
-            zeppelin_embed_adversarial_oracle::vector_execution::I24_CHECKER_ID,
+            volantis_db_adversarial_oracle::vector_execution::I24_CHECKER_ID,
         ),
         (
             "I25",
-            zeppelin_embed_adversarial_oracle::vector_execution::I25_CHECKER_ID,
+            volantis_db_adversarial_oracle::vector_execution::I25_CHECKER_ID,
         ),
         (
             "I26",
-            zeppelin_embed_adversarial_oracle::vector_execution::I26_CHECKER_ID,
+            volantis_db_adversarial_oracle::vector_execution::I26_CHECKER_ID,
         ),
         (
             "I27",
-            zeppelin_embed_adversarial_oracle::vector_execution::I27_CHECKER_ID,
+            volantis_db_adversarial_oracle::vector_execution::I27_CHECKER_ID,
         ),
     ] {
         let record = &vector["per_invariant_comparisons"][invariant];
@@ -13893,7 +13893,7 @@ fn validate_vector_oracle_attestation_shape(
     )?;
 
     let string_set = |label: &str,
-                      value: &zeppelin_embed_bench::harness_json::Value|
+                      value: &volantis_db_bench::harness_json::Value|
      -> Result<BTreeSet<String>, String> {
         value
             .as_array()
@@ -13911,7 +13911,7 @@ fn validate_vector_oracle_attestation_shape(
         "available backend inventory",
         &vector["backend_inventory"]["available"],
     )?;
-    let expected_available = zeppelin_embed::kernels::KernelVariant::available()
+    let expected_available = volantis_db::kernels::KernelVariant::available()
         .map(|variant| variant.backend_id().as_str().to_owned())
         .collect::<BTreeSet<_>>();
     if available.is_empty() || available != expected_available {
@@ -13929,7 +13929,7 @@ fn validate_vector_oracle_attestation_shape(
     if features.keys().cloned().collect::<BTreeSet<_>>() != expected_feature_keys {
         return Err("vector-execution backend feature keys differ".to_owned());
     }
-    let detected = zeppelin_embed::kernels::detected_features();
+    let detected = volantis_db::kernels::detected_features();
     for (name, expected) in [
         ("neon", detected.neon),
         ("dotprod", detected.dotprod),
@@ -14027,10 +14027,10 @@ fn is_vector_receipt_site_coverage_key(key: &str) -> bool {
 }
 
 fn validate_storage_oracle_attestation_shape(
-    storage: &zeppelin_embed_bench::harness_json::Value,
+    storage: &volantis_db_bench::harness_json::Value,
 ) -> Result<(), String> {
     if storage["oracle_contract_version"].as_str()
-        != Some(zeppelin_embed_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION)
+        != Some(volantis_db_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION)
     {
         return Err("storage-durability attestation missing: oracle_contract_version".to_owned());
     }
@@ -14067,7 +14067,7 @@ fn validate_storage_oracle_attestation_shape(
         ));
     }
     let exact_object = |label: &str,
-                        value: &zeppelin_embed_bench::harness_json::Value,
+                        value: &volantis_db_bench::harness_json::Value,
                         expected: &[&str]|
      -> Result<(), String> {
         let observed = value
@@ -14096,23 +14096,23 @@ fn validate_storage_oracle_attestation_shape(
     for (invariant, checker_id) in [
         (
             "I15",
-            zeppelin_embed_adversarial_oracle::storage_durability::I15_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I15_CHECKER_ID,
         ),
         (
             "I16",
-            zeppelin_embed_adversarial_oracle::storage_durability::I16_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I16_CHECKER_ID,
         ),
         (
             "I17",
-            zeppelin_embed_adversarial_oracle::storage_durability::I17_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I17_CHECKER_ID,
         ),
         (
             "I18",
-            zeppelin_embed_adversarial_oracle::storage_durability::I18_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I18_CHECKER_ID,
         ),
         (
             "I19",
-            zeppelin_embed_adversarial_oracle::storage_durability::I19_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I19_CHECKER_ID,
         ),
     ] {
         let record = &storage["invariants"][invariant];
@@ -14245,7 +14245,7 @@ fn validate_storage_oracle_attestation_shape(
 }
 
 fn validate_metadata_control_evidence(
-    control: &zeppelin_embed_bench::harness_json::Value,
+    control: &volantis_db_bench::harness_json::Value,
 ) -> Result<(), String> {
     if control["normalized_schedule_digest"].as_u64().unwrap_or(0) == 0 {
         return Err("metadata control normalized schedule digest is zero or absent".to_owned());
@@ -14277,7 +14277,7 @@ fn validate_metadata_control_evidence(
         ));
     }
     let validate_directory = |label: &str,
-                              directory: &zeppelin_embed_bench::harness_json::Value|
+                              directory: &volantis_db_bench::harness_json::Value|
      -> Result<(), String> {
         if directory["digest"].as_u64().unwrap_or(0) == 0 {
             return Err(format!("metadata control {label} directory digest is zero"));
@@ -14350,7 +14350,7 @@ fn validate_metadata_control_evidence(
 }
 
 fn validate_metadata_mutation_evidence(
-    mutation: &zeppelin_embed_bench::harness_json::Value,
+    mutation: &volantis_db_bench::harness_json::Value,
 ) -> Result<(), String> {
     if mutation["source"].as_str().is_none_or(str::is_empty)
         || mutation["region"]["code"].as_u64().is_none()
@@ -14439,10 +14439,10 @@ fn validate_metadata_mutation_evidence(
 }
 
 fn validate_metadata_oracle_attestation_shape(
-    metadata: &zeppelin_embed_bench::harness_json::Value,
+    metadata: &volantis_db_bench::harness_json::Value,
 ) -> Result<(), String> {
     let object_keys = |label: &str,
-                       value: &zeppelin_embed_bench::harness_json::Value|
+                       value: &volantis_db_bench::harness_json::Value|
      -> Result<BTreeSet<String>, String> {
         value
             .as_object()
@@ -14450,7 +14450,7 @@ fn validate_metadata_oracle_attestation_shape(
             .map(|object| object.keys().cloned().collect())
     };
     let exact_keys = |label: &str,
-                      value: &zeppelin_embed_bench::harness_json::Value,
+                      value: &volantis_db_bench::harness_json::Value,
                       required: &[&str]|
      -> Result<(), String> {
         let observed = object_keys(label, value)?;
@@ -14516,7 +14516,7 @@ fn validate_metadata_oracle_attestation_shape(
         return Err("metadata oracle attestation omitted repository dirty_state".to_owned());
     }
     if metadata["required_invariants"]
-        != zeppelin_embed_bench::harness_json::json!(["I36", "I37", "I38", "I39"])
+        != volantis_db_bench::harness_json::json!(["I36", "I37", "I38", "I39"])
     {
         return Err(
             "metadata oracle attestation required invariants are not exactly I36-I39".to_owned(),
@@ -14526,19 +14526,19 @@ fn validate_metadata_oracle_attestation_shape(
     let checker_ids = [
         (
             "I36",
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::I36_CHECKER_ID,
+            volantis_db_adversarial_oracle::metadata_filter_planner::I36_CHECKER_ID,
         ),
         (
             "I37",
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::I37_CHECKER_ID,
+            volantis_db_adversarial_oracle::metadata_filter_planner::I37_CHECKER_ID,
         ),
         (
             "I38",
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::I38_CHECKER_ID,
+            volantis_db_adversarial_oracle::metadata_filter_planner::I38_CHECKER_ID,
         ),
         (
             "I39",
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::I39_CHECKER_ID,
+            volantis_db_adversarial_oracle::metadata_filter_planner::I39_CHECKER_ID,
         ),
     ];
     exact_keys(
@@ -14720,7 +14720,7 @@ fn validate_metadata_oracle_attestation_shape(
     reason = "metadata qualification binds each independently merged evidence ledger"
 )]
 fn validate_metadata_observed_ledgers(
-    metadata: &zeppelin_embed_bench::harness_json::Value,
+    metadata: &volantis_db_bench::harness_json::Value,
     comparisons: &BTreeMap<String, u64>,
     passes: &BTreeMap<String, u64>,
     fault_pairs: &BTreeMap<String, u64>,
@@ -14937,11 +14937,11 @@ fn decode_storage_hex(value: &str) -> Result<Vec<u8>, String> {
 /// Retained artifact rows minus their `role` label, so a clean-pre-operation
 /// capture and its fault-pre-operation twin compare on bytes and facts alone.
 fn artifact_payloads(
-    artifacts: &zeppelin_embed_bench::harness_json::Value,
+    artifacts: &volantis_db_bench::harness_json::Value,
 ) -> Option<
     Vec<(
-        zeppelin_embed_bench::harness_json::Value,
-        zeppelin_embed_bench::harness_json::Value,
+        volantis_db_bench::harness_json::Value,
+        volantis_db_bench::harness_json::Value,
     )>,
 > {
     artifacts
@@ -14986,8 +14986,8 @@ fn read_storage_merged_ledgers(root: &Path) -> Result<StorageMergedLedgers, Stri
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse merged storage fault row: {error}"))?;
         let record = &envelope["record"];
         if record["type"] != "feature"
@@ -15035,8 +15035,8 @@ fn read_storage_merged_ledgers(root: &Path) -> Result<StorageMergedLedgers, Stri
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse merged storage control row: {error}"))?;
         let record = &envelope["record"];
         if record["campaign"] != CampaignKind::StorageDurability.key() {
@@ -15094,8 +15094,8 @@ fn read_storage_merged_ledgers(root: &Path) -> Result<StorageMergedLedgers, Stri
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse merged storage receipt row: {error}"))?;
         let record = &envelope["record"];
         if record["campaign"] != CampaignKind::StorageDurability.key() {
@@ -15181,8 +15181,8 @@ fn read_storage_merged_ledgers(root: &Path) -> Result<StorageMergedLedgers, Stri
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse merged storage artifact row: {error}"))?;
         let record = &envelope["record"];
         if record["campaign"] != CampaignKind::StorageDurability.key() {
@@ -15234,7 +15234,7 @@ fn read_storage_merged_ledgers(root: &Path) -> Result<StorageMergedLedgers, Stri
 }
 
 fn validate_storage_observed_ledgers(
-    storage: &zeppelin_embed_bench::harness_json::Value,
+    storage: &volantis_db_bench::harness_json::Value,
     comparisons: &BTreeMap<String, u64>,
     ledgers: &StorageMergedLedgers,
     episodes: u64,
@@ -15393,8 +15393,8 @@ fn read_ingest_retention_merged_ledgers(
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse merged ingest-retention fault row: {error}"))?;
         let record = &envelope["record"];
         if record["type"] != "feature" || record["campaign"] != CampaignKind::IngestRetention.key()
@@ -15442,8 +15442,8 @@ fn read_ingest_retention_merged_ledgers(
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse merged ingest-retention control row: {error}"))?;
         let record = &envelope["record"];
         if record["campaign"] != CampaignKind::IngestRetention.key() {
@@ -15500,8 +15500,8 @@ fn read_ingest_retention_merged_ledgers(
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse merged ingest-retention receipt row: {error}"))?;
         let record = &envelope["record"];
         if record["campaign"] != CampaignKind::IngestRetention.key() {
@@ -15581,8 +15581,8 @@ fn read_ingest_retention_merged_ledgers(
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line).map_err(|error| {
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line).map_err(|error| {
                 format!("parse merged ingest-retention fixture envelope: {error}")
             })?;
         let seed = envelope["seed"]
@@ -15660,7 +15660,7 @@ fn read_ingest_retention_merged_ledgers(
 }
 
 fn validate_ingest_retention_observed_ledgers(
-    ingest: &zeppelin_embed_bench::harness_json::Value,
+    ingest: &volantis_db_bench::harness_json::Value,
     comparisons: &BTreeMap<String, u64>,
     passes: &BTreeMap<String, u64>,
     ledgers: &IngestRetentionMergedLedgers,
@@ -15814,8 +15814,8 @@ fn read_metadata_merged_ledgers(root: &Path) -> Result<MetadataMergedLedgers, St
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse merged metadata fault row: {error}"))?;
         let record = &envelope["record"];
         if record["type"] != "feature"
@@ -15862,8 +15862,8 @@ fn read_metadata_merged_ledgers(root: &Path) -> Result<MetadataMergedLedgers, St
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse merged metadata receipt row: {error}"))?;
         let record = &envelope["record"];
         if record["campaign"] != CampaignKind::MetadataFilterPlanner.key() {
@@ -15913,8 +15913,8 @@ fn read_metadata_merged_ledgers(root: &Path) -> Result<MetadataMergedLedgers, St
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse merged metadata control row: {error}"))?;
         let record = &envelope["record"];
         if record["campaign"] != CampaignKind::MetadataFilterPlanner.key() {
@@ -15948,8 +15948,8 @@ fn read_metadata_merged_ledgers(root: &Path) -> Result<MetadataMergedLedgers, St
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
         {
-            let envelope: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line).map_err(|error| {
+            let envelope: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line).map_err(|error| {
                     format!("parse merged metadata mutation {}: {error}", path.display())
                 })?;
             let record = &envelope["record"];
@@ -16016,8 +16016,8 @@ fn read_merged_coverage_counts(root: &Path) -> Result<BTreeMap<String, u64>, Str
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse merged coverage row: {error}"))?;
         let record = envelope["record"]
             .as_object()
@@ -16036,7 +16036,7 @@ fn read_merged_coverage_counts(root: &Path) -> Result<BTreeMap<String, u64>, Str
 }
 
 fn validate_storage_attested_coverage(
-    storage: &zeppelin_embed_bench::harness_json::Value,
+    storage: &volantis_db_bench::harness_json::Value,
     observed: &BTreeMap<String, u64>,
 ) -> Result<(), String> {
     let compare = |label: &str, attested: u64, coverage_key: String| -> Result<(), String> {
@@ -16094,7 +16094,7 @@ fn validate_storage_attested_coverage(
 }
 
 fn validate_vector_attested_coverage(
-    vector: &zeppelin_embed_bench::harness_json::Value,
+    vector: &volantis_db_bench::harness_json::Value,
     observed: &BTreeMap<String, u64>,
 ) -> Result<(), String> {
     let compare = |label: &str, attested: u64, coverage_key: String| -> Result<(), String> {
@@ -16205,7 +16205,7 @@ struct VectorGenericPairLedger {
 }
 
 fn validate_vector_attested_generic_pairs(
-    vector: &zeppelin_embed_bench::harness_json::Value,
+    vector: &volantis_db_bench::harness_json::Value,
     observed: &VectorGenericPairLedger,
 ) -> Result<(), String> {
     let pairs = vector["generic_fault_pairs"]
@@ -16255,8 +16255,8 @@ fn read_vector_merged_generic_pairs(root: &Path) -> Result<VectorGenericPairLedg
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let envelope: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let envelope: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse merged vector control row: {error}"))?;
         let record = &envelope["record"];
         if record["campaign"] != CampaignKind::VectorExecution.key()
@@ -16325,7 +16325,7 @@ fn read_vector_merged_generic_pairs(root: &Path) -> Result<VectorGenericPairLedg
 }
 
 fn validate_vector_attested_comparisons(
-    vector: &zeppelin_embed_bench::harness_json::Value,
+    vector: &volantis_db_bench::harness_json::Value,
     observed: &BTreeMap<String, u64>,
 ) -> Result<(), String> {
     let attested = vector["per_invariant_comparisons"]
@@ -16361,7 +16361,7 @@ fn vector_oracle_attestation_json(
     counters: &CampaignAttestationCounters,
     evidence_digests: &BTreeMap<String, String>,
     coverage: Option<&CoverageRegistry>,
-) -> zeppelin_embed_bench::harness_json::Value {
+) -> volantis_db_bench::harness_json::Value {
     let invariant = |key: &str, checker_id: &'static str| {
         let comparisons = counters.comparison_counts.get(key).copied().unwrap_or(0);
         let passes = counters
@@ -16369,7 +16369,7 @@ fn vector_oracle_attestation_json(
             .get(key)
             .copied()
             .unwrap_or(0);
-        zeppelin_embed_bench::harness_json::json!({
+        volantis_db_bench::harness_json::json!({
             "checker_id": checker_id,
             "comparisons": comparisons,
             "passes": passes,
@@ -16381,28 +16381,28 @@ fn vector_oracle_attestation_json(
             "I24".to_owned(),
             invariant(
                 "I24",
-                zeppelin_embed_adversarial_oracle::vector_execution::I24_CHECKER_ID,
+                volantis_db_adversarial_oracle::vector_execution::I24_CHECKER_ID,
             ),
         ),
         (
             "I25".to_owned(),
             invariant(
                 "I25",
-                zeppelin_embed_adversarial_oracle::vector_execution::I25_CHECKER_ID,
+                volantis_db_adversarial_oracle::vector_execution::I25_CHECKER_ID,
             ),
         ),
         (
             "I26".to_owned(),
             invariant(
                 "I26",
-                zeppelin_embed_adversarial_oracle::vector_execution::I26_CHECKER_ID,
+                volantis_db_adversarial_oracle::vector_execution::I26_CHECKER_ID,
             ),
         ),
         (
             "I27".to_owned(),
             invariant(
                 "I27",
-                zeppelin_embed_adversarial_oracle::vector_execution::I27_CHECKER_ID,
+                volantis_db_adversarial_oracle::vector_execution::I27_CHECKER_ID,
             ),
         ),
     ]);
@@ -16437,7 +16437,7 @@ fn vector_oracle_attestation_json(
         "neon-dotprod-u4-prefetch",
         "avx2",
     ];
-    let available = zeppelin_embed::kernels::KernelVariant::available()
+    let available = volantis_db::kernels::KernelVariant::available()
         .map(|variant| variant.backend_id().as_str().to_owned())
         .collect::<BTreeSet<_>>();
     let unavailable = all_backends
@@ -16455,7 +16455,7 @@ fn vector_oracle_attestation_json(
         .filter(|backend| coverage_count(&format!("kernel.backend.{backend}")) > 0)
         .cloned()
         .collect::<Vec<_>>();
-    let features = zeppelin_embed::kernels::detected_features();
+    let features = volantis_db::kernels::detected_features();
     let fault_sites = CampaignSpec::for_kind(CampaignKind::VectorExecution)
         .all_required_coverage()
         .into_iter()
@@ -16468,10 +16468,10 @@ fn vector_oracle_attestation_json(
     let source_digest = adversarial::artifacts::evidence_digest(&[include_bytes!(
         "adversarial-oracle/src/vector_execution.rs"
     )]);
-    zeppelin_embed_bench::harness_json::json!({
+    volantis_db_bench::harness_json::json!({
         "version": 1,
         "oracle_contract":
-            zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT,
+            volantis_db_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT,
         "oracle_source_digest": source_digest,
         "harness_git_revision": adversarial::artifacts::harness_git_revision(),
         "dirty_state": adversarial::artifacts::harness_git_dirty_state(),
@@ -16538,7 +16538,7 @@ fn storage_oracle_attestation_json(
     counters: &CampaignAttestationCounters,
     evidence_digests: &BTreeMap<String, String>,
     coverage: Option<&CoverageRegistry>,
-) -> zeppelin_embed_bench::harness_json::Value {
+) -> volantis_db_bench::harness_json::Value {
     let invariant = |key: &str, checker_id: &'static str| {
         let comparisons = counters.comparison_counts.get(key).copied().unwrap_or(0);
         let passes = counters
@@ -16546,7 +16546,7 @@ fn storage_oracle_attestation_json(
             .get(key)
             .copied()
             .unwrap_or(0);
-        zeppelin_embed_bench::harness_json::json!({
+        volantis_db_bench::harness_json::json!({
             "checker_id": checker_id,
             "comparisons": comparisons,
             "passes": passes,
@@ -16558,35 +16558,35 @@ fn storage_oracle_attestation_json(
             "I15".to_owned(),
             invariant(
                 "I15",
-                zeppelin_embed_adversarial_oracle::storage_durability::I15_CHECKER_ID,
+                volantis_db_adversarial_oracle::storage_durability::I15_CHECKER_ID,
             ),
         ),
         (
             "I16".to_owned(),
             invariant(
                 "I16",
-                zeppelin_embed_adversarial_oracle::storage_durability::I16_CHECKER_ID,
+                volantis_db_adversarial_oracle::storage_durability::I16_CHECKER_ID,
             ),
         ),
         (
             "I17".to_owned(),
             invariant(
                 "I17",
-                zeppelin_embed_adversarial_oracle::storage_durability::I17_CHECKER_ID,
+                volantis_db_adversarial_oracle::storage_durability::I17_CHECKER_ID,
             ),
         ),
         (
             "I18".to_owned(),
             invariant(
                 "I18",
-                zeppelin_embed_adversarial_oracle::storage_durability::I18_CHECKER_ID,
+                volantis_db_adversarial_oracle::storage_durability::I18_CHECKER_ID,
             ),
         ),
         (
             "I19".to_owned(),
             invariant(
                 "I19",
-                zeppelin_embed_adversarial_oracle::storage_durability::I19_CHECKER_ID,
+                volantis_db_adversarial_oracle::storage_durability::I19_CHECKER_ID,
             ),
         ),
     ]);
@@ -16602,7 +16602,7 @@ fn storage_oracle_attestation_json(
     .map(|(operation, invariant)| {
         (
             operation.to_owned(),
-            zeppelin_embed_bench::harness_json::json!({
+            volantis_db_bench::harness_json::json!({
                 "executions": coverage_count(&format!(
                     "campaign.op.storage-durability.{operation}"
                 )),
@@ -16622,7 +16622,7 @@ fn storage_oracle_attestation_json(
             let pairs = coverage_count(&fault.coverage_key());
             (
                 fault.key().to_owned(),
-                zeppelin_embed_bench::harness_json::json!({
+                volantis_db_bench::harness_json::json!({
                     "same_seed_pairs": pairs,
                     "production_receipts": pairs,
                 }),
@@ -16687,10 +16687,10 @@ fn storage_oracle_attestation_json(
     let source_digest = adversarial::artifacts::evidence_digest(&[include_bytes!(
         "adversarial-oracle/src/storage_durability.rs"
     )]);
-    zeppelin_embed_bench::harness_json::json!({
+    volantis_db_bench::harness_json::json!({
         "version": 1,
         "oracle_contract_version":
-            zeppelin_embed_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION,
+            volantis_db_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION,
         "oracle_source_digest": source_digest,
         "repository": {
             "revision": adversarial::artifacts::harness_git_revision(),
@@ -16714,7 +16714,7 @@ fn ingest_retention_oracle_attestation_json(
     counters: &CampaignAttestationCounters,
     evidence_digests: &BTreeMap<String, String>,
     coverage: Option<&CoverageRegistry>,
-) -> zeppelin_embed_bench::harness_json::Value {
+) -> volantis_db_bench::harness_json::Value {
     let invariant = |key: &str, checker_id: &'static str| {
         let comparisons = counters.comparison_counts.get(key).copied().unwrap_or(0);
         let passes = counters
@@ -16722,7 +16722,7 @@ fn ingest_retention_oracle_attestation_json(
             .get(key)
             .copied()
             .unwrap_or(0);
-        zeppelin_embed_bench::harness_json::json!({
+        volantis_db_bench::harness_json::json!({
             "checker_id": checker_id,
             "comparisons": comparisons,
             "passes": passes,
@@ -16734,28 +16734,28 @@ fn ingest_retention_oracle_attestation_json(
             "I20".to_owned(),
             invariant(
                 "I20",
-                zeppelin_embed_adversarial_oracle::ingest_retention::I20_CHECKER_ID,
+                volantis_db_adversarial_oracle::ingest_retention::I20_CHECKER_ID,
             ),
         ),
         (
             "I21".to_owned(),
             invariant(
                 "I21",
-                zeppelin_embed_adversarial_oracle::ingest_retention::I21_CHECKER_ID,
+                volantis_db_adversarial_oracle::ingest_retention::I21_CHECKER_ID,
             ),
         ),
         (
             "I22".to_owned(),
             invariant(
                 "I22",
-                zeppelin_embed_adversarial_oracle::ingest_retention::I22_CHECKER_ID,
+                volantis_db_adversarial_oracle::ingest_retention::I22_CHECKER_ID,
             ),
         ),
         (
             "I23".to_owned(),
             invariant(
                 "I23",
-                zeppelin_embed_adversarial_oracle::ingest_retention::I23_CHECKER_ID,
+                volantis_db_adversarial_oracle::ingest_retention::I23_CHECKER_ID,
             ),
         ),
     ]);
@@ -16770,7 +16770,7 @@ fn ingest_retention_oracle_attestation_json(
     .map(|(operation, invariant)| {
         (
             operation.to_owned(),
-            zeppelin_embed_bench::harness_json::json!({
+            volantis_db_bench::harness_json::json!({
                 "executions": coverage_count(&format!(
                     "campaign.op.ingest-retention.{operation}"
                 )),
@@ -16790,7 +16790,7 @@ fn ingest_retention_oracle_attestation_json(
             let pairs = coverage_count(&fault.coverage_key());
             (
                 fault.key().to_owned(),
-                zeppelin_embed_bench::harness_json::json!({
+                volantis_db_bench::harness_json::json!({
                     "same_seed_pairs": pairs,
                     "production_receipts": pairs,
                 }),
@@ -16816,10 +16816,10 @@ fn ingest_retention_oracle_attestation_json(
     let source_digest = adversarial::artifacts::evidence_digest(&[include_bytes!(
         "adversarial-oracle/src/ingest_retention.rs"
     )]);
-    zeppelin_embed_bench::harness_json::json!({
+    volantis_db_bench::harness_json::json!({
         "version": 1,
         "oracle_contract_version":
-            zeppelin_embed_adversarial_oracle::ingest_retention::ORACLE_CONTRACT_VERSION,
+            volantis_db_adversarial_oracle::ingest_retention::ORACLE_CONTRACT_VERSION,
         "oracle_source_digest": source_digest,
         "repository": {
             "revision": adversarial::artifacts::harness_git_revision(),
@@ -16841,7 +16841,7 @@ fn metadata_oracle_attestation_json(
     counters: &CampaignAttestationCounters,
     evidence_digests: &BTreeMap<String, String>,
     coverage: Option<&CoverageRegistry>,
-) -> zeppelin_embed_bench::harness_json::Value {
+) -> volantis_db_bench::harness_json::Value {
     let invariant = |key: &str, checker_id: &'static str| {
         let comparisons = counters.comparison_counts.get(key).copied().unwrap_or(0);
         let passes = counters
@@ -16849,7 +16849,7 @@ fn metadata_oracle_attestation_json(
             .get(key)
             .copied()
             .unwrap_or(0);
-        zeppelin_embed_bench::harness_json::json!({
+        volantis_db_bench::harness_json::json!({
             "checker_id": checker_id,
             "comparisons": comparisons,
             "passes": passes,
@@ -16861,28 +16861,28 @@ fn metadata_oracle_attestation_json(
             "I36".to_owned(),
             invariant(
                 "I36",
-                zeppelin_embed_adversarial_oracle::metadata_filter_planner::I36_CHECKER_ID,
+                volantis_db_adversarial_oracle::metadata_filter_planner::I36_CHECKER_ID,
             ),
         ),
         (
             "I37".to_owned(),
             invariant(
                 "I37",
-                zeppelin_embed_adversarial_oracle::metadata_filter_planner::I37_CHECKER_ID,
+                volantis_db_adversarial_oracle::metadata_filter_planner::I37_CHECKER_ID,
             ),
         ),
         (
             "I38".to_owned(),
             invariant(
                 "I38",
-                zeppelin_embed_adversarial_oracle::metadata_filter_planner::I38_CHECKER_ID,
+                volantis_db_adversarial_oracle::metadata_filter_planner::I38_CHECKER_ID,
             ),
         ),
         (
             "I39".to_owned(),
             invariant(
                 "I39",
-                zeppelin_embed_adversarial_oracle::metadata_filter_planner::I39_CHECKER_ID,
+                volantis_db_adversarial_oracle::metadata_filter_planner::I39_CHECKER_ID,
             ),
         ),
     ]);
@@ -16897,7 +16897,7 @@ fn metadata_oracle_attestation_json(
     .map(|(operation, invariant)| {
         (
             operation.to_owned(),
-            zeppelin_embed_bench::harness_json::json!({
+            volantis_db_bench::harness_json::json!({
                 "executions": coverage_count(&format!(
                     "campaign.op.metadata-filter-planner.{operation}"
                 )),
@@ -16942,7 +16942,7 @@ fn metadata_oracle_attestation_json(
             };
             (
                 fault.key().to_owned(),
-                zeppelin_embed_bench::harness_json::json!({
+                volantis_db_bench::harness_json::json!({
                     "same_seed_pairs": same_seed_pairs,
                     "production_receipts": production_receipts,
                 }),
@@ -16976,7 +16976,7 @@ fn metadata_oracle_attestation_json(
     let source_digest = adversarial::artifacts::evidence_digest(&[include_bytes!(
         "adversarial-oracle/src/metadata_filter_planner.rs"
     )]);
-    zeppelin_embed_bench::harness_json::json!({
+    volantis_db_bench::harness_json::json!({
         "version": 1,
         "oracle_contract": "metadata-filter-planner-oracle-v2",
         "oracle_source_digest": source_digest,
@@ -17004,7 +17004,7 @@ fn campaign_attestation_json(
     counters: &CampaignAttestationCounters,
     merged: Option<adversarial::artifacts::MergedEvidenceStats>,
     coverage: Option<&CoverageRegistry>,
-) -> Option<zeppelin_embed_bench::harness_json::Value> {
+) -> Option<volantis_db_bench::harness_json::Value> {
     if config.campaign == CampaignKind::Overall {
         return None;
     }
@@ -17087,14 +17087,14 @@ fn campaign_attestation_json(
         });
     let family_oracle_contract = match config.campaign {
         CampaignKind::StorageDurability => {
-            zeppelin_embed_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION
+            volantis_db_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION
         }
         CampaignKind::VectorExecution => {
-            zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT
+            volantis_db_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT
         }
         CampaignKind::MetadataFilterPlanner => "metadata-filter-planner-oracle-v2",
         CampaignKind::IngestRetention => {
-            zeppelin_embed_adversarial_oracle::ingest_retention::ORACLE_CONTRACT_VERSION
+            volantis_db_adversarial_oracle::ingest_retention::ORACLE_CONTRACT_VERSION
         }
         _ => adversarial::artifacts::oracle_contract(config.campaign),
     };
@@ -17102,14 +17102,14 @@ fn campaign_attestation_json(
         config.campaign.key().to_owned(),
         family_oracle_contract.to_owned(),
     )]);
-    Some(zeppelin_embed_bench::harness_json::json!({
-        "oracle_contract_version": zeppelin_embed_adversarial_oracle::ORACLE_CONTRACT_VERSION,
+    Some(volantis_db_bench::harness_json::json!({
+        "oracle_contract_version": volantis_db_adversarial_oracle::ORACLE_CONTRACT_VERSION,
         "oracle_contract": adversarial::artifacts::oracle_contract(config.campaign),
         "oracle_contract_versions": oracle_contract_versions,
         "harness_git_revision": adversarial::artifacts::harness_git_revision(),
         "comparison_counts": counters.comparison_counts,
         "comparison_outcome_counts": counters.comparison_outcome_counts().iter().map(|(invariant, counts)| {
-            (invariant.clone(), zeppelin_embed_bench::harness_json::json!({
+            (invariant.clone(), volantis_db_bench::harness_json::json!({
                 "equal": counts.equal,
                 "refused": counts.refused,
             }))
@@ -17252,7 +17252,7 @@ fn write_campaign_summary(
         .filter(|language| !observed_languages.contains(language))
         .collect::<Vec<_>>();
     let required_backends = if config.campaign == CampaignKind::VectorExecution {
-        let mut backends = zeppelin_embed::kernels::KernelVariant::available()
+        let mut backends = volantis_db::kernels::KernelVariant::available()
             .map(|variant| variant.backend_id().as_str().to_owned())
             .collect::<Vec<_>>();
         backends.sort();
@@ -17276,8 +17276,8 @@ fn write_campaign_summary(
         config.campaign,
         merged_evidence.as_ref(),
     ));
-    let coverage_json: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_str(coverage.json().trim())
+    let coverage_json: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_str(coverage.json().trim())
             .expect("coverage registry JSON");
     let run_verdict = if complete {
         if failures.is_empty() {
@@ -17305,8 +17305,8 @@ fn write_campaign_summary(
         merged_evidence,
         Some(coverage),
     );
-    let summary = zeppelin_embed_bench::harness_json::json!({
-        "schema": "zeppelin-embed-adversarial-campaign",
+    let summary = volantis_db_bench::harness_json::json!({
+        "schema": "volantis-db-adversarial-campaign",
         "version": 3,
         "campaign": config.campaign.key(),
         "qualification": config.qualification.key(),
@@ -17372,7 +17372,7 @@ fn write_campaign_summary(
         "coverage": coverage_json,
         "attestation": attestation,
     });
-    let mut summary = zeppelin_embed_bench::harness_json::to_vec(&summary)
+    let mut summary = volantis_db_bench::harness_json::to_vec(&summary)
         .expect("serialize campaign summary v3");
     summary.push(b'\n');
     let final_path = root.join("campaign-summary.json");
@@ -17391,8 +17391,8 @@ fn write_campaign_summary(
 fn validate_completed_campaign_summary(root: &Path, config: &RunConfig) {
     let bytes =
         std::fs::read(root.join("campaign-summary.json")).expect("read final campaign summary");
-    let summary: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&bytes)
+    let summary: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&bytes)
             .expect("parse final campaign summary");
     assert_eq!(summary["version"], 3, "campaign summary schema version");
     assert_eq!(summary["campaign"], config.campaign.key());
@@ -17411,14 +17411,14 @@ fn validate_completed_campaign_summary(root: &Path, config: &RunConfig) {
         && summary["execution_errors"].as_u64() == Some(0)
         && summary["unfired_scheduled_faults"].as_u64() == Some(0);
     let coverage_complete = summary["missing_coverage"]
-        == zeppelin_embed_bench::harness_json::json!([])
-        && summary["missing_invariants"] == zeppelin_embed_bench::harness_json::json!([])
-        && summary["missing_feature_faults"] == zeppelin_embed_bench::harness_json::json!([])
-        && summary["missing_operations"] == zeppelin_embed_bench::harness_json::json!([])
-        && summary["missing_profiles"] == zeppelin_embed_bench::harness_json::json!([])
-        && summary["missing_generic_faults"] == zeppelin_embed_bench::harness_json::json!([])
-        && summary["languages"]["missing"] == zeppelin_embed_bench::harness_json::json!([])
-        && summary["backends"]["missing"] == zeppelin_embed_bench::harness_json::json!([]);
+        == volantis_db_bench::harness_json::json!([])
+        && summary["missing_invariants"] == volantis_db_bench::harness_json::json!([])
+        && summary["missing_feature_faults"] == volantis_db_bench::harness_json::json!([])
+        && summary["missing_operations"] == volantis_db_bench::harness_json::json!([])
+        && summary["missing_profiles"] == volantis_db_bench::harness_json::json!([])
+        && summary["missing_generic_faults"] == volantis_db_bench::harness_json::json!([])
+        && summary["languages"]["missing"] == volantis_db_bench::harness_json::json!([])
+        && summary["backends"]["missing"] == volantis_db_bench::harness_json::json!([]);
     let episodes = summary["episodes"]
         .as_u64()
         .expect("campaign summary episode count");
@@ -17449,218 +17449,218 @@ fn validate_completed_campaign_summary(root: &Path, config: &RunConfig) {
 
 fn validate_feature_oracle_record(
     campaign: CampaignKind,
-    record: &zeppelin_embed_bench::harness_json::Value,
+    record: &volantis_db_bench::harness_json::Value,
 ) -> Result<String, String> {
     let invariant = record["invariant"]
         .as_str()
         .ok_or_else(|| "merged oracle row omitted invariant".to_owned())?;
     let expected_binding = match (campaign, invariant) {
         (CampaignKind::StorageDurability, "I15") => Some((
-            zeppelin_embed_adversarial_oracle::storage_durability::I15_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I15_CHECKER_ID,
             "publication",
         )),
         (CampaignKind::StorageDurability, "I16") => Some((
-            zeppelin_embed_adversarial_oracle::storage_durability::I16_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I16_CHECKER_ID,
             "wal-prefix",
         )),
         (CampaignKind::StorageDurability, "I17") => Some((
-            zeppelin_embed_adversarial_oracle::storage_durability::I17_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I17_CHECKER_ID,
             "retry",
         )),
         (CampaignKind::StorageDurability, "I18") => Some((
-            zeppelin_embed_adversarial_oracle::storage_durability::I18_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I18_CHECKER_ID,
             "format-check",
         )),
         (CampaignKind::StorageDurability, "I19") => Some((
-            zeppelin_embed_adversarial_oracle::storage_durability::I19_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I19_CHECKER_ID,
             "orphan-cleanup",
         )),
         (CampaignKind::IngestRetention, "I20") => Some((
-            zeppelin_embed_adversarial_oracle::ingest_retention::I20_CHECKER_ID,
+            volantis_db_adversarial_oracle::ingest_retention::I20_CHECKER_ID,
             "batch-commit",
         )),
         (CampaignKind::IngestRetention, "I21") => Some((
-            zeppelin_embed_adversarial_oracle::ingest_retention::I21_CHECKER_ID,
+            volantis_db_adversarial_oracle::ingest_retention::I21_CHECKER_ID,
             "seal",
         )),
         (CampaignKind::IngestRetention, "I22") => Some((
-            zeppelin_embed_adversarial_oracle::ingest_retention::I22_CHECKER_ID,
+            volantis_db_adversarial_oracle::ingest_retention::I22_CHECKER_ID,
             "retention",
         )),
         (CampaignKind::IngestRetention, "I23") => Some((
-            zeppelin_embed_adversarial_oracle::ingest_retention::I23_CHECKER_ID,
+            volantis_db_adversarial_oracle::ingest_retention::I23_CHECKER_ID,
             "purge",
         )),
         (CampaignKind::VectorExecution, "I24") => Some((
-            zeppelin_embed_adversarial_oracle::vector_execution::I24_CHECKER_ID,
+            volantis_db_adversarial_oracle::vector_execution::I24_CHECKER_ID,
             "kernel-parity",
         )),
         (CampaignKind::VectorExecution, "I25") => Some((
-            zeppelin_embed_adversarial_oracle::vector_execution::I25_CHECKER_ID,
+            volantis_db_adversarial_oracle::vector_execution::I25_CHECKER_ID,
             "quantization",
         )),
         (CampaignKind::VectorExecution, "I26") => Some((
-            zeppelin_embed_adversarial_oracle::vector_execution::I26_CHECKER_ID,
+            volantis_db_adversarial_oracle::vector_execution::I26_CHECKER_ID,
             "rescore",
         )),
         (CampaignKind::VectorExecution, "I27") => Some((
-            zeppelin_embed_adversarial_oracle::vector_execution::I27_CHECKER_ID,
+            volantis_db_adversarial_oracle::vector_execution::I27_CHECKER_ID,
             "row-identity",
         )),
         (CampaignKind::VamanaGraph, "I28") => Some((
-            zeppelin_embed_adversarial_oracle::vamana_graph::I28_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I28_CHECKER_ID,
             "shape",
         )),
         (CampaignKind::VamanaGraph, "I29") => Some((
-            zeppelin_embed_adversarial_oracle::vamana_graph::I29_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I29_CHECKER_ID,
             "entry-points",
         )),
         (CampaignKind::VamanaGraph, "I30") => Some((
-            zeppelin_embed_adversarial_oracle::vamana_graph::I30_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I30_CHECKER_ID,
             "search",
         )),
         (CampaignKind::VamanaGraph, "I31") => Some((
-            zeppelin_embed_adversarial_oracle::vamana_graph::I31_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I31_CHECKER_ID,
             "search",
         )),
         (CampaignKind::VamanaGraph, "I32") => Some((
-            zeppelin_embed_adversarial_oracle::vamana_graph::I32_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I32_CHECKER_ID,
             "bounded-build",
         )),
         (CampaignKind::VamanaGraph, "I33") => Some((
-            zeppelin_embed_adversarial_oracle::vamana_graph::I33_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I33_CHECKER_ID,
             "publication",
         )),
         (CampaignKind::VamanaGraph, "I34") => Some((
-            zeppelin_embed_adversarial_oracle::vamana_graph::I34_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I34_CHECKER_ID,
             "checkpoint",
         )),
         (CampaignKind::VamanaGraph, "I35") => Some((
-            zeppelin_embed_adversarial_oracle::vamana_graph::I35_CHECKER_ID,
+            volantis_db_adversarial_oracle::vamana_graph::I35_CHECKER_ID,
             "filtered-search",
         )),
         (CampaignKind::Fts, "I40") => Some((
-            zeppelin_embed_adversarial_oracle::fts::I40_CHECKER_ID,
+            volantis_db_adversarial_oracle::fts::I40_CHECKER_ID,
             "tokenizer",
         )),
         (CampaignKind::Fts, "I41") => Some((
-            zeppelin_embed_adversarial_oracle::fts::I41_CHECKER_ID,
+            volantis_db_adversarial_oracle::fts::I41_CHECKER_ID,
             "regions",
         )),
         (CampaignKind::Fts, "I42") => Some((
-            zeppelin_embed_adversarial_oracle::fts::I42_CHECKER_ID,
+            volantis_db_adversarial_oracle::fts::I42_CHECKER_ID,
             "bm25",
         )),
         (CampaignKind::Fts, "I43") => Some((
-            zeppelin_embed_adversarial_oracle::fts::I43_CHECKER_ID,
+            volantis_db_adversarial_oracle::fts::I43_CHECKER_ID,
             "pruning",
         )),
         (CampaignKind::Fts, "I44") => Some((
-            zeppelin_embed_adversarial_oracle::fts::I44_CHECKER_ID,
+            volantis_db_adversarial_oracle::fts::I44_CHECKER_ID,
             "extras",
         )),
         (CampaignKind::HybridFusion, "I45") => Some((
-            zeppelin_embed_adversarial_oracle::hybrid_fusion::I45_CHECKER_ID,
+            volantis_db_adversarial_oracle::hybrid_fusion::I45_CHECKER_ID,
             "provenance",
         )),
         (CampaignKind::HybridFusion, "I46") => Some((
-            zeppelin_embed_adversarial_oracle::hybrid_fusion::I46_CHECKER_ID,
+            volantis_db_adversarial_oracle::hybrid_fusion::I46_CHECKER_ID,
             "normalization",
         )),
         (CampaignKind::HybridFusion, "I47") => Some((
-            zeppelin_embed_adversarial_oracle::hybrid_fusion::I47_CHECKER_ID,
+            volantis_db_adversarial_oracle::hybrid_fusion::I47_CHECKER_ID,
             "bounded-fusion",
         )),
         (CampaignKind::HybridFusion, "I48") => Some((
-            zeppelin_embed_adversarial_oracle::hybrid_fusion::I48_CHECKER_ID,
+            volantis_db_adversarial_oracle::hybrid_fusion::I48_CHECKER_ID,
             "rrf-fallback",
         )),
         (CampaignKind::HybridFusion, "I49") => Some((
-            zeppelin_embed_adversarial_oracle::hybrid_fusion::I49_CHECKER_ID,
+            volantis_db_adversarial_oracle::hybrid_fusion::I49_CHECKER_ID,
             "legs",
         )),
         (CampaignKind::TieringMaintenance, "I50") => Some((
-            zeppelin_embed_adversarial_oracle::tiering_maintenance::I50_CHECKER_ID,
+            volantis_db_adversarial_oracle::tiering_maintenance::I50_CHECKER_ID,
             "policy",
         )),
         (CampaignKind::TieringMaintenance, "I51") => Some((
-            zeppelin_embed_adversarial_oracle::tiering_maintenance::I51_CHECKER_ID,
+            volantis_db_adversarial_oracle::tiering_maintenance::I51_CHECKER_ID,
             "transition",
         )),
         (CampaignKind::TieringMaintenance, "I52") => Some((
-            zeppelin_embed_adversarial_oracle::tiering_maintenance::I52_CHECKER_ID,
+            volantis_db_adversarial_oracle::tiering_maintenance::I52_CHECKER_ID,
             "budget",
         )),
         (CampaignKind::TieringMaintenance, "I53") => Some((
-            zeppelin_embed_adversarial_oracle::tiering_maintenance::I53_CHECKER_ID,
+            volantis_db_adversarial_oracle::tiering_maintenance::I53_CHECKER_ID,
             "publication",
         )),
         (CampaignKind::LifecycleAccounting, "I54") => Some((
-            zeppelin_embed_adversarial_oracle::lifecycle_accounting::I54_CHECKER_ID,
+            volantis_db_adversarial_oracle::lifecycle_accounting::I54_CHECKER_ID,
             "deadline",
         )),
         (CampaignKind::LifecycleAccounting, "I55") => Some((
-            zeppelin_embed_adversarial_oracle::lifecycle_accounting::I55_CHECKER_ID,
+            volantis_db_adversarial_oracle::lifecycle_accounting::I55_CHECKER_ID,
             "cancellation",
         )),
         (CampaignKind::LifecycleAccounting, "I56") => Some((
-            zeppelin_embed_adversarial_oracle::lifecycle_accounting::I56_CHECKER_ID,
+            volantis_db_adversarial_oracle::lifecycle_accounting::I56_CHECKER_ID,
             "close-drain",
         )),
         (CampaignKind::LifecycleAccounting, "I57") => Some((
-            zeppelin_embed_adversarial_oracle::lifecycle_accounting::I57_CHECKER_ID,
+            volantis_db_adversarial_oracle::lifecycle_accounting::I57_CHECKER_ID,
             "locking",
         )),
         (CampaignKind::LifecycleAccounting, "I58") => Some((
-            zeppelin_embed_adversarial_oracle::lifecycle_accounting::I58_CHECKER_ID,
+            volantis_db_adversarial_oracle::lifecycle_accounting::I58_CHECKER_ID,
             "accounting",
         )),
         (CampaignKind::DiagnosticsHealth, "I63") => Some((
-            zeppelin_embed_adversarial_oracle::diagnostics_health::I63_CHECKER_ID,
+            volantis_db_adversarial_oracle::diagnostics_health::I63_CHECKER_ID,
             "health",
         )),
         (CampaignKind::DiagnosticsHealth, "I64") => Some((
-            zeppelin_embed_adversarial_oracle::diagnostics_health::I64_CHECKER_ID,
+            volantis_db_adversarial_oracle::diagnostics_health::I64_CHECKER_ID,
             "self-check",
         )),
         (CampaignKind::DiagnosticsHealth, "I65") => Some((
-            zeppelin_embed_adversarial_oracle::diagnostics_health::I65_CHECKER_ID,
+            volantis_db_adversarial_oracle::diagnostics_health::I65_CHECKER_ID,
             "recovery",
         )),
         (CampaignKind::FfiBindings, "I66") => Some((
-            zeppelin_embed_adversarial_oracle::ffi_bindings::I66_CHECKER_ID,
+            volantis_db_adversarial_oracle::ffi_bindings::I66_CHECKER_ID,
             "validation",
         )),
         (CampaignKind::FfiBindings, "I67") => Some((
-            zeppelin_embed_adversarial_oracle::ffi_bindings::I67_CHECKER_ID,
+            volantis_db_adversarial_oracle::ffi_bindings::I67_CHECKER_ID,
             "ownership",
         )),
         (CampaignKind::FfiBindings, "I68") => Some((
-            zeppelin_embed_adversarial_oracle::ffi_bindings::I68_CHECKER_ID,
+            volantis_db_adversarial_oracle::ffi_bindings::I68_CHECKER_ID,
             "containment",
         )),
         (CampaignKind::FfiBindings, "I69") => Some((
-            zeppelin_embed_adversarial_oracle::ffi_bindings::I69_CHECKER_ID,
+            volantis_db_adversarial_oracle::ffi_bindings::I69_CHECKER_ID,
             "deadline",
         )),
         (CampaignKind::FfiBindings, "I70") => Some((
-            zeppelin_embed_adversarial_oracle::ffi_bindings::I70_CHECKER_ID,
+            volantis_db_adversarial_oracle::ffi_bindings::I70_CHECKER_ID,
             "parity",
         )),
         (CampaignKind::MetadataFilterPlanner, "I36") => Some((
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::I36_CHECKER_ID,
+            volantis_db_adversarial_oracle::metadata_filter_planner::I36_CHECKER_ID,
             "metadata_columns_roundtrip",
         )),
         (CampaignKind::MetadataFilterPlanner, "I37") => Some((
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::I37_CHECKER_ID,
+            volantis_db_adversarial_oracle::metadata_filter_planner::I37_CHECKER_ID,
             "metadata_bitmap_algebra",
         )),
         (CampaignKind::MetadataFilterPlanner, "I38") => Some((
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::I38_CHECKER_ID,
+            volantis_db_adversarial_oracle::metadata_filter_planner::I38_CHECKER_ID,
             "metadata_pruning_soundness",
         )),
         (CampaignKind::MetadataFilterPlanner, "I39") => Some((
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::I39_CHECKER_ID,
+            volantis_db_adversarial_oracle::metadata_filter_planner::I39_CHECKER_ID,
             "metadata_execution_truth",
         )),
         _ => None,
@@ -17702,7 +17702,7 @@ fn validate_feature_oracle_record(
         ("expected", "input_digest"),
         ("observed", "observed_digest"),
     ] {
-        let canonical = zeppelin_embed_bench::harness_json::to_vec(&record[field])
+        let canonical = volantis_db_bench::harness_json::to_vec(&record[field])
             .map_err(|error| format!("canonicalize merged {invariant} {field}: {error}"))?;
         let expected_digest = adversarial::artifacts::evidence_digest(&[&canonical]);
         if record[digest_field].as_str() != Some(expected_digest.as_str()) {
@@ -17723,7 +17723,7 @@ fn validate_feature_oracle_record(
     if campaign == CampaignKind::MetadataFilterPlanner
         && (canonical_version
             != u64::from(
-                zeppelin_embed_adversarial_oracle::metadata_filter_planner::METADATA_CANONICAL_VERSION,
+                volantis_db_adversarial_oracle::metadata_filter_planner::METADATA_CANONICAL_VERSION,
             )
             || !oracle_input_digest.starts_with("metadata-v1:")
             || oracle_input_digest.len() != "metadata-v1:".len() + 16
@@ -17763,7 +17763,7 @@ fn validate_feature_oracle_record(
                     ));
                 }
                 let recomputed =
-                    zeppelin_embed_adversarial_oracle::metadata_filter_planner::canonical_digest(
+                    volantis_db_adversarial_oracle::metadata_filter_planner::canonical_digest(
                         &bytes,
                     );
                 let expected = format!("metadata-v{canonical_version}:{recomputed:016x}");
@@ -17778,7 +17778,7 @@ fn validate_feature_oracle_record(
             validate_metadata_digest(oracle_input_digest, "oracle_input_bytes", "input")?;
         let observed_bytes =
             validate_metadata_digest(oracle_observed_digest, "oracle_observed_bytes", "observed")?;
-        let replay = zeppelin_embed_adversarial_oracle::metadata_filter_planner::replay_canonical_comparison(
+        let replay = volantis_db_adversarial_oracle::metadata_filter_planner::replay_canonical_comparison(
             checker_id,
             &input_bytes,
             &observed_bytes,
@@ -17788,11 +17788,11 @@ fn validate_feature_oracle_record(
         })?;
         if replay.checker_id != checker_id
             || replay.input_digest
-                != zeppelin_embed_adversarial_oracle::metadata_filter_planner::canonical_digest(
+                != volantis_db_adversarial_oracle::metadata_filter_planner::canonical_digest(
                     &input_bytes,
                 )
             || replay.observed_digest
-                != zeppelin_embed_adversarial_oracle::metadata_filter_planner::canonical_digest(
+                != volantis_db_adversarial_oracle::metadata_filter_planner::canonical_digest(
                     &observed_bytes,
                 )
         {
@@ -17810,28 +17810,28 @@ fn validate_feature_oracle_record(
         }
         let difference_kind = |kind| {
             match kind {
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::DifferenceKind::ExtraRow => {
+            volantis_db_adversarial_oracle::metadata_filter_planner::DifferenceKind::ExtraRow => {
                 "extra-row"
             }
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::DifferenceKind::MissingRow => {
+            volantis_db_adversarial_oracle::metadata_filter_planner::DifferenceKind::MissingRow => {
                 "missing-row"
             }
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::DifferenceKind::DuplicateRow => {
+            volantis_db_adversarial_oracle::metadata_filter_planner::DifferenceKind::DuplicateRow => {
                 "duplicate-row"
             }
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::DifferenceKind::DeadRow => {
+            volantis_db_adversarial_oracle::metadata_filter_planner::DifferenceKind::DeadRow => {
                 "dead-row"
             }
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::DifferenceKind::PrimitiveMismatch => {
+            volantis_db_adversarial_oracle::metadata_filter_planner::DifferenceKind::PrimitiveMismatch => {
                 "primitive-mismatch"
             }
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::DifferenceKind::UnsoundPrune => {
+            volantis_db_adversarial_oracle::metadata_filter_planner::DifferenceKind::UnsoundPrune => {
                 "unsound-prune"
             }
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::DifferenceKind::ReportReceiptMismatch => {
+            volantis_db_adversarial_oracle::metadata_filter_planner::DifferenceKind::ReportReceiptMismatch => {
                 "report-receipt-mismatch"
             }
-            zeppelin_embed_adversarial_oracle::metadata_filter_planner::DifferenceKind::ContractMismatch => {
+            volantis_db_adversarial_oracle::metadata_filter_planner::DifferenceKind::ContractMismatch => {
                 "contract-mismatch"
             }
         }
@@ -17861,7 +17861,7 @@ fn validate_feature_oracle_record(
     if campaign == CampaignKind::IngestRetention {
         if canonical_version
             != u64::from(
-                zeppelin_embed_adversarial_oracle::ingest_retention::INGEST_CANONICAL_VERSION,
+                volantis_db_adversarial_oracle::ingest_retention::INGEST_CANONICAL_VERSION,
             )
             || !oracle_input_digest.starts_with("ingest-v1:")
             || oracle_input_digest.len() != "ingest-v1:".len() + 16
@@ -17886,7 +17886,7 @@ fn validate_feature_oracle_record(
                 ));
             }
             let recomputed =
-                zeppelin_embed_adversarial_oracle::ingest_retention::canonical_digest(&bytes);
+                volantis_db_adversarial_oracle::ingest_retention::canonical_digest(&bytes);
             let expected = format!("ingest-v{canonical_version}:{recomputed:016x}");
             if digest != expected {
                 return Err(format!(
@@ -17899,7 +17899,7 @@ fn validate_feature_oracle_record(
         let observed_bytes =
             validate_ingest_digest(oracle_observed_digest, "oracle_observed_bytes")?;
         let replay =
-            zeppelin_embed_adversarial_oracle::ingest_retention::replay_canonical_comparison(
+            volantis_db_adversarial_oracle::ingest_retention::replay_canonical_comparison(
                 checker_id,
                 &input_bytes,
                 &observed_bytes,
@@ -17909,11 +17909,11 @@ fn validate_feature_oracle_record(
             })?;
         if replay.checker_id != checker_id
             || replay.input_digest
-                != zeppelin_embed_adversarial_oracle::ingest_retention::canonical_digest(
+                != volantis_db_adversarial_oracle::ingest_retention::canonical_digest(
                     &input_bytes,
                 )
             || replay.observed_digest
-                != zeppelin_embed_adversarial_oracle::ingest_retention::canonical_digest(
+                != volantis_db_adversarial_oracle::ingest_retention::canonical_digest(
                     &observed_bytes,
                 )
         {
@@ -17960,7 +17960,7 @@ fn validate_feature_oracle_record(
                 format!("merged {invariant} oracle row invalid {bytes_field}: {error}")
             })?;
             if !bytes.starts_with(
-                zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION
+                volantis_db_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION
                     .as_bytes(),
             ) {
                 return Err(format!(
@@ -17968,13 +17968,13 @@ fn validate_feature_oracle_record(
                 ));
             }
             let recomputed =
-                zeppelin_embed_adversarial_oracle::vector_execution::canonical_sha256(&bytes)
+                volantis_db_adversarial_oracle::vector_execution::canonical_sha256(&bytes)
                     .into_iter()
                     .map(|byte| format!("{byte:02x}"))
                     .collect::<String>();
             let expected = format!(
                 "{}:{recomputed}",
-                zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION
+                volantis_db_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION
             );
             if digest != expected {
                 return Err(format!(
@@ -17992,7 +17992,7 @@ fn validate_feature_oracle_record(
         let observed_bytes =
             validate_vector_digest(oracle_observed_digest, "oracle_observed_bytes")?;
         let replay =
-            zeppelin_embed_adversarial_oracle::vector_execution::replay_canonical_comparison(
+            volantis_db_adversarial_oracle::vector_execution::replay_canonical_comparison(
                 &input_bytes,
                 &observed_bytes,
             )
@@ -18105,8 +18105,8 @@ fn validate_feature_replay_ledger(
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let row: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let row: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse feature replay ledger row: {error}"))?;
         let keys = row
             .as_object()
@@ -18119,7 +18119,7 @@ fn validate_feature_replay_ledger(
                 "feature replay ledger schema mismatch expected={expected_keys:?} observed={keys:?}"
             ));
         }
-        if row["schema"] != "zeppelin-embed-adversarial-replay"
+        if row["schema"] != "volantis-db-adversarial-replay"
             || row["version"] != 1
             || row["campaign"] != campaign.key()
         {
@@ -18183,7 +18183,7 @@ fn verify_feature_summary_attestation(
     root: &Path,
     campaign: CampaignKind,
     episodes: u64,
-    summary: &zeppelin_embed_bench::harness_json::Value,
+    summary: &volantis_db_bench::harness_json::Value,
 ) -> Result<bool, String> {
     if campaign == CampaignKind::Overall {
         return Ok(true);
@@ -18210,7 +18210,7 @@ fn verify_feature_summary_attestation(
     }
     if attestation["oracle_contract_version"].as_u64()
         != Some(u64::from(
-            zeppelin_embed_adversarial_oracle::ORACLE_CONTRACT_VERSION,
+            volantis_db_adversarial_oracle::ORACLE_CONTRACT_VERSION,
         ))
     {
         return Err("feature summary attestation missing: oracle_contract_version".to_owned());
@@ -18222,10 +18222,10 @@ fn verify_feature_summary_attestation(
     }
     let expected_family_contract = match campaign {
         CampaignKind::StorageDurability => {
-            zeppelin_embed_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION
+            volantis_db_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION
         }
         CampaignKind::VectorExecution => {
-            zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT
+            volantis_db_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT
         }
         CampaignKind::MetadataFilterPlanner => "metadata-filter-planner-oracle-v2",
         _ => adversarial::artifacts::oracle_contract(campaign),
@@ -18374,8 +18374,8 @@ fn verify_feature_summary_attestation(
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line)
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line)
                     .map_err(|error| format!("parse merged-index.jsonl row: {error}"))?;
             let seed = record["seed"]
                 .as_u64()
@@ -18400,7 +18400,7 @@ fn verify_feature_summary_attestation(
     let mut every_comparison_passed = true;
     let mut observed_stream_records = BTreeMap::<String, u64>::new();
     let mut fault_records =
-        BTreeMap::<(u64, String), Vec<zeppelin_embed_bench::harness_json::Value>>::new();
+        BTreeMap::<(u64, String), Vec<volantis_db_bench::harness_json::Value>>::new();
     let reported_streams = merged["streams"]
         .as_object()
         .ok_or_else(|| "feature summary attestation missing merged streams".to_owned())?;
@@ -18444,8 +18444,8 @@ fn verify_feature_summary_attestation(
                 .split(|byte| *byte == b'\n')
                 .filter(|line| !line.is_empty())
             {
-                let envelope: zeppelin_embed_bench::harness_json::Value =
-                    zeppelin_embed_bench::harness_json::from_slice(line)
+                let envelope: volantis_db_bench::harness_json::Value =
+                    volantis_db_bench::harness_json::from_slice(line)
                         .map_err(|error| format!("parse merged oracle row: {error}"))?;
                 let invariant = validate_feature_oracle_record(campaign, &envelope["record"])?;
                 if campaign == CampaignKind::MetadataFilterPlanner && invariant == "I37" {
@@ -18491,8 +18491,8 @@ fn verify_feature_summary_attestation(
                 .split(|byte| *byte == b'\n')
                 .filter(|line| !line.is_empty())
             {
-                let envelope: zeppelin_embed_bench::harness_json::Value =
-                    zeppelin_embed_bench::harness_json::from_slice(line)
+                let envelope: volantis_db_bench::harness_json::Value =
+                    volantis_db_bench::harness_json::from_slice(line)
                         .map_err(|error| format!("parse merged fault row: {error}"))?;
                 let seed = envelope["seed"]
                     .as_u64()
@@ -19315,7 +19315,7 @@ fn native_read_view_probe_reaches_actual_faults_and_same_seed_controls() {
         );
         assert_eq!(
             report.comparator,
-            zeppelin_embed_adversarial_oracle::graph_adjacency_store::READ_VIEW_COMPARATOR_ID
+            volantis_db_adversarial_oracle::graph_adjacency_store::READ_VIEW_COMPARATOR_ID
         );
         for key in adversarial::graph_read_view::REQUIRED_COVERAGE {
             assert_eq!(coverage.count(key), 1, "missing ZE-45 path {key}");
@@ -19326,7 +19326,7 @@ fn native_read_view_probe_reaches_actual_faults_and_same_seed_controls() {
 #[cfg(feature = "graph-cypher")]
 #[test]
 fn native_read_view_receipts_and_independent_comparator_reject_missing_or_mutated_facts() {
-    use zeppelin_embed::graph_read_view_test_support::{
+    use volantis_db::graph_read_view_test_support::{
         ActualProbeReport, ObservedRelationship, PathReceipt,
     };
 
@@ -19750,10 +19750,10 @@ fn ze41_fault_boundaries_fire_with_same_seed_clean_controls() {
 fn ze41_complete_batch_comparator_rejects_each_mutated_observation() {
     let (fixture, _) = adversarial::graph_recovery::schedule_for(7);
     let root = tempfile::tempdir().unwrap();
-    let store = zeppelin_embed::graph_commit_recovery_test_support::ProbeStore::create(
+    let store = volantis_db::graph_commit_recovery_test_support::ProbeStore::create(
         &root.path().join("native"),
         &fixture,
-        std::sync::Arc::new(zeppelin_embed::vfs::StdVfs),
+        std::sync::Arc::new(volantis_db::vfs::StdVfs),
     );
     store.apply(&fixture).unwrap();
     let actual = store.observe().unwrap();
@@ -19803,16 +19803,16 @@ fn ze41_retained_roots_and_reservations_survive_faulted_maintenance() {
     }
     let (fixture, _) = adversarial::graph_recovery::schedule_for(7);
     let root = tempfile::tempdir().unwrap();
-    let store = zeppelin_embed::graph_commit_recovery_test_support::ProbeStore::create(
+    let store = volantis_db::graph_commit_recovery_test_support::ProbeStore::create(
         &root.path().join("native"),
         &fixture,
-        std::sync::Arc::new(zeppelin_embed::vfs::StdVfs),
+        std::sync::Arc::new(volantis_db::vfs::StdVfs),
     );
     store.apply(&fixture).unwrap();
     let held = store.maintain_retained();
     adversarial::graph_recovery::compare_batch(&fixture, &held).unwrap();
     assert_eq!(store.close(), 0);
-    for receipt in zeppelin_embed::graph_commit_recovery_test_support::run_reclaim_boundaries() {
+    for receipt in volantis_db::graph_commit_recovery_test_support::run_reclaim_boundaries() {
         assert_eq!((receipt.fires, receipt.clean_controls), (1, 1));
     }
 }
@@ -19870,7 +19870,7 @@ fn ze65_faults_fire_and_match_same_seed_control() {
 #[cfg(feature = "graph-cypher")]
 #[test]
 fn lifecycle_oracle_preserves_native_creation_and_checkpoint_generations() {
-    use zeppelin_embed::graph_commit_recovery_test_support::{Boundary, run_boundary};
+    use volantis_db::graph_commit_recovery_test_support::{Boundary, run_boundary};
     let (fixture, _) = adversarial::graph_recovery::schedule_for(0);
     for boundary in [
         Boundary::ArtifactCreate,
@@ -19907,11 +19907,11 @@ fn ze75_episode_retains_replayable_graph_lifecycle_evidence() {
 #[cfg(feature = "graph-cypher")]
 #[test]
 fn ze75_planted_faults_trip_named_comparators() {
-    use zeppelin_embed_adversarial_oracle::graph_lifecycle as o;
+    use volantis_db_adversarial_oracle::graph_lifecycle as o;
     let (fixture, _) = adversarial::graph_recovery::schedule_for(75);
     let (actual, clean) = adversarial::graph_recovery::run_boundary_pair(
         &fixture,
-        zeppelin_embed::graph_commit_recovery_test_support::Boundary::WalSync,
+        volantis_db::graph_commit_recovery_test_support::Boundary::WalSync,
         &mut CoverageRegistry::default(),
     )
     .unwrap();
@@ -19923,7 +19923,7 @@ fn ze75_planted_faults_trip_named_comparators() {
     let red = o::compare_complete_prefix(1, &batches, &[0, 1], &partial).unwrap_err();
     assert!(red.starts_with(o::COMPLETE_PREFIX));
     println!("RED partial batch: {red}");
-    let mut model = zeppelin_embed_adversarial_oracle::graph_fixture::Graph {
+    let mut model = volantis_db_adversarial_oracle::graph_fixture::Graph {
         generation: 1,
         ..Default::default()
     };
@@ -20036,15 +20036,15 @@ fn ze75_replay_rejects_tampered_lifecycle_evidence() {
         let original = std::fs::read(&path).unwrap();
         let mut rows = jsonl_values(&original);
         match name {
-            "faults.jsonl" => rows[0]["op"] = zeppelin_embed_bench::harness_json::json!(999),
+            "faults.jsonl" => rows[0]["op"] = volantis_db_bench::harness_json::json!(999),
             "graph-observations.jsonl" => {
                 rows[0]["observation"]["clean"]["batch"] =
-                    zeppelin_embed_bench::harness_json::json!("planted partial batch");
+                    volantis_db_bench::harness_json::json!("planted partial batch");
             }
             "graph-durable-images.jsonl" => {
                 let byte = rows[0]["files"][0]["bytes"][0].as_u64().unwrap();
                 rows[0]["files"][0]["bytes"][0] =
-                    zeppelin_embed_bench::harness_json::json!((byte + 1) % 256);
+                    volantis_db_bench::harness_json::json!((byte + 1) % 256);
             }
             _ => unreachable!(),
         }
@@ -20073,18 +20073,18 @@ fn ze75_replay_rejects_tampered_lifecycle_evidence() {
 }
 
 #[cfg(feature = "graph-cypher")]
-fn jsonl_values(bytes: &[u8]) -> Vec<zeppelin_embed_bench::harness_json::Value> {
+fn jsonl_values(bytes: &[u8]) -> Vec<volantis_db_bench::harness_json::Value> {
     bytes
         .split(|b| *b == b'\n')
         .filter(|l| !l.is_empty())
-        .map(|line| zeppelin_embed_bench::harness_json::from_slice(line).unwrap())
+        .map(|line| volantis_db_bench::harness_json::from_slice(line).unwrap())
         .collect()
 }
 
 #[cfg(feature = "graph-cypher")]
 #[test]
 fn ze75_ze98_checkpoint_retry_and_reclaim_preserve_evidence() {
-    use zeppelin_embed::graph_commit_recovery_test_support as support;
+    use volantis_db::graph_commit_recovery_test_support as support;
     let reports = support::run_ze75_reclaim_evidence(75);
     adversarial::graph_lifecycle::check_reclaim(&reports).unwrap();
     assert_eq!(reports.len(), 7);
@@ -20324,7 +20324,7 @@ mod unified_store {
     fn fold_rotation_and_reclaim_preserve_the_unabsorbed_graph_tail() {
         let mut coverage = super::adversarial::coverage::CoverageRegistry::default();
         super::adversarial::graph_recovery::probe_commit_boundaries(256, &mut coverage).unwrap();
-        for receipt in zeppelin_embed::graph_recovery_test_support::run_seal_rotation_probe() {
+        for receipt in volantis_db::graph_recovery_test_support::run_seal_rotation_probe() {
             assert_eq!((receipt.fires, receipt.clean_controls), (1, 1));
         }
         super::adversarial::graph_reclaim::probe(256, &mut coverage).unwrap();
@@ -20383,8 +20383,8 @@ mod unified_store {
 #[cfg(feature = "graph-cypher")]
 #[test]
 fn relationship_page_memo_has_statement_scoped_adversarial_receipts() {
-    use zeppelin_embed::property_graph::query::completed::GraphQueryOptions;
-    use zeppelin_embed_cypher::{CompileLimits, execute};
+    use volantis_db::property_graph::query::completed::GraphQueryOptions;
+    use volantis_db_cypher::{CompileLimits, execute};
     let key = "property-graph.cypher-entry.page-validation.statement-local";
     assert!(adversarial::coverage::required_smoke_coverage().any(|registered| registered == key));
     assert!(coverage_key_expectations::expected_smoke_keys().contains(&key));
@@ -20432,7 +20432,7 @@ fn ze279_mid_wal_group_preserves_the_full_native_append_before_sigkill() {
 fn ze279_native_append_crash_child() {
     use adversarial::fault_vfs::{FaultSchedule, ProcessCrashVfs, ScheduledVfs};
     use adversarial::program::CrashBoundary;
-    use zeppelin_embed::vfs::{StdVfs, Vfs};
+    use volantis_db::vfs::{StdVfs, Vfs};
     let wal = std::path::PathBuf::from(std::env::var("ZE279_WAL").unwrap());
     let vfs = ProcessCrashVfs::new(
         ScheduledVfs::new(StdVfs, FaultSchedule::default()),

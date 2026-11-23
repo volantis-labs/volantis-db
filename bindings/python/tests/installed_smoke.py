@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 
 def main() -> None:
@@ -26,7 +26,7 @@ def main() -> None:
             if bundle is None:
                 bundle = (
                     Path(__file__).resolve().parents[3]
-                    / "crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem"
+                    / "crates/volantis-db-text/tests/fixtures/ze115/gte.zem"
                 )
             assert ze.TEXT_AVAILABLE
             assert (ze.LIBRARY_PATH.parent / "mlx.metallib").is_file()

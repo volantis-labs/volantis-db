@@ -16,9 +16,9 @@ from pathlib import Path
 
 def _native_filename() -> str:
     if sys.platform == "darwin":
-        return "libzeppelin_embed_ffi.dylib"
+        return "libvolantis_db_ffi.dylib"
     if sys.platform.startswith("linux"):
-        return "libzeppelin_embed_ffi.so"
+        return "libvolantis_db_ffi.so"
     raise RuntimeError(f"wheel verification is unsupported on {sys.platform}")
 
 
@@ -29,15 +29,15 @@ def _venv_python(root: Path) -> Path:
 
 
 def verify(wheel: Path) -> None:
-    native_member = f"zeppelin_embed/.dylibs/{_native_filename()}"
+    native_member = f"volantis_db/.dylibs/{_native_filename()}"
     with zipfile.ZipFile(wheel) as archive:
         names = archive.namelist()
         assert native_member in names, f"wheel is missing {native_member}"
-        assert "zeppelin_embed/LICENSE" in names
-        assert "zeppelin_embed/__init__.pyi" in names
-        assert "zeppelin_embed/py.typed" in names
+        assert "volantis_db/LICENSE" in names
+        assert "volantis_db/__init__.pyi" in names
+        assert "volantis_db/py.typed" in names
         if sys.platform == "darwin" and platform.machine() == "arm64":
-            assert "zeppelin_embed/.dylibs/mlx.metallib" in names
+            assert "volantis_db/.dylibs/mlx.metallib" in names
         wheel_metadata = next(
             name for name in names if name.endswith(".dist-info/WHEEL")
         )
@@ -72,13 +72,13 @@ def verify(wheel: Path) -> None:
 
         clean_env = os.environ.copy()
         clean_env.pop("PYTHONPATH", None)
-        clean_env.pop("ZEPPELIN_EMBED_LIBRARY", None)
+        clean_env.pop("VOLANTIS_DB_LIBRARY", None)
         smoke = root / "installed_smoke.py"
         shutil.copy2(Path(__file__).with_name("installed_smoke.py"), smoke)
         bundle = root / "gte.zem"
         shutil.copy2(
             Path(__file__).resolve().parents[3]
-            / "crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem",
+            / "crates/volantis-db-text/tests/fixtures/ze115/gte.zem",
             bundle,
         )
         subprocess.run(
@@ -89,9 +89,9 @@ def verify(wheel: Path) -> None:
         )
 
         missing = root / "missing-native-library"
-        override_env = clean_env | {"ZEPPELIN_EMBED_LIBRARY": str(missing)}
+        override_env = clean_env | {"VOLANTIS_DB_LIBRARY": str(missing)}
         overridden = subprocess.run(
-            [str(python), "-I", "-c", "import zeppelin_embed"],
+            [str(python), "-I", "-c", "import volantis_db"],
             check=False,
             cwd=root,
             env=override_env,

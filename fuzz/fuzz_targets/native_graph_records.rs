@@ -3,8 +3,8 @@
 //! tooling source is not production cache/admission or allocation evidence.
 use libfuzzer_sys::fuzz_target;
 use std::sync::OnceLock;
-use zeppelin_embed::lifecycle::{CancelToken, OpenOptions, QueryControl, Store};
-use zeppelin_embed::property_graph::storage::{
+use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl, Store};
+use volantis_db::property_graph::storage::{
     artifact::*,
     inventory::verify_inventory_entry,
     memory::StorageMemory,
@@ -13,7 +13,7 @@ use zeppelin_embed::property_graph::storage::{
     stream::PayloadSlice,
     tree::{TreeKind, directory::*},
 };
-use zeppelin_embed::property_graph::{catalog::*, resources::GraphResources, staging::*, *};
+use volantis_db::property_graph::{catalog::*, resources::GraphResources, staging::*, *};
 fn runtime() -> &'static (Store, GraphResources) {
     static RUNTIME: OnceLock<(Store, GraphResources)> = OnceLock::new();
     RUNTIME.get_or_init(|| {

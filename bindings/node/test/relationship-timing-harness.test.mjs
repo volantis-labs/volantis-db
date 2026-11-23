@@ -22,10 +22,10 @@ function fixture(t, buildStatus = 0) {
   mkdirSync(join(native, 'node_modules'));
   mkdirSync(join(native, 'bench'));
   mkdirSync(join(root, 'bin'));
-  writeFileSync(join(native, 'prebuilds', platform, 'zeppelin_embed.node'), 'stale');
+  writeFileSync(join(native, 'prebuilds', platform, 'volantis_db.node'), 'stale');
   const log = join(root, 'commands');
   for (const [name, body] of [
-    ['npm', `echo "npm $*" >> "$HARNESS_LOG"\nif [ ${buildStatus} = 0 ]; then printf fresh > prebuilds/${platform}/zeppelin_embed.node; fi\nexit ${buildStatus}`],
+    ['npm', `echo "npm $*" >> "$HARNESS_LOG"\nif [ ${buildStatus} = 0 ]; then printf fresh > prebuilds/${platform}/volantis_db.node; fi\nexit ${buildStatus}`],
     ['node', 'echo "node $*" >> "$HARNESS_LOG"'],
     ['git', 'echo 0123456789012345678901234567890123456789'],
   ]) {

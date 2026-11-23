@@ -7,11 +7,11 @@
 
 use super::coverage::CoverageRegistry;
 use rand::RngCore;
-use zeppelin_embed::graph_storage_fault_test_support::{
+use volantis_db::graph_storage_fault_test_support::{
     ObservedKeyedNode, StorageFaultProbeReport, StorageFaultSchedule, StorageFaultState,
     run_actual_probe,
 };
-use zeppelin_embed_adversarial_oracle::graph_directory::{KeyedModel, KeyedNode};
+use volantis_db_adversarial_oracle::graph_directory::{KeyedModel, KeyedNode};
 
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.storage-faults.artifact-ref.fire",
@@ -225,8 +225,8 @@ fn check_out_in(state: &StorageFaultState) -> Result<(), String> {
 }
 
 fn compare_directions(
-    out_rows: &[zeppelin_embed::graph_read_view_test_support::ObservedRelationship],
-    in_rows: &[zeppelin_embed::graph_read_view_test_support::ObservedRelationship],
+    out_rows: &[volantis_db::graph_read_view_test_support::ObservedRelationship],
+    in_rows: &[volantis_db::graph_read_view_test_support::ObservedRelationship],
 ) -> Result<(), String> {
     if out_rows.is_empty() {
         return Err("ZE-47 no OUT row survived the refused candidate".into());
@@ -377,7 +377,7 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
 pub fn observe(
     seed: u64,
     coverage: &mut CoverageRegistry,
-) -> Result<zeppelin_embed_bench::harness_json::Value, String> {
+) -> Result<volantis_db_bench::harness_json::Value, String> {
     let schedule = schedule_for(seed);
     let report = run_actual_probe(seed, schedule);
     comparators_can_fire(schedule, &report.state)?;
@@ -388,21 +388,21 @@ pub fn observe(
     check_root(&report.state)?;
     check_qualification_report(&report.state.qualification, None, coverage)?;
     check_receipts(&report, coverage)?;
-    Ok(zeppelin_embed_bench::harness_json::json!({
+    Ok(volantis_db_bench::harness_json::json!({
         "schedule": format!("{schedule:?}"), "state": format!("{:?}", report.state),
-        "receipts": report.receipts.iter().map(|r| zeppelin_embed_bench::harness_json::json!({"key": r.key, "fires": r.fires, "controls": r.clean_controls})).collect::<Vec<_>>()
+        "receipts": report.receipts.iter().map(|r| volantis_db_bench::harness_json::json!({"key": r.key, "fires": r.fires, "controls": r.clean_controls})).collect::<Vec<_>>()
     }))
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use zeppelin_embed::graph_storage_fault_test_support::{
+    use volantis_db::graph_storage_fault_test_support::{
         create_native_graph_with_infrastructure, open_native_graph_with_infrastructure,
     };
-    use zeppelin_embed::lifecycle::OpenOptions;
-    use zeppelin_embed::lifecycle::durability::{CommitTier, DurabilityMode};
-    use zeppelin_embed::vfs::{StdVfs, Vfs};
+    use volantis_db::lifecycle::OpenOptions;
+    use volantis_db::lifecycle::durability::{CommitTier, DurabilityMode};
+    use volantis_db::vfs::{StdVfs, Vfs};
 
     fn seam_options() -> OpenOptions {
         OpenOptions::new()
@@ -463,7 +463,7 @@ mod tests {
 }
 
 fn check_qualification(
-    cell: &zeppelin_embed::graph_storage_fault_test_support::QualificationCell,
+    cell: &volantis_db::graph_storage_fault_test_support::QualificationCell,
     mapping: bool,
 ) -> Result<(), String> {
     if cell.fires != 1 || cell.controls != 1 {
@@ -511,7 +511,7 @@ fn check_qualification(
 #[cfg(test)]
 mod ze172_tests {
     use super::*;
-    use zeppelin_embed::graph_storage_fault_test_support::{
+    use volantis_db::graph_storage_fault_test_support::{
         QualificationCell, run_qualification_probe,
     };
 
@@ -561,7 +561,7 @@ mod ze172_tests {
                 "{reason}"
             );
         }
-        use zeppelin_embed::graph_storage_fault_test_support::{
+        use volantis_db::graph_storage_fault_test_support::{
             QualificationCommit, QualificationPack, QualificationSelection,
         };
         let selection = QualificationSelection {
@@ -670,7 +670,7 @@ fn qualification_keys(mapping: bool) -> Vec<&'static str> {
 }
 
 fn check_selection(
-    selection: &zeppelin_embed::graph_storage_fault_test_support::QualificationSelection,
+    selection: &volantis_db::graph_storage_fault_test_support::QualificationSelection,
 ) -> Result<(), String> {
     if selection.byte_limit != 1 || selection.packs.len() < 3 {
         return Err("ZE-172 missing selection fixture".into());
@@ -733,7 +733,7 @@ fn check_selection(
 }
 
 fn check_commits(
-    commits: &[zeppelin_embed::graph_storage_fault_test_support::QualificationCommit],
+    commits: &[volantis_db::graph_storage_fault_test_support::QualificationCommit],
 ) -> Result<(), String> {
     if commits.len() != 66 {
         return Err("ZE-172 missing per-commit counters".into());
@@ -768,7 +768,7 @@ fn check_preparation_page_decodes(deltas: [u64; 3]) -> Result<(), String> {
 }
 
 fn check_qualification_report(
-    report: &zeppelin_embed::graph_storage_fault_test_support::QualificationReport,
+    report: &volantis_db::graph_storage_fault_test_support::QualificationReport,
     only: Option<bool>,
     coverage: &mut CoverageRegistry,
 ) -> Result<(), String> {

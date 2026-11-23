@@ -30,16 +30,16 @@ WORKSPACE_ARGS=(--workspace)
 if $REPOSITORY_MANIFEST; then
 GRAPH_TARGET="$(graph_effective_target "$@")"
 if graph_target_supports_native_graph "$GRAPH_TARGET"; then
-    WORKSPACE_ARGS+=(--features zeppelin-embed-workspace-tests/graph-result-test-support)
+    WORKSPACE_ARGS+=(--features volantis-db-workspace-tests/graph-result-test-support)
     echo "native graph coverage: selected for $GRAPH_TARGET"
 else
     if graph_host_is_darwin; then
-        WORKSPACE_ARGS+=(--exclude zeppelin-embed-cypher)
+        WORKSPACE_ARGS+=(--exclude volantis-db-cypher)
     else
         WORKSPACE_ARGS+=(
-            --exclude zeppelin-embed-bench
-            --exclude zeppelin-embed-cypher
-            --exclude zeppelin-embed-text
+            --exclude volantis-db-bench
+            --exclude volantis-db-cypher
+            --exclude volantis-db-text
         )
     fi
     echo "native graph coverage: not selected for $GRAPH_TARGET; running legacy coverage"
@@ -66,7 +66,7 @@ fi
 cargo llvm-cov \
     "${WORKSPACE_ARGS[@]}" \
     --fail-under-lines 90 \
-    --ignore-filename-regex '(^|/)(registry/|crates/zeppelin-embed-bench|fuzz/|target/)' \
+    --ignore-filename-regex '(^|/)(registry/|crates/volantis-db-bench|fuzz/|target/)' \
     "$@"
 
 # Reuse the just-produced profiles; this adds no test/coverage campaign.
@@ -75,12 +75,12 @@ cargo llvm-cov \
 if $REPOSITORY_MANIFEST; then
     COVERAGE_DIR="${CARGO_TARGET_DIR:-$PROJECT_ROOT/target}/ze78-coverage"
     mkdir -p "$COVERAGE_DIR"
-    COVERAGE_CRATES=(zeppelin-embed zeppelin-embed-ffi
-        zeppelin-embed-adversarial-oracle zeppelin-embed-workspace-tests)
+    COVERAGE_CRATES=(volantis-db volantis-db-ffi
+        volantis-db-adversarial-oracle volantis-db-workspace-tests)
     if graph_target_supports_native_graph "$GRAPH_TARGET"; then
-        COVERAGE_CRATES+=(zeppelin-embed-cypher zeppelin-embed-text)
+        COVERAGE_CRATES+=(volantis-db-cypher volantis-db-text)
     elif graph_host_is_darwin; then
-        COVERAGE_CRATES+=(zeppelin-embed-text)
+        COVERAGE_CRATES+=(volantis-db-text)
     fi
     REPORT_ARGS=(--manifest-path "$PROJECT_ROOT/Cargo.toml")
     for ((i = 0; i < ${#ARGS[@]}; i++)); do
@@ -93,7 +93,7 @@ if $REPOSITORY_MANIFEST; then
     PACKAGE_ARGS=()
     for crate in "${COVERAGE_CRATES[@]}"; do PACKAGE_ARGS+=(-p "$crate"); done
     cargo llvm-cov report "${PACKAGE_ARGS[@]}" "${REPORT_ARGS[@]}" --json --summary-only \
-        --ignore-filename-regex '(^|/)(registry/|crates/zeppelin-embed-bench|fuzz/|target/)' \
+        --ignore-filename-regex '(^|/)(registry/|crates/volantis-db-bench|fuzz/|target/)' \
         --output-path "$COVERAGE_DIR/workspace.json"
     python3 scripts/release/qualify-graph.py --coverage-json "$COVERAGE_DIR/workspace.json" \
         --coverage-output "$COVERAGE_DIR/workspace-crates.json" --coverage-crates "${COVERAGE_CRATES[@]}"
@@ -101,15 +101,15 @@ fi
 
 if $REPOSITORY_MANIFEST && [[ "$(uname -s)" == "Darwin" ]]; then
     cargo llvm-cov \
-        -p zeppelin-embed-bench \
+        -p volantis-db-bench \
         --lib \
         --test frontier \
         --fail-under-lines 90 \
-        --ignore-filename-regex '(^|/)(registry/|crates/zeppelin-embed/|crates/zeppelin-embed-bench/src/(bin|platform|recall)/|fuzz/|target/)' \
+        --ignore-filename-regex '(^|/)(registry/|crates/volantis-db/|crates/volantis-db-bench/src/(bin|platform|recall)/|fuzz/|target/)' \
         "$@"
-    cargo llvm-cov report -p zeppelin-embed-bench "${REPORT_ARGS[@]}" --json --summary-only \
-        --ignore-filename-regex '(^|/)(registry/|crates/zeppelin-embed/|crates/zeppelin-embed-bench/src/(bin|platform|recall)/|fuzz/|target/)' \
+    cargo llvm-cov report -p volantis-db-bench "${REPORT_ARGS[@]}" --json --summary-only \
+        --ignore-filename-regex '(^|/)(registry/|crates/volantis-db/|crates/volantis-db-bench/src/(bin|platform|recall)/|fuzz/|target/)' \
         --output-path "$COVERAGE_DIR/benchmark.json"
     python3 scripts/release/qualify-graph.py --coverage-json "$COVERAGE_DIR/benchmark.json" \
-        --coverage-output "$COVERAGE_DIR/benchmark-crates.json" --coverage-crates zeppelin-embed-bench
+        --coverage-output "$COVERAGE_DIR/benchmark-crates.json" --coverage-crates volantis-db-bench
 fi

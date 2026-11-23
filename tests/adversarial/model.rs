@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::program;
-use zeppelin_embed::quant::{est_dot_bit4, prepare_bit4_query, quantize_bit4};
+use volantis_db::quant::{est_dot_bit4, prepare_bit4_query, quantize_bit4};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ModelDoc {

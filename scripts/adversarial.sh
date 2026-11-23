@@ -320,22 +320,22 @@ for selected_campaign in "${campaigns[@]}"; do
   fi
   case "$subcommand" in
     episode)
-      cargo test -p zeppelin-embed-workspace-tests \
+      cargo test -p volantis-db-workspace-tests \
         ${graph_feature_args[@]+"${graph_feature_args[@]}"} \
         --test adversarial_tests run -- --ignored --exact --nocapture
       ;;
     replay)
-      cargo test -p zeppelin-embed-workspace-tests \
+      cargo test -p volantis-db-workspace-tests \
         ${graph_feature_args[@]+"${graph_feature_args[@]}"} \
         --test adversarial_tests replay -- --ignored --exact --nocapture
       ;;
     smoke)
-      cargo test -p zeppelin-embed-workspace-tests \
+      cargo test -p volantis-db-workspace-tests \
         ${graph_feature_args[@]+"${graph_feature_args[@]}"} \
         --test adversarial_tests smoke -- --exact --nocapture
       ;;
     campaign)
-      cargo test --release -p zeppelin-embed-workspace-tests \
+      cargo test --release -p volantis-db-workspace-tests \
         ${graph_feature_args[@]+"${graph_feature_args[@]}"} \
         --test adversarial_tests campaign -- --ignored --exact --nocapture
       ;;

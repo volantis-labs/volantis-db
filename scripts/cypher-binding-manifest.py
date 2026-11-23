@@ -14,8 +14,8 @@ import subprocess
 
 PIN = '007895aff5f33097d67b2e48a0a2babd6bd18590'
 ROOT = Path(__file__).resolve().parents[1]
-FIXTURE = ROOT / 'crates/zeppelin-embed-cypher/tests/fixtures/selected-tck-syntax.txt'
-OUTPUT = ROOT / 'crates/zeppelin-embed-cypher/tests/fixtures/binding-manifest.json'
+FIXTURE = ROOT / 'crates/volantis-db-cypher/tests/fixtures/selected-tck-syntax.txt'
+OUTPUT = ROOT / 'crates/volantis-db-cypher/tests/fixtures/binding-manifest.json'
 REJECTED = {
     'clauses/match/Match4.feature': [2, 5, 7, 8],
     'clauses/match/Match7.feature': [12, 20],
@@ -108,7 +108,7 @@ def generate(checkout):
         'format': 'zeppelin-cypher-binding-manifest-v1',
         'source_commit': PIN,
         'source_license': 'Apache-2.0; original notices and source blocks remain at the pinned source',
-        'profile': 'documented openCypher 9 subset with Zeppelin search extensions',
+        'profile': 'documented openCypher 9 subset with Volantis DB search extensions',
         'scope': 'All scenarios in the exact 26 selected feature files; not the complete openCypher corpus',
         'execution_status': 'unexecuted; binding success is not result, side-effect, or TCK conformance evidence',
         'binding_fixture_sha256': digest(fixture),

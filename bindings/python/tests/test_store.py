@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 
 def _epoch(dims: int = 4) -> ze.EmbeddingEpoch:
@@ -162,9 +162,9 @@ def test_ze265_warm_lexical(tmp_path: Path) -> None:
         assert store.query(text="common pai", last_as_prefix=True).hits == prefix
         with ze.CancelToken() as token:
             token.cancel()
-            with pytest.raises(ze.ZeppelinError) as error:
+            with pytest.raises(ze.VolantisError) as error:
                 store.warm_lexical(cancel_token=token)
             assert error.value.code == 12
         store.warm_lexical()
-    with pytest.raises(ze.ZeppelinError):
+    with pytest.raises(ze.VolantisError):
         store.warm_lexical()

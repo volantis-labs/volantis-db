@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 
 def main() -> int:

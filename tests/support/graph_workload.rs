@@ -4,20 +4,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use zeppelin_embed::epoch::{ComputeUnits, EmbeddingRuntime, EmbeddingTower, Normalization};
-use zeppelin_embed::lifecycle::Store;
-use zeppelin_embed::lifecycle::{CancelToken, OpenOptions, QueryControl};
-use zeppelin_embed::property_graph::query::completed::{
+use volantis_db::epoch::{ComputeUnits, EmbeddingRuntime, EmbeddingTower, Normalization};
+use volantis_db::lifecycle::Store;
+use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl};
+use volantis_db::property_graph::query::completed::{
     CompletedGraphResult, GraphQueryOptions, Value as Cell,
 };
-use zeppelin_embed::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
-use zeppelin_embed::property_graph::*;
-use zeppelin_embed_adversarial_oracle::graph_fixture as oracle;
-use zeppelin_embed_bench::{
+use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
+use volantis_db::property_graph::*;
+use volantis_db_adversarial_oracle::graph_fixture as oracle;
+use volantis_db_bench::{
     graph_fixture::{self, FixtureState},
     harness_json::{Value, json},
 };
-use zeppelin_embed_cypher::{CompileLimits, execute};
+use volantis_db_cypher::{CompileLimits, execute};
 
 pub type Ids = BTreeMap<(String, String, String), u128>;
 pub fn control() -> QueryControl {
@@ -403,7 +403,7 @@ pub fn primitive_snapshot(
     let mut metadata = BTreeMap::new();
     for line in BufReader::new(File::open(receipts).map_err(|e| e.to_string())?).lines() {
         let v: Value =
-            zeppelin_embed_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
+            volantis_db_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
         if let Some(rows) = v["receipts"].as_array() {
             for r in rows {
@@ -502,7 +502,7 @@ pub fn query_cases(root: &Path) -> Result<Vec<Value>, String> {
     BufReader::new(File::open(root.join("queries.jsonl")).map_err(|e| e.to_string())?)
         .lines()
         .map(|line| {
-            zeppelin_embed_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
+            volantis_db_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())
         })
         .collect()
@@ -704,7 +704,7 @@ pub fn with_plan<T>(
     exact: bool,
     call: impl FnOnce(&GraphQueryPlan<'_>) -> Result<T, String>,
 ) -> Result<T, String> {
-    use zeppelin_embed::property_graph::query::plan::*;
+    use volantis_db::property_graph::query::plan::*;
     let names: Vec<String> = [
         "ABOUT",
         "SUPPORTED_BY",
@@ -859,7 +859,7 @@ pub fn with_plan<T>(
         let expected = expr!(Expression::Literal(Literal::String(&project_selector)));
         let predicate = expr!(Expression::Binary {
             operation: BinaryExpression::Comparison(
-                zeppelin_embed::property_graph::query::Comparison::Equal
+                volantis_db::property_graph::query::Comparison::Equal
             ),
             left: actual,
             right: expected
@@ -1246,7 +1246,7 @@ pub fn work_ledger(store: &Store) -> Result<Value, String> {
     )
 }
 pub fn observed_counters(store: &Store, r: &CompletedGraphResult) -> Result<Value, String> {
-    use zeppelin_embed::property_graph::query::runtime::WorkKind;
+    use volantis_db::property_graph::query::runtime::WorkKind;
     let mut c = resource_counters(store)?;
     c["query_reservation_peak_bytes"] = json!(r.metadata().peak_query_bytes);
     for (name, kind) in [
@@ -1304,7 +1304,7 @@ pub fn run_cell(
     if samples == 0 || samples > 10000 || warmups > 1000 {
         return Err("invalid sample counts".into());
     }
-    let value: Value = zeppelin_embed_bench::harness_json::from_slice(
+    let value: Value = volantis_db_bench::harness_json::from_slice(
         &std::fs::read(job).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;

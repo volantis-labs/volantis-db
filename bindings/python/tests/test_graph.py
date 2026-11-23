@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 
 @pytest.mark.parametrize(
@@ -65,9 +65,9 @@ def test_graph_free_methods_raise_unsupported_build_without_abi_calls(
 def test_unsupported_build_is_the_native_error_mapping(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from zeppelin_embed import _errors
+    from volantis_db import _errors
 
-    assert issubclass(ze.UnsupportedBuild, ze.ZeppelinError)
+    assert issubclass(ze.UnsupportedBuild, ze.VolantisError)
     assert ze.ERROR_TYPES[59] is ze.UnsupportedBuild
     assert ze.GraphUnsupportedBuild is ze.UnsupportedBuild
     monkeypatch.setattr(

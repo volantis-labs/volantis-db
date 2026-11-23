@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { ZeppelinError, openNamespace } = require('..');
+const { VolantisError, openNamespace } = require('..');
 
 const FOLDER = 1;
 const SPEAKER = 2;
@@ -114,7 +114,7 @@ test('grouped count rejects bad group requests with precise errors', () => {
       note(3n, { folder: 'c' }),
     ]);
     const engineError = (code, message) => (error) =>
-      error instanceof ZeppelinError &&
+      error instanceof VolantisError &&
       error.code === code &&
       error.message.includes(message);
 

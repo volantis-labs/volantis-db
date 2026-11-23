@@ -1,9 +1,9 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed::property_graph::storage::adjacency::{
+use volantis_db::property_graph::storage::adjacency::{
     self as a, Direction, Edge, RangeKey, UpperBound,
 };
-use zeppelin_embed::property_graph::{NodeId, RelId, catalog::RelTypeId};
+use volantis_db::property_graph::{NodeId, RelId, catalog::RelTypeId};
 fuzz_target!(|data: &[u8]| {
     if data.len() > a::HEADER_BYTES + a::MAX_BASE_ENTRIES * 40 {
         return;
@@ -13,8 +13,8 @@ fuzz_target!(|data: &[u8]| {
     let directory_key = data.get(..40).unwrap_or(data);
     let value = data.get(40..).unwrap_or(&[]);
     for kind in [
-        zeppelin_embed::property_graph::storage::tree::TreeKind::OutRanges,
-        zeppelin_embed::property_graph::storage::tree::TreeKind::InRanges,
+        volantis_db::property_graph::storage::tree::TreeKind::OutRanges,
+        volantis_db::property_graph::storage::tree::TreeKind::InRanges,
     ] {
         if let Ok(descriptor) = a::RangeDescriptor::decode(kind, directory_key, value) {
             assert_eq!(descriptor.directory_key().unwrap(), directory_key);
@@ -36,7 +36,7 @@ fuzz_target!(|data: &[u8]| {
     };
     let mut output = vec![sentinel; a::MAX_MERGED_ENTRIES];
     let base =
-        include_bytes!("../../crates/zeppelin-embed/tests/fixtures/graph-adjacency/base-v1.bin");
+        include_bytes!("../../crates/volantis-db/tests/fixtures/graph-adjacency/base-v1.bin");
     for (input, deltas, watermark) in [(data, Vec::new(), 4), (base.as_slice(), vec![data], 4)] {
         if let Ok(result) = a::merge(
             key,

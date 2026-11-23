@@ -3,7 +3,7 @@
 use super::coverage::CoverageRegistry;
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
-use zeppelin_embed_adversarial_oracle::graph_fixture::*;
+use volantis_db_adversarial_oracle::graph_fixture::*;
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.fixture.missing-edge.fire",
     "property-graph.fixture.missing-edge.clean",

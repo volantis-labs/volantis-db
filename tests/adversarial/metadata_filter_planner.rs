@@ -11,42 +11,42 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tempfile::{TempDir, tempdir};
-use zeppelin_embed::epoch::{
+use volantis_db::epoch::{
     ComputeUnits, EmbeddingEpoch, EmbeddingRuntime, EmbeddingTower, Normalization, StoreEpoch,
 };
-use zeppelin_embed::fts::tokenizer::TokenizerConfig;
-use zeppelin_embed::graph::search::GraphSearchProfile;
-use zeppelin_embed::ingest::wal_payload::DELETE_V1;
-use zeppelin_embed::ingest::{
+use volantis_db::fts::tokenizer::TokenizerConfig;
+use volantis_db::graph::search::GraphSearchProfile;
+use volantis_db::ingest::wal_payload::DELETE_V1;
+use volantis_db::ingest::{
     DeleteBatch, DocId, DocumentVersion, IngestBatch, IngestDocument, Revision, RowSource,
     SearchRequest,
 };
-use zeppelin_embed::lifecycle::durability::{CommitTier, DurabilityMode, DurabilityPolicy};
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::durability::{CommitTier, DurabilityMode, DurabilityPolicy};
+use volantis_db::lifecycle::{
     CancelToken, GraphSearchOptions, OpenOptions, QueryControl, QueryError, SearchOptions,
     SearchTier, Store, StoreError, StoreTestDependencies, SystemMonotonicClock,
 };
-use zeppelin_embed::manifest::io::{MANIFEST_FILE, commit_manifest, load_manifest};
-use zeppelin_embed::meta::{
+use volantis_db::manifest::io::{MANIFEST_FILE, commit_manifest, load_manifest};
+use volantis_db::meta::{
     Column, ColumnDefinition, ColumnId, ColumnStore, ColumnType, Predicate, PredicateValue,
     RangeBound, RangePredicate, Schema, TIMESTAMP_COLUMN, evaluate,
 };
-use zeppelin_embed::planner::{
+use volantis_db::planner::{
     ALLOW_LIST_ROWS_THRESHOLD, FilteredSearchError, FilteredSearchOutcome,
     MetadataExecutionReceipt, MetadataFeatureReceipt, MetadataTestArm, MetadataTestController,
     PlanFallback, SegmentBranch,
 };
-use zeppelin_embed::scan::ScanOptions;
-use zeppelin_embed::segment::layout::RegionKind;
-use zeppelin_embed::segment::reader::SegmentReader;
-use zeppelin_embed::segment::{
+use volantis_db::scan::ScanOptions;
+use volantis_db::segment::layout::RegionKind;
+use volantis_db::segment::reader::SegmentReader;
+use volantis_db::segment::{
     ClusteringKeyRange, MetadataDecodeProvenance, SegmentError, SegmentId,
 };
-use zeppelin_embed::tier::{MaintenanceBudget, MaintenanceStatus, TierThresholds};
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed::wal::WalReader;
-use zeppelin_embed_adversarial_oracle::metadata_filter_planner as independent;
-use zeppelin_embed_adversarial_oracle::storage_durability::xxh3_64;
+use volantis_db::tier::{MaintenanceBudget, MaintenanceStatus, TierThresholds};
+use volantis_db::vfs::StdVfs;
+use volantis_db::wal::WalReader;
+use volantis_db_adversarial_oracle::metadata_filter_planner as independent;
+use volantis_db_adversarial_oracle::storage_durability::xxh3_64;
 
 const GRAPH_ROWS: usize = 80;
 const GRAPH_DIMS: usize = 128;
@@ -2788,7 +2788,7 @@ fn execution_receipt(receipt: &MetadataExecutionReceipt) -> independent::Executi
 
 fn report(
     query_id: u64,
-    plan: &zeppelin_embed::planner::SegmentPlan,
+    plan: &volantis_db::planner::SegmentPlan,
 ) -> independent::BranchReportDto {
     independent::BranchReportDto {
         key: independent::QuerySourceKey {
@@ -5046,7 +5046,7 @@ fn run_bitmap(
 }
 
 fn exact_hits(
-    candidates: &[zeppelin_embed::ingest::SearchCandidate],
+    candidates: &[volantis_db::ingest::SearchCandidate],
 ) -> Vec<independent::ExactHitDto> {
     candidates
         .iter()
@@ -7213,7 +7213,7 @@ pub mod tests {
         assert_eq!(evidence.feature_receipts.len(), 1);
         assert!(matches!(
             evidence.feature_receipts[0].detail,
-            zeppelin_embed::planner::MetadataFeatureDetail::AliveBitmapTruncationRefused {
+            volantis_db::planner::MetadataFeatureDetail::AliveBitmapTruncationRefused {
                 declared_rows: 10,
                 declared_bytes: 2,
                 observed_bytes: 1,
@@ -7298,7 +7298,7 @@ pub mod tests {
             ));
             assert_eq!(evidence.feature_receipts.len(), 1);
             let detail = &evidence.feature_receipts[0].detail;
-            if let zeppelin_embed::planner::MetadataFeatureDetail::ColumnDecodeRefused {
+            if let volantis_db::planner::MetadataFeatureDetail::ColumnDecodeRefused {
                 field_class,
                 provenance,
                 ..

@@ -3,7 +3,7 @@
 <desc id="desc">Every dot is one library on one BEIR dataset. Better results move right and faster results move down.</desc>
 <rect width="1440" height="800" rx="24" fill="#F0EFEB"/>
 <g font-family="Inter,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
-<text x="64.0" y="64.0" font-size="30" font-weight="700" fill="#1C1C1A" text-anchor="start" >Zeppelin anchors the low-latency frontier</text>
+<text x="64.0" y="64.0" font-size="30" font-weight="700" fill="#1C1C1A" text-anchor="start" >Volantis DB anchors the low-latency frontier</text>
 <text x="64.0" y="96.0" font-size="16" font-weight="500" fill="#77766F" text-anchor="start" >vector search · x = nDCG@10 · y = p95 milliseconds (linear scale)</text>
 <line x1="112.0" y1="150" x2="112.0" y2="680" stroke="#D8D7D1" stroke-width="0.9"/>
 <text x="112.0" y="709.0" font-size="13" font-weight="600" fill="#77766F" text-anchor="middle" >0.66</text>
@@ -59,14 +59,14 @@
 <circle cx="1279.7" cy="584.7" r="7" fill="#547343" stroke="#F0EFEB" stroke-width="3" opacity="0.94"><title>USearch · TREC-COVID · nDCG@10 0.83 · p95 1.26 ms</title></circle>
 <text x="1261.7" y="571.7" font-size="12" font-weight="650" fill="#547343" text-anchor="end" style="paint-order:stroke;stroke:#F0EFEB;stroke-width:5px">TREC-COVID / USearch</text>
 <circle cx="342.1" cy="675.4" r="16" fill="none" stroke="#B47A00" stroke-width="2.5" opacity="0.78"/>
-<circle cx="342.1" cy="675.4" r="10" fill="#B47A00" stroke="#F0EFEB" stroke-width="2" opacity="0.94"><title>Zeppelin · SciFact · nDCG@10 0.69 · p95 0.06 ms</title></circle>
-<text x="360.1" y="660.4" font-size="14" font-weight="800" fill="#B47A00" text-anchor="start" style="paint-order:stroke;stroke:#F0EFEB;stroke-width:5px">SciFact / Zeppelin</text>
+<circle cx="342.1" cy="675.4" r="10" fill="#B47A00" stroke="#F0EFEB" stroke-width="2" opacity="0.94"><title>Volantis DB · SciFact · nDCG@10 0.69 · p95 0.06 ms</title></circle>
+<text x="360.1" y="660.4" font-size="14" font-weight="800" fill="#B47A00" text-anchor="start" style="paint-order:stroke;stroke:#F0EFEB;stroke-width:5px">SciFact / Volantis DB</text>
 <circle cx="1290.1" cy="671.3" r="16" fill="none" stroke="#B47A00" stroke-width="2.5" opacity="0.78"/>
-<circle cx="1290.1" cy="671.3" r="10" fill="#B47A00" stroke="#F0EFEB" stroke-width="2" opacity="0.94"><title>Zeppelin · TREC-COVID · nDCG@10 0.83 · p95 0.11 ms</title></circle>
-<text x="1272.1" y="656.3" font-size="14" font-weight="800" fill="#B47A00" text-anchor="end" style="paint-order:stroke;stroke:#F0EFEB;stroke-width:5px">TREC-COVID / Zeppelin</text>
+<circle cx="1290.1" cy="671.3" r="10" fill="#B47A00" stroke="#F0EFEB" stroke-width="2" opacity="0.94"><title>Volantis DB · TREC-COVID · nDCG@10 0.83 · p95 0.11 ms</title></circle>
+<text x="1272.1" y="656.3" font-size="14" font-weight="800" fill="#B47A00" text-anchor="end" style="paint-order:stroke;stroke:#F0EFEB;stroke-width:5px">TREC-COVID / Volantis DB</text>
 <circle cx="584.4" cy="613.3" r="16" fill="none" stroke="#B47A00" stroke-width="2.5" opacity="0.78"/>
-<circle cx="584.4" cy="613.3" r="10" fill="#B47A00" stroke="#F0EFEB" stroke-width="2" opacity="0.94"><title>Zeppelin · Natural Questions · nDCG@10 0.73 · p95 0.88 ms</title></circle>
-<text x="602.4" y="635.3" font-size="14" font-weight="800" fill="#B47A00" text-anchor="start" style="paint-order:stroke;stroke:#F0EFEB;stroke-width:5px">Natural Questions / Zeppelin</text>
+<circle cx="584.4" cy="613.3" r="10" fill="#B47A00" stroke="#F0EFEB" stroke-width="2" opacity="0.94"><title>Volantis DB · Natural Questions · nDCG@10 0.73 · p95 0.88 ms</title></circle>
+<text x="602.4" y="635.3" font-size="14" font-weight="800" fill="#B47A00" text-anchor="start" style="paint-order:stroke;stroke:#F0EFEB;stroke-width:5px">Natural Questions / Volantis DB</text>
 <text x="64.0" y="785.0" font-size="11" font-weight="600" fill="#A7A69F" text-anchor="start" letter-spacing="1.4">BEIR · APPLE M3 MAX · WARM INDEXES · K=10</text>
 <text x="1392.0" y="785.0" font-size="11" font-weight="600" fill="#A7A69F" text-anchor="end" letter-spacing="1.4">ONE DOT = ONE LIBRARY × DATASET</text>
 </g></svg>

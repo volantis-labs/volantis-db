@@ -9,15 +9,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import zeppelin_embed as ze
-from zeppelin_embed import _ffi
-from zeppelin_embed._library import LIBRARY
+import volantis_db as ze
+from volantis_db import _ffi
+from volantis_db._library import LIBRARY
 
 REVISION = "0123456789abcdef0123456789abcdef01234567"
 REPO = "fixture/tiny"
 BUNDLE = (
     Path(__file__).resolve().parents[3]
-    / "crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem"
+    / "crates/volantis-db-text/tests/fixtures/ze115/gte.zem"
 )
 
 
@@ -129,7 +129,7 @@ def test_embedded_text_round_trip(
     cache = tmp_path / "cache"
     entry = cache / "fixture%2Ftiny" / REVISION
     entry.mkdir(parents=True)
-    (entry / "zeppelin-model.json").write_bytes(manifest)
+    (entry / "volantis-model.json").write_bytes(manifest)
     (entry / "tiny.zem").write_bytes(bundle)
     monkeypatch.setenv("ZE_MODEL_CACHE", str(cache))
     monkeypatch.setenv("ZE_MODEL_OFFLINE", "1")

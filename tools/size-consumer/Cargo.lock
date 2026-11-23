@@ -31,14 +31,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "xxhash-rust"
-version = "0.8.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aee1b19627c7c60102ab80d3a9cbe18de90bfe03bfa6c3715447681f0e8c8af6"
-
-[[package]]
-name = "zeppelin-embed"
-version = "0.8.0"
+name = "volantis-db"
+version = "0.1.0"
 dependencies = [
  "libc",
  "roaring",
@@ -46,8 +40,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "zeppelin-embed-size-consumer"
+name = "volantis-db-size-consumer"
 version = "0.0.0"
 dependencies = [
- "zeppelin-embed",
+ "volantis-db",
 ]
+
+[[package]]
+name = "xxhash-rust"
+version = "0.8.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aee1b19627c7c60102ab80d3a9cbe18de90bfe03bfa6c3715447681f0e8c8af6"

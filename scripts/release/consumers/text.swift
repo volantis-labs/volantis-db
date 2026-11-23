@@ -1,5 +1,5 @@
 import Foundation
-import ZeppelinEmbed
+import VolantisDB
 
 enum Failure: Error { case check(String) }
 func require(_ condition: Bool, _ message: String) throws {

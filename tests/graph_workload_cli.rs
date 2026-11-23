@@ -10,8 +10,8 @@ mod workload;
 use rand::Rng;
 use std::io::Write;
 use std::path::Path;
-use zeppelin_embed_adversarial_oracle::graph_fixture as oracle;
-use zeppelin_embed_bench::{
+use volantis_db_adversarial_oracle::graph_fixture as oracle;
+use volantis_db_bench::{
     graph_fixture::{self, Config, FixtureState, Scale, WordStream},
     graph_workload,
     harness_json::{Value, json},
@@ -201,7 +201,7 @@ fn run() -> Result<(), String> {
         [cmd,path,job,front,mode,warmups,samples] if cmd=="run"=>workload::run_cell(Path::new(path),Path::new(job),front,mode=="exact",warmups.parse().map_err(|_|"invalid warmups")?,samples.parse().map_err(|_|"invalid samples")?),
         [cmd,root,path,st,out] if cmd=="ingest"=>{let mut file=std::fs::File::create_new(out).map_err(|e|e.to_string())?;workload::ingest_fixture(Path::new(root),Path::new(path),state(st)?,&mut file)},
         [cmd,root,st,receipts,out] if cmd=="truth" || cmd=="truth-smoke"=>write_offline_truth(Path::new(root),state(st)?,Path::new(receipts),Path::new(out),cmd=="truth-smoke"),
-        [cmd,manifest,input] if cmd=="report" || cmd=="report-smoke"=>{let manifest:Value=zeppelin_embed_bench::harness_json::from_slice(&std::fs::read(manifest).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;let records:Vec<Value>=std::fs::read_to_string(input).map_err(|e|e.to_string())?.lines().map(zeppelin_embed_bench::harness_json::from_str).collect::<Result<_,_>>().map_err(|e|e.to_string())?;if cmd=="report-smoke" { graph_workload::validate_smoke(&manifest,&records)?; } else { graph_workload::validate_matrix(&manifest,&records)?; }println!("{}",if cmd=="report-smoke" { graph_workload::summarize_smoke(&records)? } else { graph_workload::summarize(&records)? });Ok(())},
+        [cmd,manifest,input] if cmd=="report" || cmd=="report-smoke"=>{let manifest:Value=volantis_db_bench::harness_json::from_slice(&std::fs::read(manifest).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;let records:Vec<Value>=std::fs::read_to_string(input).map_err(|e|e.to_string())?.lines().map(volantis_db_bench::harness_json::from_str).collect::<Result<_,_>>().map_err(|e|e.to_string())?;if cmd=="report-smoke" { graph_workload::validate_smoke(&manifest,&records)?; } else { graph_workload::validate_matrix(&manifest,&records)?; }println!("{}",if cmd=="report-smoke" { graph_workload::summarize_smoke(&records)? } else { graph_workload::summarize(&records)? });Ok(())},
         _=>Err("usage: graph-workload self-test | ingest FIXTURE STORE A|B RECEIPTS | truth FIXTURE A|B RECEIPTS OUTPUT | report MANIFEST REPETITIONS".into())
     }
 }

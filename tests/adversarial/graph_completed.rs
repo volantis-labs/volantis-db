@@ -2,13 +2,13 @@
 //! Controlled logical input is not native GraphStore/query/lifecycle acceptance.
 use super::coverage::CoverageRegistry;
 use rand::RngCore;
-use zeppelin_embed::lifecycle::{CancelToken, OpenOptions, QueryControl, SnapshotLease, Store};
-use zeppelin_embed::property_graph::query::completed::*;
-use zeppelin_embed::property_graph::query::resources::QueryMemory;
-use zeppelin_embed::property_graph::query::runtime::*;
-use zeppelin_embed::property_graph::query::{QueryError, QueryView};
-use zeppelin_embed::property_graph::resources::GraphResources;
-use zeppelin_embed::property_graph::{GraphGeneration, GraphRevision, NodeId, StoreInstanceId};
+use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl, SnapshotLease, Store};
+use volantis_db::property_graph::query::completed::*;
+use volantis_db::property_graph::query::resources::QueryMemory;
+use volantis_db::property_graph::query::runtime::*;
+use volantis_db::property_graph::query::{QueryError, QueryView};
+use volantis_db::property_graph::resources::GraphResources;
+use volantis_db::property_graph::{GraphGeneration, GraphRevision, NodeId, StoreInstanceId};
 
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.completed.bits-and-bags",

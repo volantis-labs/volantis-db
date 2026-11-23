@@ -7,24 +7,24 @@
     clippy::indexing_slicing,
     clippy::result_large_err
 )]
-#[path = "../../crates/zeppelin-embed-ffi/tests/common/mod.rs"]
+#[path = "../../crates/volantis-db-ffi/tests/common/mod.rs"]
 mod common;
-#[path = "../../crates/zeppelin-embed-cypher/tests/support/tck.rs"]
+#[path = "../../crates/volantis-db-cypher/tests/support/tck.rs"]
 pub mod tck;
 use common::graph::*;
 use common::sized_zeroed;
 use std::collections::{BTreeMap, BTreeSet};
 use tck::V;
-use zeppelin_embed::lifecycle::Store;
-use zeppelin_embed::lifecycle::{CancelToken, OpenOptions, QueryControl};
-use zeppelin_embed::property_graph::query::completed::{CompletedGraphResult, GraphQueryOptions};
-use zeppelin_embed::property_graph::query::plan::*;
-use zeppelin_embed::property_graph::{GraphName, GraphPlanBacking, GraphQueryPlan};
-use zeppelin_embed_bench::harness_json::{Value as Json, json};
-use zeppelin_embed_ffi::*;
+use volantis_db::lifecycle::Store;
+use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl};
+use volantis_db::property_graph::query::completed::{CompletedGraphResult, GraphQueryOptions};
+use volantis_db::property_graph::query::plan::*;
+use volantis_db::property_graph::{GraphName, GraphPlanBacking, GraphQueryPlan};
+use volantis_db_bench::harness_json::{Value as Json, json};
+use volantis_db_ffi::*;
 
 pub fn manifest() -> Json {
-    zeppelin_embed_bench::harness_json::from_str(include_str!(
+    volantis_db_bench::harness_json::from_str(include_str!(
         "../../bindings/fixtures/graph_profile_parity_v1.json"
     ))
     .unwrap()
@@ -33,13 +33,13 @@ fn control() -> QueryControl {
     QueryControl::Cancel(CancelToken::new())
 }
 fn rust_cypher(store: &Store, query: &str) -> Result<CompletedGraphResult, String> {
-    zeppelin_embed_cypher::execute(
+    volantis_db_cypher::execute(
         store,
         &control(),
         &GraphQueryOptions::default(),
         query,
         &[],
-        zeppelin_embed_cypher::CompileLimits::default(),
+        volantis_db_cypher::CompileLimits::default(),
     )
     .map_err(statement_error)
 }
@@ -73,7 +73,7 @@ fn authored_unary(n: u32) -> UnaryExpression {
 }
 fn authored_binary(n: u32) -> BinaryExpression {
     use BinaryExpression::*;
-    use zeppelin_embed::property_graph::query::{Arithmetic, Comparison};
+    use volantis_db::property_graph::query::{Arithmetic, Comparison};
     match n {
         0 => And,
         1 => Or,
@@ -423,8 +423,8 @@ fn rust_structured(
         backing.string(p).unwrap();
     }
     backing.vec(&parameters).unwrap();
-    use zeppelin_embed::property_graph::query::{QueryList, QueryView, ValueContext};
-    use zeppelin_embed::property_graph::{GraphGeneration, StoreInstanceId};
+    use volantis_db::property_graph::query::{QueryList, QueryView, ValueContext};
+    use volantis_db::property_graph::{GraphGeneration, StoreInstanceId};
     let view = QueryView::new(StoreInstanceId::new(1).unwrap(), GraphGeneration::new(0));
     let c = control();
     let mut context = ValueContext::new(&view, &c, 1_000_000).unwrap();
@@ -444,7 +444,7 @@ fn rust_structured(
         .map(|((name, v), items)| ParameterBinding {
             name,
             value: if matches!(v, V::List(_)) {
-                zeppelin_embed::property_graph::query::QueryValue::List(
+                volantis_db::property_graph::query::QueryValue::List(
                     QueryList::new(items, &mut context).unwrap(),
                 )
             } else {
@@ -1080,7 +1080,7 @@ pub fn run_local(case: &Json, path: &str) -> Result<Json, String> {
             );
         }
         let r = r?;
-        use zeppelin_embed::property_graph::query::completed::Outcome;
+        use volantis_db::property_graph::query::completed::Outcome;
         let expected_generation = generation.get() + u64::from(changed);
         let actual_outcome = match r.metadata().outcome {
             Outcome::Read => 0,
@@ -1275,7 +1275,7 @@ pub fn run_local(case: &Json, path: &str) -> Result<Json, String> {
             row.iter_mut().for_each(V::sort_lists);
         }
     }
-    use zeppelin_embed_adversarial_oracle::graph_profile::{Observation, compare_observation};
+    use volantis_db_adversarial_oracle::graph_profile::{Observation, compare_observation};
     let oracle_expected = Observation {
         columns: header
             .iter()
@@ -1364,13 +1364,13 @@ pub fn original_cases() -> Vec<Json> {
         (
             false,
             include_str!(
-                "../../crates/zeppelin-embed-cypher/tests/fixtures/read-tck-execution.txt"
+                "../../crates/volantis-db-cypher/tests/fixtures/read-tck-execution.txt"
             ),
         ),
         (
             true,
             include_str!(
-                "../../crates/zeppelin-embed-cypher/tests/fixtures/write-tck-execution.txt"
+                "../../crates/volantis-db-cypher/tests/fixtures/write-tck-execution.txt"
             ),
         ),
     ] {
@@ -1474,8 +1474,8 @@ fn parameter_values(case: &Json) -> Vec<(String, V)> {
         })
         .collect()
 }
-fn scalar(v: &V) -> zeppelin_embed::property_graph::query::QueryValue<'_> {
-    use zeppelin_embed::property_graph::query::QueryValue as Q;
+fn scalar(v: &V) -> volantis_db::property_graph::query::QueryValue<'_> {
+    use volantis_db::property_graph::query::QueryValue as Q;
     match v {
         V::Null => Q::Null,
         V::Bool(v) => Q::Bool(*v),
@@ -1490,8 +1490,8 @@ fn rust_cypher_parameters(
     query: &str,
     values: &[(String, V)],
 ) -> Result<CompletedGraphResult, String> {
-    use zeppelin_embed::property_graph::query::{QueryList, QueryView, ValueContext};
-    use zeppelin_embed::property_graph::{GraphGeneration, StoreInstanceId};
+    use volantis_db::property_graph::query::{QueryList, QueryView, ValueContext};
+    use volantis_db::property_graph::{GraphGeneration, StoreInstanceId};
     let view = QueryView::new(StoreInstanceId::new(1).unwrap(), GraphGeneration::new(0));
     let c = control();
     let mut context = ValueContext::new(&view, &c, 1_000_000).unwrap();
@@ -1511,7 +1511,7 @@ fn rust_cypher_parameters(
         .map(|((name, v), items)| ParameterBinding {
             name,
             value: if matches!(v, V::List(_)) {
-                zeppelin_embed::property_graph::query::QueryValue::List(
+                volantis_db::property_graph::query::QueryValue::List(
                     QueryList::new(items, &mut context).unwrap(),
                 )
             } else {
@@ -1519,13 +1519,13 @@ fn rust_cypher_parameters(
             },
         })
         .collect::<Vec<_>>();
-    zeppelin_embed_cypher::execute(
+    volantis_db_cypher::execute(
         store,
         &c,
         &GraphQueryOptions::default(),
         query,
         &bindings,
-        zeppelin_embed_cypher::CompileLimits::default(),
+        volantis_db_cypher::CompileLimits::default(),
     )
     .map_err(statement_error)
 }
@@ -1608,7 +1608,7 @@ impl CParameters {
 }
 
 pub fn high_id_roundtrip() -> Result<(), String> {
-    use zeppelin_embed::property_graph::{NodeId, RelId};
+    use volantis_db::property_graph::{NodeId, RelId};
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("graph");
     let store = Store::create_graph_with_allocator_seed_for_test(
@@ -1727,8 +1727,8 @@ pub fn primitive(v: &V) -> Json {
     }
 }
 
-fn oracle_cell(v: &V) -> zeppelin_embed_adversarial_oracle::graph_profile::Cell {
-    use zeppelin_embed_adversarial_oracle::graph_profile::Cell as C;
+fn oracle_cell(v: &V) -> volantis_db_adversarial_oracle::graph_profile::Cell {
+    use volantis_db_adversarial_oracle::graph_profile::Cell as C;
     match v {
         V::Map(_) => panic!("map outside this fixed profile oracle corpus"),
         V::Null => C::Null,
@@ -1748,10 +1748,10 @@ fn oracle_cell(v: &V) -> zeppelin_embed_adversarial_oracle::graph_profile::Cell 
     }
 }
 
-fn statement_error(error: zeppelin_embed_cypher::StatementError) -> String {
+fn statement_error(error: volantis_db_cypher::StatementError) -> String {
     match &error {
-        zeppelin_embed_cypher::StatementError::Compile(e) => format!("{error:?};kind={:?}", e.kind),
-        zeppelin_embed_cypher::StatementError::Query(e) => format!(
+        volantis_db_cypher::StatementError::Compile(e) => format!("{error:?};kind={:?}", e.kind),
+        volantis_db_cypher::StatementError::Query(e) => format!(
             "{error:?};kind={:?};nothing_committed={}",
             e.kind(),
             e.nothing_committed()

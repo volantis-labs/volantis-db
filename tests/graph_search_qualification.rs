@@ -9,8 +9,8 @@
 #[path = "support/graph_search.rs"]
 mod graph_search;
 use graph_search::*;
-use zeppelin_embed::lifecycle::Store;
-use zeppelin_embed_adversarial_oracle::graph_fixture as oracle;
+use volantis_db::lifecycle::Store;
+use volantis_db_adversarial_oracle::graph_fixture as oracle;
 #[test]
 fn ze65_exact_eligible_rankings_match_oracle() {
     let c = Corpus::new();
@@ -181,7 +181,7 @@ fn ze65_compaction_preserves_logical_search() {
     }
     println!("ZE65 relocated_refs={relocated}");
 }
-use zeppelin_embed::property_graph::query::completed::{
+use volantis_db::property_graph::query::completed::{
     ActualTier, CandidateCoverage, LegState, ScorePrecision,
 };
 #[test]
@@ -290,10 +290,10 @@ fn ze65_modal_and_empty_matrix() {
     )
     .unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let empty = zeppelin_embed::lifecycle::Store::create_graph(
+    let empty = volantis_db::lifecycle::Store::create_graph(
         dir.path().join("empty"),
-        zeppelin_embed::lifecycle::OpenOptions::new().with_max_resident_bytes(256 * 1024 * 1024),
-        Some(zeppelin_embed::graph_commit_recovery_test_support::document()),
+        volantis_db::lifecycle::OpenOptions::new().with_max_resident_bytes(256 * 1024 * 1024),
+        Some(volantis_db::graph_commit_recovery_test_support::document()),
     )
     .unwrap();
     for q in [
@@ -301,7 +301,7 @@ fn ze65_modal_and_empty_matrix() {
         "CALL ze.text_search('amber',2) YIELD node RETURN node",
         "CALL ze.hybrid_search([0,0],'amber',2,'exact') YIELD node RETURN node",
     ] {
-        let r = zeppelin_embed_cypher::execute(
+        let r = volantis_db_cypher::execute(
             &empty,
             &control(),
             &Default::default(),
@@ -382,8 +382,8 @@ fn ze65_projection_preserves_ann_metadata() {
 }
 #[test]
 fn ze65_configuration_preserves_graph_visibility() {
-    use zeppelin_embed::lifecycle::OpenOptions;
-    use zeppelin_embed::property_graph::*;
+    use volantis_db::lifecycle::OpenOptions;
+    use volantis_db::property_graph::*;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("no-vector");
     let store = Store::create_graph(
@@ -395,11 +395,11 @@ fn ze65_configuration_preserves_graph_visibility() {
     let content = CanonicalContents::node(&mut [], &mut [], None, None).unwrap();
     store
         .graph_apply(
-            &[zeppelin_embed::property_graph::staging::StructuredWrite {
+            &[volantis_db::property_graph::staging::StructuredWrite {
                 key: ApplicationKey::new(EntityKind::Node, "ze65", "graph-only").unwrap(),
                 revision: GraphRevision::new(1).unwrap(),
-                operation: zeppelin_embed::property_graph::staging::StructuredOperation::Create,
-                image: Some(zeppelin_embed::property_graph::staging::WriteImage::Node(
+                operation: volantis_db::property_graph::staging::StructuredOperation::Create,
+                image: Some(volantis_db::property_graph::staging::WriteImage::Node(
                     &content,
                 )),
             }],
@@ -407,7 +407,7 @@ fn ze65_configuration_preserves_graph_visibility() {
         )
         .unwrap();
     let q = "MATCH (n) RETURN n";
-    let r = zeppelin_embed_cypher::execute(
+    let r = volantis_db_cypher::execute(
         &store,
         &control(),
         &Default::default(),
@@ -424,7 +424,7 @@ fn ze65_configuration_preserves_graph_visibility() {
         None,
     )
     .unwrap();
-    let r = zeppelin_embed_cypher::execute(
+    let r = volantis_db_cypher::execute(
         &store,
         &control(),
         &Default::default(),
@@ -449,7 +449,7 @@ fn ze65_configuration_preserves_graph_visibility() {
     };
     let path = c.dir.path().join("graph");
     let original = files(&path);
-    let mut incompatible = zeppelin_embed::graph_commit_recovery_test_support::document();
+    let mut incompatible = volantis_db::graph_commit_recovery_test_support::document();
     incompatible.weights_digest.push(65);
     assert!(
         Store::open_graph(
@@ -463,7 +463,7 @@ fn ze65_configuration_preserves_graph_visibility() {
     // Query model is supplied externally as coordinates; persisted document
     // declaration stays identical. Different external query coordinates are valid.
     c.store =
-        Some(zeppelin_embed::graph_commit_recovery_test_support::ProbeStore::open(&path).unwrap());
+        Some(volantis_db::graph_commit_recovery_test_support::ProbeStore::open(&path).unwrap());
     assert_eq!(observe(&c.run(q)), before);
     for vector in ["[0,0]", "[1,1]"] {
         let r = c.run(&format!(
@@ -477,7 +477,7 @@ fn ze65_configuration_preserves_graph_visibility() {
 mod retained;
 #[test]
 fn ze65_retained_view_materialization() {
-    zeppelin_embed::graph_read_view_test_support::run_actual_probe(65);
+    volantis_db::graph_read_view_test_support::run_actual_probe(65);
     retained::retained(
         std::env::var("ZE_TEST_SEED")
             .ok()

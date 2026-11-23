@@ -43,7 +43,7 @@ def expected_symbols(artifact, static=False, text=True):
     # Both allowlists retain the frozen response-free ABI. Graph-free graph
     # entry points are explicit unsupported-build stubs, not missing exports.
     name = 'symbols.graph.allowlist' if artifact == 'graph-cypher' else 'symbols.allowlist'
-    symbols = {s for s in (ROOT / 'crates/zeppelin-embed-ffi' / name).read_text().splitlines()
+    symbols = {s for s in (ROOT / 'crates/volantis-db-ffi' / name).read_text().splitlines()
             if s.startswith('ze_') and not s.startswith('ze_text_')}
     if artifact == 'graph-cypher' and text:
         return symbols | TEXT_FUNCTIONS | (TEXT_STATIC_INTERNALS if static else set())
@@ -96,8 +96,8 @@ def check_artifact(legacy, graph, output, text=True):
         report[identity] = dict(source=str(source.resolve()), original=measure(source, detail), trimmed=measure(trimmed, detail))
     consumer = output / 'graph-artifact-consumer'
     command = ['clang', '-std=c11', '-Wall', '-Wextra', '-Werror', '-mmacosx-version-min=14.0',
-               '-I', str(ROOT / 'crates/zeppelin-embed-ffi/include'),
-               str(ROOT / 'crates/zeppelin-embed-ffi/tests/c/graph_artifact_consumer.c'),
+               '-I', str(ROOT / 'crates/volantis-db-ffi/include'),
+               str(ROOT / 'crates/volantis-db-ffi/tests/c/graph_artifact_consumer.c'),
                str(output / 'graph-cypher.a'), '-framework', 'Security', '-liconv', *FULL_LINK_FLAGS, '-o', str(consumer)]
     subprocess.run(command, check=True)
     with tempfile.TemporaryDirectory() as fixtures:

@@ -9,21 +9,21 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 use std::time::{Duration, Instant};
-use zeppelin_embed::lifecycle::Store;
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::Store;
+use volantis_db::lifecycle::{
     CancelToken, Deadline, ManualMonotonicClock, MonotonicClock, OpenOptions, QueryControl,
 };
-use zeppelin_embed::property_graph::query::completed::{
+use volantis_db::property_graph::query::completed::{
     CompletedGraphResult, GraphQueryErrorKind, GraphQueryOptions, Value,
 };
-use zeppelin_embed::property_graph::query::runtime::WorkKind;
-use zeppelin_embed::property_graph::resources::GraphResources;
-use zeppelin_embed::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
-use zeppelin_embed::property_graph::{
+use volantis_db::property_graph::query::runtime::WorkKind;
+use volantis_db::property_graph::resources::GraphResources;
+use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
+use volantis_db::property_graph::{
     ApplicationKey, CanonicalContents, EntityKind, GraphRevision,
 };
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed_cypher::{CompileLimits, StatementError, execute};
+use volantis_db::vfs::StdVfs;
+use volantis_db_cypher::{CompileLimits, StatementError, execute};
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.cypher-search.invocations",
     "property-graph.cypher-search.empty-input",
@@ -178,8 +178,8 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
             })
         })
         .collect::<Result<_, String>>()?;
-    use zeppelin_embed::ingest::{DocId, DocumentVersion, IngestDocument, Revision};
-    use zeppelin_embed::property_graph::{GraphBatch, GraphNodeDocument};
+    use volantis_db::ingest::{DocId, DocumentVersion, IngestDocument, Revision};
+    use volantis_db::property_graph::{GraphBatch, GraphNodeDocument};
     let docs: Vec<_> = (0..writes.len())
         .map(|item_index| GraphNodeDocument {
             item_index,
@@ -203,7 +203,7 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
     }
     let clean = clean.map_err(|e| e.to_string())?;
     let observation = observe(&clean)?;
-    let generation = zeppelin_embed::property_graph::GraphGeneration::new(
+    let generation = volantis_db::property_graph::GraphGeneration::new(
         store
             .snapshot()
             .map_err(|error| error.to_string())?
@@ -262,7 +262,7 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
                 && e.nothing_committed()
                 && fires == 1
                 && e.operator()
-                    == Some(zeppelin_embed::property_graph::query::plan::PlanNodeId(1))
+                    == Some(volantis_db::property_graph::query::plan::PlanNodeId(1))
                 && e.counters().is_some_and(|c| {
                     c.get(WorkKind::SearchInvocations) == 1 && c.get(WorkKind::LexicalPostings) == 0
                 }) => {}
@@ -481,8 +481,8 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
                 loop {
                     if let Err(error)=runtime.checkpoint() {
                         cancel_send.send(()).expect("sentinel cancelled");
-                        saw_close=matches!(error,zeppelin_embed::property_graph::query::runtime::RuntimeError::Value(zeppelin_embed::property_graph::query::QueryError::ReadCancelled));
-                        return Err(zeppelin_embed::property_graph::query::completed::GraphQueryError::builder_rejected());
+                        saw_close=matches!(error,volantis_db::property_graph::query::runtime::RuntimeError::Value(volantis_db::property_graph::query::QueryError::ReadCancelled));
+                        return Err(volantis_db::property_graph::query::completed::GraphQueryError::builder_rejected());
                     }
                     std::thread::yield_now();
                 }

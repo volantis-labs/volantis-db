@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 
 def test_namespace_tokenizer_profile_persists(tmp_path: Path) -> None:

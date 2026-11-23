@@ -3,18 +3,18 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "zeppelin-embed"
-version = "0.8.0"
-description = "ctypes bindings for the Zeppelin Embed C ABI"
+name = "volantis-db"
+version = "0.1.0"
+description = "ctypes bindings for the Volantis DB C ABI"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "GPL-3.0-only"
 dependencies = ["numpy>=2.0"]
 
 [project.urls]
-Homepage = "https://github.com/zepdb/zeppelin-embed"
-Repository = "https://github.com/zepdb/zeppelin-embed"
-Issues = "https://github.com/zepdb/zeppelin-embed/issues"
+Homepage = "https://github.com/volantis-labs/volantis-db"
+Repository = "https://github.com/volantis-labs/volantis-db"
+Issues = "https://github.com/volantis-labs/volantis-db/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -25,7 +25,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["zeppelin_embed*"]
+include = ["volantis_db*"]
 
 [tool.ruff]
 target-version = "py311"
@@ -35,13 +35,13 @@ select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.mypy]
 strict = true
-files = ["zeppelin_embed"]
+files = ["volantis_db"]
 
 [tool.cibuildwheel]
 build = "cp311-macosx_arm64"
 build-verbosity = 1
 test-command = "python -I bindings/python/tests/installed_smoke.py"
-test-sources = ["bindings/python/tests/installed_smoke.py", "crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem"]
+test-sources = ["bindings/python/tests/installed_smoke.py", "crates/volantis-db-text/tests/fixtures/ze115/gte.zem"]
 
 [tool.cibuildwheel.macos]
 archs = ["arm64"]

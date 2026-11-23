@@ -3,7 +3,7 @@
 use super::coverage::CoverageRegistry;
 use rand::RngCore;
 use std::collections::BTreeSet;
-use zeppelin_embed::graph_read_view_test_support::{ActualProbeReport, ObservedRelationship};
+use volantis_db::graph_read_view_test_support::{ActualProbeReport, ObservedRelationship};
 
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.read-view.admission-capture",
@@ -36,9 +36,9 @@ pub struct Report {
     pub comparator: &'static str,
 }
 
-fn expected_operations() -> Vec<zeppelin_embed_adversarial_oracle::graph_adjacency_store::Operation>
+fn expected_operations() -> Vec<volantis_db_adversarial_oracle::graph_adjacency_store::Operation>
 {
-    use zeppelin_embed_adversarial_oracle::graph_adjacency_store::Operation;
+    use volantis_db_adversarial_oracle::graph_adjacency_store::Operation;
     let node_a = (1_u128 << 100) + 1;
     let node_b = node_a + 1;
     let rel = 1_u128 << 110;
@@ -67,7 +67,7 @@ fn expected_operations() -> Vec<zeppelin_embed_adversarial_oracle::graph_adjacen
 }
 
 fn compare_actual_relationships(rows: &[ObservedRelationship]) -> Result<(), String> {
-    use zeppelin_embed_adversarial_oracle::graph_adjacency_store::{
+    use volantis_db_adversarial_oracle::graph_adjacency_store::{
         RelationshipRow, compare_read_view_expansion,
     };
     let observed = rows
@@ -122,15 +122,15 @@ pub(crate) fn record_report(
 pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<Report, String> {
     let mut rng = super::test_support::seeded_rng("property_graph::read_view", seed);
     let seed_draw = rng.next_u64();
-    if !zeppelin_embed::graph_read_view_test_support::controlled_boundary_is_available() {
+    if !volantis_db::graph_read_view_test_support::controlled_boundary_is_available() {
         return Err("ZE-45 controlled boundary was not linked into test support".into());
     }
-    let actual = zeppelin_embed::graph_read_view_test_support::run_actual_probe(seed_draw);
+    let actual = volantis_db::graph_read_view_test_support::run_actual_probe(seed_draw);
     let actual_paths = record_report(&actual, coverage)?;
     Ok(Report {
         seed_draw,
         actual_paths,
         comparator:
-            zeppelin_embed_adversarial_oracle::graph_adjacency_store::READ_VIEW_COMPARATOR_ID,
+            volantis_db_adversarial_oracle::graph_adjacency_store::READ_VIEW_COMPARATOR_ID,
     })
 }

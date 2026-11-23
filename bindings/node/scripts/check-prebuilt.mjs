@@ -14,13 +14,13 @@ import { fileURLToPath } from 'node:url';
  */
 const REQUIRED = {
   darwin: [
-    '../prebuilds/darwin-arm64/zeppelin_embed.node',
+    '../prebuilds/darwin-arm64/volantis_db.node',
     '../prebuilds/darwin-arm64/mlx.metallib',
-    '../prebuilds/darwin-x64/zeppelin_embed.node',
+    '../prebuilds/darwin-x64/volantis_db.node',
   ],
   win32: [
-    '../prebuilds/win32-x64/node-napi8/zeppelin_embed.node',
-    '../prebuilds/win32-x64/electron-44/zeppelin_embed.node',
+    '../prebuilds/win32-x64/node-napi8/volantis_db.node',
+    '../prebuilds/win32-x64/electron-44/volantis_db.node',
   ],
 };
 

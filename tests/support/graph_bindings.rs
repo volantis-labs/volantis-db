@@ -6,7 +6,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-use zeppelin_embed_ffi::*;
+use volantis_db_ffi::*;
 pub const FIXTURE: &str = include_str!("../fixtures/graph-bindings-v1/semantics.tsv");
 pub fn cases() -> Vec<(&'static str, &'static str, String)> {
     FIXTURE
@@ -132,8 +132,8 @@ pub fn query(handle: ZeHandle, text: &str) -> ZeGraphResponse {
     response
 }
 #[cfg(feature = "graph-result-test-support")]
-pub fn fault(mode: u32) -> zeppelin_embed_adversarial_oracle::graph_c_entry::BindingOutcome {
-    use zeppelin_embed_ffi::graph_bindings_test_support::ze72_test_cypher;
+pub fn fault(mode: u32) -> volantis_db_adversarial_oracle::graph_c_entry::BindingOutcome {
+    use volantis_db_ffi::graph_bindings_test_support::ze72_test_cypher;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("fault");
     let path = path.to_str().unwrap().as_bytes();
@@ -175,7 +175,7 @@ pub fn fault(mode: u32) -> zeppelin_embed_adversarial_oracle::graph_c_entry::Bin
     let value = unsafe { *recovered.pool.values.add(*recovered.cells as usize) }.integer;
     assert_eq!(ze_close(handle), ZeErrorCode::ZeOk);
     assert_eq!(ze_graph_response_free(&mut recovered), ZeErrorCode::ZeOk);
-    zeppelin_embed_adversarial_oracle::graph_c_entry::BindingOutcome {
+    volantis_db_adversarial_oracle::graph_c_entry::BindingOutcome {
         status: format!("{status:?}"),
         disposition,
         changed,

@@ -1,4 +1,4 @@
-"""Setuptools hooks for the platform-specific Zeppelin Embed wheel."""
+"""Setuptools hooks for the platform-specific Volantis DB wheel."""
 
 from __future__ import annotations
 
@@ -16,15 +16,15 @@ from setuptools.command.build_py import build_py
 
 PYTHON_ROOT = Path(__file__).resolve().parent
 WORKSPACE_ROOT = PYTHON_ROOT.parents[1]
-PACKAGE_NAME = "zeppelin_embed"
+PACKAGE_NAME = "volantis_db"
 
 
 def _native_filename() -> str:
     if sys.platform == "darwin":
-        return "libzeppelin_embed_ffi.dylib"
+        return "libvolantis_db_ffi.dylib"
     if sys.platform.startswith("linux"):
-        return "libzeppelin_embed_ffi.so"
-    raise RuntimeError(f"Zeppelin Embed wheels are not configured for {sys.platform}")
+        return "libvolantis_db_ffi.so"
+    raise RuntimeError(f"Volantis DB wheels are not configured for {sys.platform}")
 
 
 def _cargo_target_dir() -> Path:
@@ -103,7 +103,7 @@ class BuildPyWithNative(build_py):
             "--locked",
             "--release",
             "-p",
-            "zeppelin-embed-ffi",
+            "volantis-db-ffi",
             "--message-format=json-render-diagnostics",
         ]
         if _build_text():
@@ -131,7 +131,7 @@ class BuildPyWithNative(build_py):
                     sys.executable,
                     str(WORKSPACE_ROOT / "scripts/release/check-macos-minos.py"),
                     deployment_target,
-                    str(target_dir / "release/libzeppelin_embed_ffi.a"),
+                    str(target_dir / "release/libvolantis_db_ffi.a"),
                     str(source),
                 ],
                 check=True,

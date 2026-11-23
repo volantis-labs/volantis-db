@@ -1,12 +1,12 @@
 {
-  "source": "Binding survey of volantis-db, 2026-11-22, with the E17 owner decisions and Zeppelin public names.",
+  "source": "Binding survey of volantis-db, 2026-11-22, with the E17 owner decisions and Volantis DB public names.",
   "rows": {
     "S1": {
       "feature": "Open, close, state, stats",
       "build": "core",
       "node": ["Store.constructor", "Store.close", "Store.state", "Store.stats"],
       "python": ["open", "Store.close", "Store.state", "Store.stats"],
-      "swift": ["ZeppelinStore.open(at:options:)", "ZeppelinStore.close()", "ZeppelinStore.state()", "ZeppelinStore.stats()"],
+      "swift": ["VolantisStore.open(at:options:)", "VolantisStore.close()", "VolantisStore.state()", "VolantisStore.stats()"],
       "rust": ["Store::open", "Store::close", "Store::state", "Store::stats"],
       "c": ["ze_open", "ze_close", "ze_state", "ze_stats"]
     },
@@ -24,7 +24,7 @@
       "build": "survey",
       "node": [],
       "python": ["open_with_epoch", "epoch_identity", "Store.epoch_current", "Store.epoch_drop", "Store.epoch_switch_alias"],
-      "swift": ["ZeppelinStore.openWithEpoch", "ZeppelinStore.epochIdentity", "ZeppelinStore.currentEpoch", "ZeppelinStore.dropEpoch", "ZeppelinStore.switchAlias"],
+      "swift": ["VolantisStore.openWithEpoch", "VolantisStore.epochIdentity", "VolantisStore.currentEpoch", "VolantisStore.dropEpoch", "VolantisStore.switchAlias"],
       "rust": ["OpenOptions::with_epoch", "Store::epoch_identity", "Store::switch_epoch_alias", "Store::drop_epoch", "EpochIdentity::of"],
       "c": ["ze_open_with_epoch", "ze_epoch_current", "ze_epoch_drop", "ze_epoch_identity", "ze_epoch_switch_alias"]
     },
@@ -42,7 +42,7 @@
       "build": "core",
       "node": ["Store.ingest", "Document.text", "Document.metadata", "Document.timestamp", "Store.upsert", "UpsertDocument.attributes"],
       "python": ["Store.ingest:texts", "Store.ingest:metadata", "Store.ingest:timestamps", "Store.upsert", "StoredDocument.attributes"],
-      "swift": ["ZeppelinStore.ingest(_:)", "IngestDocument.text", "IngestDocument.metadata", "IngestDocument.timestamp", "ZeppelinStore.upsert(_:)", "IngestDocument.attributes"],
+      "swift": ["VolantisStore.ingest(_:)", "IngestDocument.text", "IngestDocument.metadata", "IngestDocument.timestamp", "VolantisStore.upsert(_:)", "IngestDocument.attributes"],
       "rust": ["Store::ingest", "IngestDocument"],
       "c": ["ze_ingest", "ze_upsert"]
     },
@@ -51,7 +51,7 @@
       "build": "core",
       "node": ["Store.upsert", "UpsertDocument.expectedRevision"],
       "python": ["Store.upsert", "UpsertDocument:expected_revision"],
-      "swift": ["ZeppelinStore.upsert(_:)", "ZeppelinStore.upsert(conditional:)"],
+      "swift": ["VolantisStore.upsert(_:)", "VolantisStore.upsert(conditional:)"],
       "rust": ["Store::ingest", "IngestDocument::with_expected_revision"],
       "c": ["ze_upsert", "ze_upsert_conditional"]
     },
@@ -60,7 +60,7 @@
       "build": "core",
       "node": ["Store.delete", "DeleteTarget", "Store.deleteWhere"],
       "python": ["Store.delete", "DeleteTarget:expected_revision", "Store.delete_where"],
-      "swift": ["ZeppelinStore.delete(_:)", "ZeppelinStore.delete(conditional:)", "ZeppelinStore.deleteWhere(_:)"],
+      "swift": ["VolantisStore.delete(_:)", "VolantisStore.delete(conditional:)", "VolantisStore.deleteWhere(_:)"],
       "rust": ["Store::delete", "DeleteBatch::conditional", "Store::delete_matching"],
       "c": ["ze_delete", "ze_delete_conditional", "ze_delete_where"]
     },
@@ -69,7 +69,7 @@
       "build": "core",
       "node": ["Store.get"],
       "python": ["Store.get"],
-      "swift": ["ZeppelinStore.get(_:fields:)"],
+      "swift": ["VolantisStore.get(_:fields:)"],
       "rust": ["Store::get_documents"],
       "c": ["ze_get"]
     },
@@ -78,7 +78,7 @@
       "build": "core",
       "node": ["Store.scan", "ScanRequest.order", "AttributeScanOrder"],
       "python": ["Store.scan:order", "AttributeScanOrder"],
-      "swift": ["ZeppelinStore.scan(after:limit:order:fields:timestampRange:filter:cancellationToken:deadlineNanoseconds:)", "AttributeScanOrder"],
+      "swift": ["VolantisStore.scan(after:limit:order:fields:timestampRange:filter:cancellationToken:deadlineNanoseconds:)", "AttributeScanOrder"],
       "rust": ["Store::scan_documents", "ScanOrder"],
       "c": ["ze_scan", "ze_scan_ordered"]
     },
@@ -87,7 +87,7 @@
       "build": "core",
       "node": ["Store.count", "GroupedCountRequest.groupBy"],
       "python": ["Store.count:group_by", "CountGroupBy"],
-      "swift": ["ZeppelinStore.count(filter:timestampRange:)", "ZeppelinStore.count(groupBy:filter:timestampRange:)"],
+      "swift": ["VolantisStore.count(filter:timestampRange:)", "VolantisStore.count(groupBy:filter:timestampRange:)"],
       "rust": ["Store::count_documents", "Store::count_documents_grouped"],
       "c": ["ze_count", "ze_count_grouped"]
     },
@@ -96,7 +96,7 @@
       "build": "core",
       "node": ["Store.search", "Store.searchFiltered"],
       "python": ["Store.search:filter"],
-      "swift": ["ZeppelinStore.search(vector:options:)", "ZeppelinStore.search(vector:filter:options:)"],
+      "swift": ["VolantisStore.search(vector:options:)", "VolantisStore.search(vector:filter:options:)"],
       "rust": ["Store::search", "Store::search_filtered"],
       "c": ["ze_search", "ze_search_filtered"]
     },
@@ -105,7 +105,7 @@
       "build": "core",
       "node": ["Store.query", "QueryRequest.text", "QueryRequest.vector", "QueryRequest.tier", "QueryRequest.filter", "QueryRequest.lastAsPrefix"],
       "python": ["Store.query:text", "Store.query:vector", "Store.query:tier", "Store.query:filter", "Store.query:last_as_prefix"],
-      "swift": ["ZeppelinStore.query(vector:text:eligibleIds:filter:timestampRange:options:)", "QueryOptions.tier", "QueryOptions.lastAsPrefix"],
+      "swift": ["VolantisStore.query(vector:text:eligibleIds:filter:timestampRange:options:)", "QueryOptions.tier", "QueryOptions.lastAsPrefix"],
       "rust": ["Store::search_lexical_structured_filtered", "Store::search_hybrid_structured"],
       "c": ["ze_query", "ze_query_v2", "ze_query_filtered"]
     },
@@ -132,7 +132,7 @@
       "build": "core",
       "node": ["openNamespace", "NamespaceSpec.attributes", "Store.schema", "AttributeDefinition"],
       "python": ["open_namespace", "NamespaceSpec.attributes", "Store.schema", "AttributeDefinition"],
-      "swift": ["ZeppelinStore.openNamespace(root:name:spec:options:)", "NamespaceSpec.attributes", "ZeppelinStore.schema()", "AttributeDefinition"],
+      "swift": ["VolantisStore.openNamespace(root:name:spec:options:)", "NamespaceSpec.attributes", "VolantisStore.schema()", "AttributeDefinition"],
       "rust": ["OpenOptions::with_schema", "Store::schema", "Schema"],
       "c": ["ze_namespace_open", "ze_schema_column"]
     },
@@ -141,7 +141,7 @@
       "build": "core",
       "node": ["Store.seal", "Store.merge", "Store.maintain", "MaintainBudget"],
       "python": ["Store.seal", "Store.merge", "Store.maintain:wall_time_ns", "Store.maintain:bytes"],
-      "swift": ["ZeppelinStore.seal(cancellationToken:)", "ZeppelinStore.merge(cancellationToken:)", "ZeppelinStore.maintain(wallTimeNanoseconds:bytes:)"],
+      "swift": ["VolantisStore.seal(cancellationToken:)", "VolantisStore.merge(cancellationToken:)", "VolantisStore.maintain(wallTimeNanoseconds:bytes:)"],
       "rust": ["Store::seal", "Store::merge_sealed", "Store::maintain"],
       "c": ["ze_seal", "ze_merge_sealed", "ze_maintain"]
     },
@@ -150,7 +150,7 @@
       "build": "core",
       "node": ["Store.purge", "Store.awaitPurge", "Store.applyRetention", "Store.dropPartition"],
       "python": ["Store.purge", "Store.await_physical_purge", "Store.apply_retention", "Store.drop_partition"],
-      "swift": ["ZeppelinStore.purge(_:)", "ZeppelinStore.awaitPhysicalPurge(_:)", "ZeppelinStore.applyRetention(window:now:)", "ZeppelinStore.dropPartition(from:to:)"],
+      "swift": ["VolantisStore.purge(_:)", "VolantisStore.awaitPhysicalPurge(_:)", "VolantisStore.applyRetention(window:now:)", "VolantisStore.dropPartition(from:to:)"],
       "rust": ["Store::purge", "Store::await_physical_purge", "Store::apply_retention", "Store::drop_partition"],
       "c": ["ze_purge", "ze_await_physical_purge", "ze_apply_retention", "ze_drop_partition"]
     },
@@ -159,7 +159,7 @@
       "build": "survey",
       "node": ["Store.reindexText", "Store.warmLexical"],
       "python": ["Store.warm_lexical"],
-      "swift": ["ZeppelinStore.warmLexical"],
+      "swift": ["VolantisStore.warmLexical"],
       "rust": ["Store::reindex_text", "Store::warm_lexical"],
       "c": ["ze_reindex_text", "ze_warm_lexical"]
     },
@@ -168,7 +168,7 @@
       "build": "core",
       "node": ["verify", "VerifyReport"],
       "python": ["verify", "VerifyReport"],
-      "swift": ["ZeppelinStore.verify(at:)", "VerifyReport"],
+      "swift": ["VolantisStore.verify(at:)", "VerifyReport"],
       "rust": ["verify_store"],
       "c": ["ze_verify"]
     },
@@ -177,16 +177,16 @@
       "build": "core",
       "node": ["CancellationToken.cancel", "QueryRequest.cancelToken", "QueryRequest.deadlineNs"],
       "python": ["CancelToken.cancel", "CancelToken.close", "Store.query:cancel_token", "Store.query:deadline_ns"],
-      "swift": ["ZeppelinCancellationToken.create()", "ZeppelinCancellationToken.cancel()", "ZeppelinCancellationToken.free()", "QueryOptions.cancellationToken", "QueryOptions.deadlineNanoseconds"],
+      "swift": ["VolantisCancellationToken.create()", "VolantisCancellationToken.cancel()", "VolantisCancellationToken.free()", "QueryOptions.cancellationToken", "QueryOptions.deadlineNanoseconds"],
       "rust": ["CancelToken", "Deadline"],
       "c": ["ze_cancel_token_create", "ze_cancel_token_cancel", "ze_cancel_token_free", "ZeQueryRequestV2"]
     },
     "S21": {
       "feature": "Typed errors with stable codes and ABI version",
       "build": "core",
-      "node": ["ZeppelinError.code", "ZeppelinError.errorCode", "ABI_VERSION"],
-      "python": ["ZeppelinError.code", "ZeppelinError.code_name", "ABI_VERSION"],
-      "swift": ["ZeppelinError.rawValue", "ZeppelinStore.lastErrorMessage()", "ZeppelinStore.abiVersion"],
+      "node": ["VolantisError.code", "VolantisError.errorCode", "ABI_VERSION"],
+      "python": ["VolantisError.code", "VolantisError.code_name", "ABI_VERSION"],
+      "swift": ["VolantisError.rawValue", "VolantisStore.lastErrorMessage()", "VolantisStore.abiVersion"],
       "rust": ["StoreError"],
       "c": ["ze_error_code_name", "ze_last_error_message", "ze_abi_version"]
     },
@@ -195,7 +195,7 @@
       "build": "core",
       "node": ["openNamespace", "NamespaceSpec.tokenizerProfile"],
       "python": ["open_namespace", "NamespaceSpec.tokenizer_profile"],
-      "swift": ["ZeppelinStore.openNamespace(root:name:spec:options:)", "NamespaceSpec.tokenizerProfile"],
+      "swift": ["VolantisStore.openNamespace(root:name:spec:options:)", "NamespaceSpec.tokenizerProfile"],
       "rust": ["Store::open", "OpenOptions::with_tokenizer"],
       "c": ["ze_namespace_open", "ze_namespace_open_with_tokenizer"]
     },
@@ -204,7 +204,7 @@
       "build": "core",
       "node": ["listNamespaces"],
       "python": ["list_namespaces"],
-      "swift": ["ZeppelinStore.listNamespaces(root:)"],
+      "swift": ["VolantisStore.listNamespaces(root:)"],
       "rust": ["list_namespaces"],
       "c": ["ze_namespace_list"]
     },
@@ -213,7 +213,7 @@
       "build": "core",
       "node": ["namespaceBatch", "namespaceBatchLive"],
       "python": ["namespace_batch", "namespace_batch_live"],
-      "swift": ["ZeppelinStore.namespaceBatch(root:participants:)", "ZeppelinStore.namespaceBatchLive(root:participants:)"],
+      "swift": ["VolantisStore.namespaceBatch(root:participants:)", "VolantisStore.namespaceBatchLive(root:participants:)"],
       "rust": ["namespace_batch", "namespace_batch_live"],
       "c": ["ze_namespace_batch", "ze_namespace_batch_live"]
     },
@@ -222,7 +222,7 @@
       "build": "core",
       "node": ["declareCascade", "deleteCascade"],
       "python": ["declare_cascade", "delete_cascade"],
-      "swift": ["ZeppelinStore.declareCascade(root:participants:declaration:)", "ZeppelinStore.deleteCascade(root:participants:)"],
+      "swift": ["VolantisStore.declareCascade(root:participants:declaration:)", "VolantisStore.deleteCascade(root:participants:)"],
       "rust": ["namespace_declare_cascade", "namespace_delete_cascade"],
       "c": ["ze_namespace_declare_cascade", "ze_namespace_delete_cascade"]
     },
@@ -231,7 +231,7 @@
       "build": "text",
       "node": ["openNamespace", "NamespaceSpec.embeddedModel", "Store.upsert", "UpsertDocument.text", "Store.queryEmbedded"],
       "python": ["open_namespace", "NamespaceSpec.embedded_model", "Store.upsert", "StoredDocument.text", "Store.query_embedded"],
-      "swift": ["ZeppelinStore.openNamespace(root:name:spec:options:)", "NamespaceSpec.embeddedModel", "ZeppelinStore.upsert(_:)", "ZeppelinStore.queryEmbedded(_:leg:k:eligibleIds:filter:timestampRange:cancellationToken:deadlineNanoseconds:)"],
+      "swift": ["VolantisStore.openNamespace(root:name:spec:options:)", "NamespaceSpec.embeddedModel", "VolantisStore.upsert(_:)", "VolantisStore.queryEmbedded(_:leg:k:eligibleIds:filter:timestampRange:cancellationToken:deadlineNanoseconds:)"],
       "rust": ["Store::open_embedded", "Store::query_embedded"],
       "c": ["ze_namespace_open", "ze_upsert", "ze_query_embedded"]
     },
@@ -240,7 +240,7 @@
       "build": "text",
       "node": ["Store.nearestChunks", "Store.nearestChunksBatch"],
       "python": ["Store.nearest_chunks", "Store.nearest_chunks_batch"],
-      "swift": ["ZeppelinStore.nearestChunks(_:options:)", "ZeppelinStore.nearestChunksBatch(_:options:)"],
+      "swift": ["VolantisStore.nearestChunks(_:options:)", "VolantisStore.nearestChunksBatch(_:options:)"],
       "rust": ["Store::nearest_chunks", "Store::nearest_chunks_batch"],
       "c": ["ze_nearest_chunks"]
     },
@@ -312,7 +312,7 @@
       "build": "graph",
       "node": ["Store.enableGraph", "Store.constructor", "StoreRelationshipOptions.relationshipTypes"],
       "python": ["Store.enable_graph"],
-      "swift": ["ZeppelinStore.enableGraph()", "ZeppelinStore.open(at:relationshipTypes:maxResidentBytes:readerDrainTimeoutMilliseconds:)"],
+      "swift": ["VolantisStore.enableGraph()", "VolantisStore.open(at:relationshipTypes:maxResidentBytes:readerDrainTimeoutMilliseconds:)"],
       "rust": ["Store::enable_graph"],
       "c": ["ze_store_enable_graph", "ze_store_create_with_relationship_types"]
     },
@@ -321,7 +321,7 @@
       "build": "graph",
       "node": ["Store.graphApply", "GraphMutation"],
       "python": ["Store.graph_apply"],
-      "swift": ["ZeppelinStore.graphApply(_:interruption:)", "GraphBatch"],
+      "swift": ["VolantisStore.graphApply(_:interruption:)", "GraphBatch"],
       "rust": ["Store::graph_apply"],
       "c": ["ze_store_graph_apply", "ze_store_graph_apply_v2"]
     },
@@ -330,7 +330,7 @@
       "build": "graph",
       "node": ["Store.cypher", "GraphQueryOptions.maxRows"],
       "python": ["Store.cypher"],
-      "swift": ["ZeppelinStore.cypher(_:parameters:controls:options:)", "GraphControls.rowLimit"],
+      "swift": ["VolantisStore.cypher(_:parameters:controls:options:)", "GraphControls.rowLimit"],
       "rust": ["execute_graph_statement"],
       "c": ["ze_store_cypher", "ze_store_cypher_with_row_limit"]
     },
@@ -339,7 +339,7 @@
       "build": "graph",
       "node": ["Store.graphQuery", "GraphPlan"],
       "python": ["Store.graph_query"],
-      "swift": ["ZeppelinStore.graphQuery(_:parameters:options:interruption:)", "GraphPlan"],
+      "swift": ["VolantisStore.graphQuery(_:parameters:options:interruption:)", "GraphPlan"],
       "rust": ["Store::graph_query"],
       "c": ["ze_store_graph_query"]
     },
@@ -348,7 +348,7 @@
       "build": "graph",
       "node": ["Store.graphGetNodes", "Store.graphGetRelationships"],
       "python": ["Store.get_nodes", "Store.get_relationships"],
-      "swift": ["ZeppelinStore.getNodes(_:fields:limits:interruption:)", "ZeppelinStore.getRelationships(_:limits:interruption:)"],
+      "swift": ["VolantisStore.getNodes(_:fields:limits:interruption:)", "VolantisStore.getRelationships(_:limits:interruption:)"],
       "rust": ["Store::get_nodes", "Store::get_relationships"],
       "c": ["ze_store_get_nodes", "ze_store_get_relationships"]
     },
@@ -357,7 +357,7 @@
       "build": "graph",
       "node": ["Store.graphResources", "Store.graphMaintain", "Store.graphSetMaintenancePolicy"],
       "python": ["Store.graph_resources"],
-      "swift": ["ZeppelinStore.graphResources()", "ZeppelinStore.graphMaintain(interruption:)", "ZeppelinStore.graphSetMaintenancePolicy(_:)"],
+      "swift": ["VolantisStore.graphResources()", "VolantisStore.graphMaintain(interruption:)", "VolantisStore.graphSetMaintenancePolicy(_:)"],
       "rust": ["Store::graph_resources", "Store::graph_maintain_cycle", "Store::set_graph_maintenance_policy"],
       "c": ["ze_store_graph_resources", "ze_store_graph_maintain", "ze_store_set_graph_maintenance_policy"]
     },
@@ -366,7 +366,7 @@
       "build": "graph",
       "node": ["GraphNodeWrite.text", "Store.graphApply", "Store.query"],
       "python": [],
-      "swift": ["GraphNodeImage.text", "ZeppelinStore.graphApply(_:interruption:)", "ZeppelinStore.query(vector:text:eligibleIds:filter:timestampRange:options:)"],
+      "swift": ["GraphNodeImage.text", "VolantisStore.graphApply(_:interruption:)", "VolantisStore.query(vector:text:eligibleIds:filter:timestampRange:options:)"],
       "rust": ["Store::graph_apply", "Store::search_lexical"],
       "c": ["ze_store_graph_apply_v2", "ze_query"]
     },
@@ -375,7 +375,7 @@
       "build": "survey",
       "node": ["Store.openAsync", "Store.queryAsync"],
       "python": [],
-      "swift": ["ZeppelinStore"],
+      "swift": ["VolantisStore"],
       "rust": [],
       "c": []
     }

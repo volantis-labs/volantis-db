@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="assets/zeppelin-embed-banner.png" alt="Zeppelin Embed: embedded vector, lexical, and hybrid search for macOS" width="800px">
+<img src="assets/volantis-db-banner.png" alt="Volantis DB: embedded vector, lexical, and hybrid search for macOS" width="800px">
 
-[![CI](https://github.com/zepdb/zeppelin-embed/actions/workflows/ci.yml/badge.svg)](https://github.com/zepdb/zeppelin-embed/actions/workflows/ci.yml)
-[![Python](https://github.com/zepdb/zeppelin-embed/actions/workflows/python.yml/badge.svg)](https://github.com/zepdb/zeppelin-embed/actions/workflows/python.yml)
-[![Crates.io](https://img.shields.io/crates/v/zeppelin-embed.svg)](https://crates.io/crates/zeppelin-embed)
-[![PyPI](https://img.shields.io/pypi/v/zeppelin-embed.svg)](https://pypi.org/project/zeppelin-embed/)
-[![npm](https://img.shields.io/npm/v/@zepdb/zeppelin-embed.svg)](https://www.npmjs.com/package/@zepdb/zeppelin-embed)
+[![CI](https://github.com/volantis-labs/volantis-db/actions/workflows/ci.yml/badge.svg)](https://github.com/volantis-labs/volantis-db/actions/workflows/ci.yml)
+[![Python](https://github.com/volantis-labs/volantis-db/actions/workflows/python.yml/badge.svg)](https://github.com/volantis-labs/volantis-db/actions/workflows/python.yml)
+[![Crates.io](https://img.shields.io/crates/v/volantis-db.svg)](https://crates.io/crates/volantis-db)
+[![PyPI](https://img.shields.io/pypi/v/volantis-db.svg)](https://pypi.org/project/volantis-db/)
+[![npm](https://img.shields.io/npm/v/volantis-db.svg)](https://www.npmjs.com/package/volantis-db)
 [![Rust 1.93+](https://img.shields.io/badge/rust-1.93%2B-93450a.svg)](https://www.rust-lang.org)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
@@ -14,9 +14,9 @@
 
 </div>
 
-Zeppelin Embed is the fastest and most accurate in-process search engine built
-for macOS and Apple silicon. Since v0.4.0 the same engine, C ABI, and Node
-package also run natively on Windows x64.
+Volantis DB is the fastest and most accurate in-process search engine built
+for macOS and Apple silicon. The same engine, C ABI, and Node package also
+run natively on Windows x64.
 
 ## Search performance
 
@@ -39,7 +39,7 @@ information retrieval across different domains.
 
 Compared with: [Chroma](https://github.com/chroma-core/chroma), [hnswlib](https://github.com/nmslib/hnswlib), [LanceDB](https://github.com/lancedb/lancedb), [sqlite-vec](https://github.com/asg017/sqlite-vec), and [USearch](https://github.com/unum-cloud/usearch).
 
-## Why Zeppelin Embed
+## Why Volantis DB
 
 - **Vector, lexical, and hybrid retrieval.** Use one store and one document ID
   space for vector similarity, BM25, or fused results.
@@ -75,7 +75,7 @@ ran.
 Install the Python package and run the five-vector example:
 
 ```bash
-python -m pip install zeppelin-embed
+python -m pip install volantis-db
 python bindings/python/examples/five_vectors_search.py
 ```
 
@@ -88,18 +88,18 @@ state and continue ingesting or searching.
 For Rust, add the native core to an application:
 
 ```bash
-cargo add zeppelin-embed
+cargo add volantis-db
 ```
 
 ## Language APIs
 
 | Language | Distribution | API reference | Example |
 |---|---|---|---|
-| Python | PyPI wheel with the native library included | [Package exports](bindings/python/zeppelin_embed/__init__.pyi), [Store methods](bindings/python/zeppelin_embed/_store.py), [guide](bindings/python/README.md) | [`five_vectors_search.py`](bindings/python/examples/five_vectors_search.py) |
-| Rust | [`zeppelin-embed`](crates/zeppelin-embed) on crates.io | [Public exports](crates/zeppelin-embed/src/lib.rs) | [`five_vectors_search.rs`](crates/zeppelin-embed/examples/five_vectors_search.rs) |
-| Swift | Swift Package Manager with a downloadable XCFramework | [Public types and methods](bindings/swift/Sources/ZeppelinEmbed), [guide](bindings/swift/README.md) | [`five_vectors_search.swift`](bindings/swift/Examples/FiveVectorsSearch/Sources/FiveVectorsSearch/five_vectors_search.swift) |
-| C/C++ | GitHub release archive with the header and `.a`/`.dylib` libraries | [C ABI](crates/zeppelin-embed-ffi/include/zeppelin_embed.h), [graph C ABI](crates/zeppelin-embed-ffi/include/zeppelin_graph_contracts.h) | [`five_vectors_search.c`](crates/zeppelin-embed-ffi/examples/five_vectors_search.c) |
-| Node.js / TypeScript | [`@zepdb/zeppelin-embed`](https://www.npmjs.com/package/@zepdb/zeppelin-embed) with the native addon included | [TypeScript declarations](bindings/node/index.d.ts), [guide](bindings/node/README.md) | [`javascript.cjs`](bindings/node/examples/javascript.cjs) / [`typescript.ts`](bindings/node/examples/typescript.ts) |
+| Python | PyPI wheel with the native library included | [Package exports](bindings/python/volantis_db/__init__.pyi), [Store methods](bindings/python/volantis_db/_store.py), [guide](bindings/python/README.md) | [`five_vectors_search.py`](bindings/python/examples/five_vectors_search.py) |
+| Rust | [`volantis-db`](crates/volantis-db) on crates.io | [Public exports](crates/volantis-db/src/lib.rs) | [`five_vectors_search.rs`](crates/volantis-db/examples/five_vectors_search.rs) |
+| Swift | Swift Package Manager with a downloadable XCFramework | [Public types and methods](bindings/swift/Sources/VolantisDB), [guide](bindings/swift/README.md) | [`five_vectors_search.swift`](bindings/swift/Examples/FiveVectorsSearch/Sources/FiveVectorsSearch/five_vectors_search.swift) |
+| C/C++ | GitHub release archive with the header and `.a`/`.dylib` libraries | [C ABI](crates/volantis-db-ffi/include/volantis_db.h), [graph C ABI](crates/volantis-db-ffi/include/volantis_db_graph_contracts.h) | [`five_vectors_search.c`](crates/volantis-db-ffi/examples/five_vectors_search.c) |
+| Node.js / TypeScript | [`volantis-db`](https://www.npmjs.com/package/volantis-db) with the native addon included | [TypeScript declarations](bindings/node/index.d.ts), [guide](bindings/node/README.md) | [`javascript.cjs`](bindings/node/examples/javascript.cjs) / [`typescript.ts`](bindings/node/examples/typescript.ts) |
 
 The C ABI uses size-versioned requests and responses, typed error codes, and
 matching free functions for every callee-owned result. Python wheels include
@@ -117,8 +117,8 @@ retrieves it with dense (vector), lexical (BM25), or hybrid search. It is
 available only on macOS Apple Silicon. Python wheels and the Node arm64 addon
 require macOS 13.0 or newer; the Swift package and full C SDK require macOS 14.
 
-The default is [volantis-labs/volantis-db-clean71-arctic-m-v2 (model card)](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/d64b817c4021a3f1b9bded3152d9afdf9ac813e7/README.md),
-pinned to revision `d64b817c4021a3f1b9bded3152d9afdf9ac813e7`. Its clean71
+The default is [volantis-labs/volantis-db-clean71-arctic-m-v2 (model card)](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/5833eb696dbc41def2421a7fb97d58f92db94fab/README.md),
+pinned to revision `5833eb696dbc41def2421a7fb97d58f92db94fab`. Its clean71
 query tower has 71M parameters (71,201,280, from the model pack's `PAIR.json`),
 accepts 96 model tokens, and uses INT8 weight-only CoreML on the Apple Neural
 Engine, with FP16 MLX query weights available when CoreML is
@@ -133,7 +133,7 @@ Face, verifies their sizes and SHA-256 hashes, and atomically installs them in
 the cache. Later opens verify the manifest and compare file metadata with the
 verification marker, rehashing payloads when that marker no longer matches.
 The cache root defaults to
-`~/Library/Caches/zeppelin-embed/models`, with repository/revision directories
+`~/Library/Caches/volantis-db/models`, with repository/revision directories
 under it. An explicit cache directory overrides `ZE_MODEL_CACHE`, which
 overrides that default. Set the binding's offline option or `ZE_MODEL_OFFLINE=1`
 to forbid network access; a cache miss is an error. `ZE_MODEL_ENDPOINT` overrides
@@ -186,7 +186,7 @@ payload (ZE-517). This measures resolution, excluding model/runtime loading.
 Sources: ZE-499 (precision and payload size), ZE-503 (query latency and cold
 start), ZE-517 (cached resolution), and ZE-528 (ingest memory).
 
-See complete default-model examples for [Rust](crates/zeppelin-embed-text/README.md),
+See complete default-model examples for [Rust](crates/volantis-db-text/README.md),
 [Python](bindings/python/README.md#text-api-macos-arm64),
 [Node](bindings/node/README.md#textstore-macos-arm64), and
 [Swift](bindings/swift/README.md#textstore).
@@ -200,7 +200,7 @@ linking; see the [C SDK installation guide](scripts/macos-sdk/README.md).
 This example creates a store, ingests, queries each leg, deletes, and closes:
 
 ```c
-#include "zeppelin_embed.h"
+#include "volantis_db.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -234,7 +234,7 @@ int main(void) {
     ze_handle store = 0;
     check(ze_text_open_model(&open, &store));
 
-    const char *text = "The bronze zeppelin flies above the city.";
+    const char *text = "The bronze airship flies above the city.";
     ZeDocId id = { .high = 0, .low = 1 };
     ZeTextDocument document = {
         .abi_size = sizeof(document), .doc_id = id, .revision = 1,
@@ -247,7 +247,7 @@ int main(void) {
     ZeMutationReport mutation = { .abi_size = sizeof(mutation) };
     check(ze_text_ingest(store, &ingest, &mutation));
 
-    const char *query_text = "bronze zeppelin";
+    const char *query_text = "bronze airship";
     for (int32_t legs = 0; legs <= 2; ++legs) { /* dense, lexical, hybrid */
         ZeTextQueryRequest query = {
             .abi_size = sizeof(query), .text = (const uint8_t *)query_text,
@@ -279,10 +279,10 @@ Node ships graph support in the `darwin-arm64`, `darwin-x64` and `win32-x64`
 prebuilds. On macOS, graph operations require macOS 14 or newer. Check
 `Store.graphSupported()` for availability and call `enableGraph()` on the
 `Store` before using its graph. When graph is unavailable, graph methods throw
-`ZeppelinError` with code `ZE_ERR_GRAPH_UNSUPPORTED_BUILD`.
+`VolantisError` with code `ZE_ERR_GRAPH_UNSUPPORTED_BUILD`.
 
 ```js
-const { Store } = require('@zepdb/zeppelin-embed');
+const { Store } = require('volantis-db');
 const store = new Store('/path/to/store', { maxResidentBytes: 268435456n });
 try {
   store.enableGraph();
@@ -302,17 +302,17 @@ allocation counters. Cypher results default to 1,024 rows. Set `maxRows` up to
 per statement under default budgets. See the
 [Node graph API](bindings/node/README.md#graph-documents-and-cypher).
 
-The graph C SDK and `ZeppelinEmbedGraph` XCFramework ship as GitHub release
+The graph C SDK and `VolantisDBGraph` XCFramework ship as GitHub release
 assets for macOS 14+ on Apple silicon. Set `ZE_ENABLE_GRAPH=1` when resolving
 and building the Swift package to select the graph XCFramework and expose
-graph methods on `ZeppelinStore`. See the [Swift guide](bindings/swift/README.md).
+graph methods on `VolantisStore`. See the [Swift guide](bindings/swift/README.md).
 
 The Python wheel ships without graph support. Its `Store` graph methods raise
-`zeppelin_embed.UnsupportedBuild`. See the
+`volantis_db.UnsupportedBuild`. See the
 [Python graph support statement](bindings/python/README.md#graph-support).
 
 The model-backed text C ABI ships in the macOS 14+ arm64 full artifact
-(`ZeppelinEmbedGraph` / graph-cypher SDK); the universal, Intel and non-macOS
+(`VolantisDBGraph` / graph-cypher SDK); the universal, Intel and non-macOS
 artifacts are text-free. The full XCFramework embeds MLX shaders in its dynamic
 framework resources; C SDK consumers keep `mlx.metallib` beside the dylib or,
 for static linking, copy it beside the executable.
@@ -321,9 +321,9 @@ for static linking, copy it beside the executable.
 
 | Package | macOS 11+, Apple silicon | Windows 10/11 x64 |
 |---|---|---|
-| Rust crate `zeppelin-embed` | Yes | Yes |
-| Node.js `@zepdb/zeppelin-embed` | Yes | Yes, Node-API 8 or later and Electron 44 |
-| C ABI | Yes, prebuilt SDK archive on the release | Yes, built from source with `cargo build -p zeppelin-embed-ffi` |
+| Rust crate `volantis-db` | Yes | Yes |
+| Node.js `volantis-db` | Yes | Yes, Node-API 8 or later and Electron 44 |
+| C ABI | Yes, prebuilt SDK archive on the release | Yes, built from source with `cargo build -p volantis-db-ffi` |
 | Python wheel | Yes | No |
 | Swift package | Yes | Not applicable |
 
@@ -340,12 +340,12 @@ From a source checkout, run each example with:
 
 ```bash
 # Python
-cargo build --release -p zeppelin-embed-ffi
-PYTHONPATH=bindings/python ZEPPELIN_EMBED_LIBRARY=target/release/libzeppelin_embed_ffi.dylib \
+cargo build --release -p volantis-db-ffi
+PYTHONPATH=bindings/python VOLANTIS_DB_LIBRARY=target/release/libvolantis_db_ffi.dylib \
   python bindings/python/examples/five_vectors_search.py
 
 # Rust
-cargo run --release -p zeppelin-embed --example five_vectors_search
+cargo run --release -p volantis-db --example five_vectors_search
 
 # Node.js
 cd bindings/node
@@ -355,31 +355,31 @@ node examples/javascript.cjs
 cd ../..
 
 # Swift
-cargo build --release -p zeppelin-embed-ffi
+cargo build --release -p volantis-db-ffi
 ZE_USE_LOCAL_FFI=1 swift run --package-path bindings/swift/Examples/FiveVectorsSearch
 
 # C
-cargo build --release -p zeppelin-embed-ffi
-cc -std=c11 crates/zeppelin-embed-ffi/examples/five_vectors_search.c \
-  -I crates/zeppelin-embed-ffi/include -L target/release -lzeppelin_embed_ffi \
-  -o /tmp/zeppelin-c-example
-DYLD_LIBRARY_PATH=target/release /tmp/zeppelin-c-example /tmp/zeppelin-c-index
+cargo build --release -p volantis-db-ffi
+cc -std=c11 crates/volantis-db-ffi/examples/five_vectors_search.c \
+  -I crates/volantis-db-ffi/include -L target/release -lvolantis_db_ffi \
+  -o /tmp/volantis-c-example
+DYLD_LIBRARY_PATH=target/release /tmp/volantis-c-example /tmp/volantis-c-index
 ```
 
 ## Building from source
 
-Zeppelin Embed uses stable Rust 1.93 or newer.
+Volantis DB uses stable Rust 1.93 or newer.
 
 ```bash
-git clone https://github.com/zepdb/zeppelin-embed.git
-cd zeppelin-embed
+git clone https://github.com/volantis-labs/volantis-db.git
+cd volantis-db
 cargo test --workspace
 ```
 
 Build the core C ABI library:
 
 ```bash
-cargo build --release -p zeppelin-embed-ffi
+cargo build --release -p volantis-db-ffi
 ```
 
 Build a Python wheel:
@@ -390,7 +390,7 @@ python -m build --wheel bindings/python
 
 ## License
 
-Zeppelin Embed is free software licensed under the
+Volantis DB is free software licensed under the
 [GNU General Public License v3.0](LICENSE).
 
 ### Embedded text in a Store namespace

@@ -157,34 +157,34 @@ case "${1:-}" in
     *) echo "error: unknown size gate option: $1" >&2; exit 2 ;;
 esac
 
-cargo build --release -p zeppelin-embed -p zeppelin-embed-ffi
+cargo build --release -p volantis-db -p volantis-db-ffi
 
-measure_artifact "core" "$TARGET_ROOT/release/libzeppelin_embed.a"
-measure_artifact "ffi" "$TARGET_ROOT/release/libzeppelin_embed_ffi.a"
+measure_artifact "core" "$TARGET_ROOT/release/libvolantis_db.a"
+measure_artifact "ffi" "$TARGET_ROOT/release/libvolantis_db_ffi.a"
 
 # Graph uses a separate output directory, preserving the graph-free archive.
 if [[ "$(uname -s)" == "Darwin" ]]; then
-    cargo build --locked --release -p zeppelin-embed -p zeppelin-embed-ffi --features graph-cypher \
+    cargo build --locked --release -p volantis-db -p volantis-db-ffi --features graph-cypher \
         --target-dir "$TARGET_ROOT/size-budget-graph"
-    measure_artifact "graph core" "$TARGET_ROOT/size-budget-graph/release/libzeppelin_embed.a" report
+    measure_artifact "graph core" "$TARGET_ROOT/size-budget-graph/release/libvolantis_db.a" report
     measure_artifact "graph ffi" \
-        "$TARGET_ROOT/size-budget-graph/release/libzeppelin_embed_ffi.a" gate "$GRAPH_BUDGET_KB"
+        "$TARGET_ROOT/size-budget-graph/release/libvolantis_db_ffi.a" gate "$GRAPH_BUDGET_KB"
 fi
 
 # The universal/Intel and non-macOS paths remain text-free. Preserve the
 # separate graph-free core/FFI and graph-only measurements above.
 if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]; then
-    cargo build --locked --release -p zeppelin-embed-ffi --features graph-cypher,text \
+    cargo build --locked --release -p volantis-db-ffi --features graph-cypher,text \
         --target-dir "$TARGET_ROOT/size-budget-text"
     measure_artifact "full text ffi" \
-        "$TARGET_ROOT/size-budget-text/release/libzeppelin_embed_ffi.a" gate "$TEXT_BUDGET_KB"
+        "$TARGET_ROOT/size-budget-text/release/libvolantis_db_ffi.a" gate "$TEXT_BUDGET_KB"
 fi
 
 CONSUMER_MANIFEST="$PROJECT_ROOT/tools/size-consumer/Cargo.toml"
 CONSUMER_TARGET="$MEASURE_DIR/consumer-target"
 cargo build --offline --locked --release --manifest-path "$CONSUMER_MANIFEST" --target-dir "$CONSUMER_TARGET"
-CONSUMER_BINARY="$CONSUMER_TARGET/release/zeppelin-embed-size-consumer"
-CONSUMER_STRIPPED="$MEASURE_DIR/zeppelin-embed-size-consumer-stripped"
+CONSUMER_BINARY="$CONSUMER_TARGET/release/volantis-db-size-consumer"
+CONSUMER_STRIPPED="$MEASURE_DIR/volantis-db-size-consumer-stripped"
 if [[ ! -f "$CONSUMER_BINARY" ]]; then
     echo "error: expected minimal consumer binary not found at $CONSUMER_BINARY" >&2
     exit 2
@@ -211,4 +211,4 @@ case "$(uname -s)" in
 esac
 CONSUMER_SIZE_KB="$(( (CONSUMER_SIZE_BYTES + 1023) / 1024 ))"
 CONSUMER_FILE_KB="$(du -k "$CONSUMER_STRIPPED" | awk '{print $1}')"
-echo "minimal zeppelin-embed consumer stripped linked size: $CONSUMER_SIZE_KB KB (file: $CONSUMER_FILE_KB KB; reported only; no budget introduced)"
+echo "minimal volantis-db consumer stripped linked size: $CONSUMER_SIZE_KB KB (file: $CONSUMER_FILE_KB KB; reported only; no budget introduced)"

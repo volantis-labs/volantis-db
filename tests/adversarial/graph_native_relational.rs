@@ -2,7 +2,7 @@
 
 use super::coverage::CoverageRegistry;
 use std::collections::{BTreeMap, BTreeSet};
-use zeppelin_embed::property_graph::query::native_relational_test_support::{
+use volantis_db::property_graph::query::native_relational_test_support::{
     NativeRelationalProbeReport, run_actual_probe,
 };
 

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="640" viewBox="0 0 2000 500">
+  <rect width="2000" height="500" rx="36" fill="#F9A711"/>
+  <g fill="#B97F12" opacity="0.55">
+    <circle cx="1310" cy="80" r="5"/><circle cx="1422" cy="52" r="5"/><circle cx="1556" cy="108" r="5"/><circle cx="1660" cy="44" r="5"/>
+    <circle cx="1800" cy="68" r="5"/><circle cx="1925" cy="90" r="5"/><circle cx="1347" cy="200" r="5"/><circle cx="1484" cy="234" r="5"/>
+    <circle cx="1906" cy="206" r="5"/><circle cx="1344" cy="281" r="5"/><circle cx="1530" cy="305" r="5"/><circle cx="1890" cy="296" r="5"/>
+    <circle cx="1297" cy="334" r="5"/><circle cx="1438" cy="368" r="5"/><circle cx="1718" cy="384" r="5"/><circle cx="1953" cy="346" r="5"/>
+    <circle cx="1572" cy="409" r="5"/><circle cx="1840" cy="440" r="5"/><circle cx="1394" cy="468" r="5"/><circle cx="1668" cy="468" r="5"/><circle cx="1938" cy="468" r="5"/>
+  </g>
+  <g stroke="#7A5A12" stroke-width="2.4">
+    <line x1="1622" y1="193" x2="1718" y2="260"/><line x1="1718" y1="260" x2="1800" y2="174"/>
+    <line x1="1718" y1="260" x2="1806" y2="318"/><line x1="1718" y1="260" x2="1650" y2="346"/>
+  </g>
+  <circle cx="1718" cy="260" r="47" fill="none" stroke="#7A5A12" stroke-width="2.4" stroke-dasharray="7 6"/>
+  <g fill="#2B2B2B"><circle cx="1622" cy="193" r="7"/><circle cx="1800" cy="174" r="7"/><circle cx="1806" cy="318" r="7"/><circle cx="1650" cy="346" r="7"/></g>
+  <circle cx="1718" cy="260" r="12" fill="#8B0E0E"/>
+  <rect x="138" y="111" width="154" height="143" rx="30" fill="#0E1A36"/>
+  <path d="M170 140 L198 140 L215 198 L224.4 166 L250.3 166 L228 226 L202 226 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M232 140 L260 140 L252.56 160 L226.14 160 Z" fill="#F07B1D" stroke="#F07B1D" stroke-width="3" stroke-linejoin="round"/>
+  <text x="332" y="218" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-weight="700" font-size="96" letter-spacing="-2" fill="#0E1A36">Volantis DB</text>
+  <text x="138" y="327" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="38" fill="#3A3226">The fastest and most accurate</text>
+  <text x="138" y="377" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="38" fill="#3A3226">embedded vector, lexical, and hybrid search for macOS.</text>
+</svg>

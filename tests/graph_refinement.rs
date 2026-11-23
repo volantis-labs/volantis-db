@@ -3,36 +3,36 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use proptest::prelude::*;
-use zeppelin_embed::epoch::{
+use volantis_db::epoch::{
     ComputeUnits, EmbeddingEpoch, EmbeddingRuntime, EmbeddingTower, Normalization, StoreEpoch,
 };
-use zeppelin_embed::fts::index::DEFAULT_FIELD;
-use zeppelin_embed::fts::search::TermQuery;
-use zeppelin_embed::fts::tokenizer::{Analyzer, TokenizerConfig};
-use zeppelin_embed::graph::GraphParams;
-use zeppelin_embed::graph::block::{
+use volantis_db::fts::index::DEFAULT_FIELD;
+use volantis_db::fts::search::TermQuery;
+use volantis_db::fts::tokenizer::{Analyzer, TokenizerConfig};
+use volantis_db::graph::GraphParams;
+use volantis_db::graph::block::{
     GraphNodeBlockBuild, GraphNodeBlockInput, GraphNodeLayout, decode_node_blocks,
     encode_node_blocks, encode_node_blocks_with_refinement_passes,
 };
-use zeppelin_embed::graph::build::GraphBuildError;
-use zeppelin_embed::graph::refine::{
+use volantis_db::graph::build::GraphBuildError;
+use volantis_db::graph::refine::{
     CheckpointedRefinement, RefinementError, RefinementPass, refine_graph,
     refine_graph_checkpointed, validate_refinement_checkpoint,
 };
-use zeppelin_embed::graph::search::{GraphSearchRequest, GraphSearchScratch, GraphSearcher};
-use zeppelin_embed::ingest::{DocId, DocumentVersion, IngestBatch, IngestDocument, Revision};
-use zeppelin_embed::lifecycle::durability::{CommitTier, DurabilityMode, DurabilityPolicy};
-use zeppelin_embed::lifecycle::{
+use volantis_db::graph::search::{GraphSearchRequest, GraphSearchScratch, GraphSearcher};
+use volantis_db::ingest::{DocId, DocumentVersion, IngestBatch, IngestDocument, Revision};
+use volantis_db::lifecycle::durability::{CommitTier, DurabilityMode, DurabilityPolicy};
+use volantis_db::lifecycle::{
     CancelToken, OpenOptions, QueryControl, SearchOptions, SearchTier, Store,
 };
-use zeppelin_embed::meta::{AliveSet, ColumnStoreBuilder, Predicate, Schema, TIMESTAMP_COLUMN};
-use zeppelin_embed::quant::{Bit4Factors, quantize_bit4};
-use zeppelin_embed::scan::ScanOptions;
-use zeppelin_embed::segment::SegmentId;
-use zeppelin_embed::segment::reader::SegmentReader;
-use zeppelin_embed::segment::writer::{SegmentBuild, SegmentFactors, write_segment_with_graph};
-use zeppelin_embed::tier::{MaintenanceBudget, TierThresholds};
-use zeppelin_embed::vfs::StdVfs;
+use volantis_db::meta::{AliveSet, ColumnStoreBuilder, Predicate, Schema, TIMESTAMP_COLUMN};
+use volantis_db::quant::{Bit4Factors, quantize_bit4};
+use volantis_db::scan::ScanOptions;
+use volantis_db::segment::SegmentId;
+use volantis_db::segment::reader::SegmentReader;
+use volantis_db::segment::writer::{SegmentBuild, SegmentFactors, write_segment_with_graph};
+use volantis_db::tier::{MaintenanceBudget, TierThresholds};
+use volantis_db::vfs::StdVfs;
 
 fn one_node_graph() -> (GraphNodeLayout, [u8; 64], GraphNodeBlockInput<'static>) {
     let layout = GraphNodeLayout::new(128, 128, 0).expect("one-node layout");
@@ -368,7 +368,7 @@ fn every_refinement_pass_is_deterministic_bounded_and_row_preserving() {
     }
 }
 
-fn reachable_rows(graph: zeppelin_embed::graph::block::GraphNodeBlocks<'_>) -> BTreeSet<u32> {
+fn reachable_rows(graph: volantis_db::graph::block::GraphNodeBlocks<'_>) -> BTreeSet<u32> {
     let entry = (0..graph.node_count())
         .find(|row| graph.block(*row).expect("entry row").flags() & 1 != 0)
         .expect("graph entry");
@@ -923,7 +923,7 @@ fn lexical_scores(store: &Store) -> Vec<(u128, u64)> {
 fn filtered_docs(store: &Store) -> Vec<u128> {
     store
         .search_filtered(
-            zeppelin_embed::ingest::SearchRequest::new(&[0.0; DIMS]),
+            volantis_db::ingest::SearchRequest::new(&[0.0; DIMS]),
             &Predicate::Exists(TIMESTAMP_COLUMN),
             24,
             SearchOptions::new(ScanOptions { thread_budget: 1 }).with_tier(SearchTier::Exact),

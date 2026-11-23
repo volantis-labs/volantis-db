@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 
 def test_query_filters_before_ranking(tmp_path: Path) -> None:

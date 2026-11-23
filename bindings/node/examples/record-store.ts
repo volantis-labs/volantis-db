@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import zeppelinEmbed from '../index.js';
+import volantisDB from '../index.js';
 import type {
   Filter,
   NamespaceSpec,
@@ -9,7 +9,7 @@ import type {
   UpsertDocument,
 } from '../index.js';
 
-const { openNamespace } = zeppelinEmbed;
+const { openNamespace } = volantisDB;
 
 const spec: NamespaceSpec = {
   attributes: [

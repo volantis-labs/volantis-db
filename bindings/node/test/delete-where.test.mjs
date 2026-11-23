@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { ZeppelinError, openNamespace } = require('..');
+const { VolantisError, openNamespace } = require('..');
 
 const MARKER = 'ZE217NODEPURGEDMARKER';
 const SURVIVOR = 'ZE217NODESURVIVORMARKER';
@@ -59,8 +59,8 @@ function markerFiles(root) {
   ];
 }
 
-function isZeppelin(code) {
-  return (error) => error instanceof ZeppelinError && error.code === code;
+function isVolantis(code) {
+  return (error) => error instanceof VolantisError && error.code === code;
 }
 
 test('deleteWhere removes every match at once and keeps the rest', () => {
@@ -145,7 +145,7 @@ test('deleteWhere rejects a missing or invalid filter and deletes nothing', () =
     });
     assert.throws(
       () => store.deleteWhere({ ...noteIs(7n), attributeId: 9 }),
-      isZeppelin('ZE_ERR_INVALID_ARGUMENT'),
+      isVolantis('ZE_ERR_INVALID_ARGUMENT'),
     );
     assert.throws(
       () =>
@@ -154,7 +154,7 @@ test('deleteWhere rejects a missing or invalid filter and deletes nothing', () =
           attributeId: 1,
           values: [{ id: 1, type: 'string', value: '7' }],
         }),
-      isZeppelin('ZE_ERR_INVALID_ARGUMENT'),
+      isVolantis('ZE_ERR_INVALID_ARGUMENT'),
     );
     assert.equal(store.count().count, 6n);
   } finally {
@@ -171,7 +171,7 @@ test('deleteWhere on a read-only store throws ZE_ERR_ACCESS_MODE', () => {
     store.close();
     store = openNamespace(root, 'notes', spec, { readOnly: true });
 
-    assert.throws(() => store.deleteWhere(noteIs(7n)), isZeppelin('ZE_ERR_ACCESS_MODE'));
+    assert.throws(() => store.deleteWhere(noteIs(7n)), isVolantis('ZE_ERR_ACCESS_MODE'));
     assert.equal(store.count({ filter: noteIs(7n) }).count, 4n);
   } finally {
     store.close();

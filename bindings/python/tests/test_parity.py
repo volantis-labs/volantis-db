@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "cross_binding_parity_v1.json"
 
@@ -35,7 +35,7 @@ def _doc_id(value: dict[str, int]) -> tuple[int, int]:
 
 def test_python_matches_rust_cross_binding_parity_fixture(tmp_path: Path) -> None:
     fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    assert fixture["schema"] == "zeppelin-embed-cross-binding-parity"
+    assert fixture["schema"] == "volantis-db-cross-binding-parity"
     assert fixture["version"] == 1
     assert fixture["seed"] == 25_172_023
     assert fixture["score_precision"] == 6

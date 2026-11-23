@@ -1,5 +1,5 @@
 import Foundation
-import ZeppelinEmbed
+import VolantisDB
 
 @main
 struct InstalledConsumer {
@@ -12,7 +12,7 @@ struct InstalledConsumer {
       try await profile(); return
     }
     let path = URL(fileURLWithPath: CommandLine.arguments[1])
-    let store = try await ZeppelinStore.open(at: path, options: OpenOptions(durabilityMode: .durable, commitTier: .durable, maxResidentBytes: 256 << 20))
+    let store = try await VolantisStore.open(at: path, options: OpenOptions(durabilityMode: .durable, commitTier: .durable, maxResidentBytes: 256 << 20))
     _ = try await store.enableGraph()
     var batch = GraphBatch()
     let a = batch.node(key: GraphKey(namespace: "fixture", key: "a"), revision: 1,
@@ -32,7 +32,7 @@ struct InstalledConsumer {
     guard result.rows == [[.string("alpha"), .integer(42)]],
       result.metadata.admittedGeneration == 2 else { throw Failure.invalidResult }
     try await store.close()
-    let reopened = try await ZeppelinStore.open(at: path, options: OpenOptions(durabilityMode: .durable, commitTier: .durable, maxResidentBytes: 256 << 20))
+    let reopened = try await VolantisStore.open(at: path, options: OpenOptions(durabilityMode: .durable, commitTier: .durable, maxResidentBytes: 256 << 20))
     let durable = try await reopened.cypher(query,
       parameters: ["title": .string("alpha"), "number": .integer(42)])
     guard durable.rows == result.rows, durable.metadata.admittedGeneration == 2 else {
@@ -85,7 +85,7 @@ struct InstalledConsumer {
       URL(fileURLWithPath: CommandLine.arguments[2]))) as! [String: Any]
     let base = URL(fileURLWithPath: CommandLine.arguments[3])
     for (index, scenario) in (manifest["cases"] as! [[String: Any]]).enumerated() {
-      let store = try await ZeppelinStore.open(at: base.appendingPathComponent("case-\(index)"), options: OpenOptions(durabilityMode: .durable, commitTier: .durable, maxResidentBytes: 256 << 20))
+      let store = try await VolantisStore.open(at: base.appendingPathComponent("case-\(index)"), options: OpenOptions(durabilityMode: .durable, commitTier: .durable, maxResidentBytes: 256 << 20))
     _ = try await store.enableGraph()
       for setup in scenario["setup"] as! [String] {
         _ = try await store.cypher(setup, controls: GraphControls(rowLimit: 1024))

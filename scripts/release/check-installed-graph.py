@@ -30,7 +30,7 @@ def pin(manifest, graph=False):
 
 def check_release_contract(root=ROOT, archive=None, enforce_checksum=False):
     manifest = (root / 'Package.swift').read_text()
-    if '.library(name: "ZeppelinEmbed", targets: ["ZeppelinEmbed"])' not in manifest:
+    if '.library(name: "VolantisDB", targets: ["VolantisDB"])' not in manifest:
         raise ValueError('missing unified Swift product')
     if (root / 'bindings/swift/graph/Package.swift').exists():
         raise ValueError('retired graph subpackage is still present')
@@ -61,7 +61,7 @@ def check_packaged_headers(headers, artifact, work, framework=False):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     expected = work / ('expected-' + artifact)
-    module.write_artifact_headers(ROOT / 'crates/zeppelin-embed-ffi/include/zeppelin_embed.h', expected, artifact, framework=framework)
+    module.write_artifact_headers(ROOT / 'crates/volantis-db-ffi/include/volantis_db.h', expected, artifact, framework=framework)
     for path in expected.iterdir():
         if framework and path.name == 'module.modulemap':
             continue
@@ -84,9 +84,9 @@ def check_xcframework(path, artifact, work, output):
     directory = path / entry['LibraryIdentifier']
     if artifact == 'graph-cypher':
         framework = directory / entry['LibraryPath']
-        if framework.name != 'ZeppelinEmbedGraph.framework':
-            raise ValueError('full XCFramework must contain ZeppelinEmbedGraph.framework')
-        library = framework / 'Versions/A/ZeppelinEmbedGraph'
+        if framework.name != 'VolantisDBGraph.framework':
+            raise ValueError('full XCFramework must contain VolantisDBGraph.framework')
+        library = framework / 'Versions/A/VolantisDBGraph'
         check_packaged_headers(framework / 'Headers', artifact, work, framework=True)
         module = framework / 'Modules/module.modulemap'
         expected_module = work / 'expected-graph-cypher/module.modulemap'
@@ -144,9 +144,9 @@ def run_c_consumer(sdk, work, output):
     work.mkdir(parents=True, exist_ok=True)
     report = {}
     for kind in ('a', 'dylib'):
-        library = sdk / 'lib' / ('libzeppelin_embed_graph_cypher_ffi.' + kind)
+        library = sdk / 'lib' / ('libvolantis_db_graph_cypher_ffi.' + kind)
         binary = work / ('consumer-' + kind)
-        for required in (sdk / 'include/zeppelin_embed.h', sdk / 'include/zeppelin_graph_contracts.h', library):
+        for required in (sdk / 'include/volantis_db.h', sdk / 'include/volantis_db_graph_contracts.h', library):
             if not required.is_file():
                 raise FileNotFoundError(f'missing installed artifact input: {required}')
         tools.check_exports(library, 'graph-cypher')
@@ -174,9 +174,9 @@ def run_c_consumer(sdk, work, output):
 
 
 def run_rust_consumer(sdk, work, output):
-    library = sdk / 'lib/libzeppelin_embed_graph_cypher_ffi.a'
-    for required in (sdk / 'include/zeppelin_embed.h',
-                     sdk / 'include/zeppelin_graph_contracts.h', library):
+    library = sdk / 'lib/libvolantis_db_graph_cypher_ffi.a'
+    for required in (sdk / 'include/volantis_db.h',
+                     sdk / 'include/volantis_db_graph_contracts.h', library):
         if not required.is_file():
             raise FileNotFoundError(f'missing installed artifact input: {required}')
     source = work / 'installed.rs'
@@ -198,8 +198,8 @@ def run_rust_consumer(sdk, work, output):
 
 def run_graph_free_refusal(library, headers, work, output):
     source = work / 'graph-free-refusal.c'
-    source.write_text('''#include "zeppelin_embed.h"
-#include "zeppelin_graph_contracts.h"
+    source.write_text('''#include "volantis_db.h"
+#include "volantis_db_graph_contracts.h"
 #include <stdio.h>
 #include <string.h>
 int main(int argc, char **argv) {
@@ -229,7 +229,7 @@ def run_swift_consumer(xcframework, work, output, disable_swift_sandbox=False):
     package.mkdir()
     shutil.copytree(ROOT / 'bindings/swift', package / 'bindings/swift')
     # One full graph archive, exported through the unified C module.
-    shutil.copytree(xcframework, package / 'target/xcframework-graph-cypher/ZeppelinEmbedGraph.xcframework', symlinks=True)
+    shutil.copytree(xcframework, package / 'target/xcframework-graph-cypher/VolantisDBGraph.xcframework', symlinks=True)
     manifest = (ROOT / 'Package.swift').read_text()
     (package / 'Package.swift').write_text(manifest)
     consumer = work / 'swift-consumer'
@@ -240,7 +240,7 @@ def run_swift_consumer(xcframework, work, output, disable_swift_sandbox=False):
 import PackageDescription
 let package = Package(name: "InstalledConsumer", platforms: [.macOS(.v14)],
  dependencies: [.package(path: "../package")], targets: [.executableTarget(name: "Consumer",
- dependencies: [.product(name: "ZeppelinEmbed", package: "package")])])
+ dependencies: [.product(name: "VolantisDB", package: "package")])])
 ''')
     env = {k: v for k, v in os.environ.items() if not k.startswith('ZE_')}
     env.update(ZE_ENABLE_GRAPH='1', ZE_USE_LOCAL_XCFRAMEWORK='1')
@@ -251,11 +251,11 @@ let package = Package(name: "InstalledConsumer", platforms: [.macOS(.v14)],
         command.append('--disable-sandbox')
     manifest_path = package / 'Package.swift'
     manifest_path.write_text(manifest.replace(
-        '.library(name: "ZeppelinEmbed", targets: ["ZeppelinEmbed"]),', ''))
+        '.library(name: "VolantisDB", targets: ["VolantisDB"]),', ''))
     try:
         negative = subprocess.run(list(map(str, command)), env=env, cwd=work, capture_output=True, text=True)
         (output / 'graph-product-red.log').write_text(negative.stdout + negative.stderr)
-        if negative.returncode == 0 or "product 'ZeppelinEmbed'" not in negative.stderr:
+        if negative.returncode == 0 or "product 'VolantisDB'" not in negative.stderr:
             raise ValueError('graph package product negative control did not reject the missing product')
     finally:
         manifest_path.write_text(manifest)
@@ -280,7 +280,7 @@ def run_legacy_consumers(args, output):
             run(['npm', 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund',
                  args.node_package.resolve()], cwd=work)
             shutil.copy(ROOT / 'bindings/node/test/installed-package-smoke.cjs', work / 'smoke.cjs')
-            shutil.copy(ROOT / 'crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem', work / 'gte.zem')
+            shutil.copy(ROOT / 'crates/volantis-db-text/tests/fixtures/ze115/gte.zem', work / 'gte.zem')
             run(['node', 'smoke.cjs'], cwd=work)
         report['node'] = str(args.node_package.resolve())
     else:
@@ -306,7 +306,7 @@ class ContractTests(unittest.TestCase):
         code = '\n'.join(line[10:] for line in code.splitlines())
         code = code.replace('${{ matrix.artifact }}', 'graph-cypher')
         result = subprocess.run([sys.executable, '-c', code], cwd=ROOT,
-                                env=dict(os.environ, RELEASE_TAG='v0.8.0'),
+                                env=dict(os.environ, RELEASE_TAG='v0.1.0'),
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -318,12 +318,12 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         package = json.loads(result.stdout)
         targets = {target['name']: target for target in package['targets']}
-        self.assertEqual(targets['ZeppelinEmbedGraph']['url'],
-                         'https://github.com/zepdb/zeppelin-embed/releases/download/v0.8.0/ZeppelinEmbedGraph.xcframework.zip')
-        self.assertEqual(targets['ZeppelinEmbedGraph']['checksum'],
+        self.assertEqual(targets['VolantisDBGraph']['url'],
+                         'https://github.com/volantis-labs/volantis-db/releases/download/v0.1.0/VolantisDBGraph.xcframework.zip')
+        self.assertEqual(targets['VolantisDBGraph']['checksum'],
                          pin((ROOT / 'Package.swift').read_text(), graph=True))
-        self.assertEqual(targets['CZeppelinEmbed']['path'], 'bindings/swift/Sources/CZeppelinEmbedGraph')
-        self.assertEqual(targets['ZeppelinEmbed']['settings'],
+        self.assertEqual(targets['CVolantisDB']['path'], 'bindings/swift/Sources/CVolantisDBGraph')
+        self.assertEqual(targets['VolantisDB']['settings'],
                          [{'kind': {'define': {'_0': define}}, 'tool': 'swift'}
                           for define in ('ZE_GRAPH', 'ZE_TEXT')])
         env['ZE_USE_LOCAL_XCFRAMEWORK'] = '1'
@@ -331,7 +331,7 @@ class ContractTests(unittest.TestCase):
                                  'dump-package'], env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         targets = {target['name']: target for target in json.loads(result.stdout)['targets']}
-        self.assertEqual(targets['ZeppelinEmbed']['settings'],
+        self.assertEqual(targets['VolantisDB']['settings'],
                          [{'kind': {'define': {'_0': define}}, 'tool': 'swift'}
                           for define in ('ZE_GRAPH', 'ZE_TEXT')])
 
@@ -349,7 +349,7 @@ class ContractTests(unittest.TestCase):
 
     def test_root_package_is_the_only_swift_product(self):
         check_release_contract()
-        self.assertNotIn('.library(name: "ZeppelinEmbedGraph"',
+        self.assertNotIn('.library(name: "VolantisDBGraph"',
                          (ROOT / 'Package.swift').read_text())
         self.assertEqual(len(pin((ROOT / 'Package.swift').read_text())), 64)
 
@@ -414,12 +414,12 @@ def run_c_profile_consumer(sdk, work, output):
     (work / 'graph_profile_cases.h').write_text(profile.generate_c(manifest))
     report = []
     for flavor, suffix in [('static', 'a'), ('dylib', 'dylib')]:
-        library = sdk / ('lib/libzeppelin_embed_graph_cypher_ffi.' + suffix)
+        library = sdk / ('lib/libvolantis_db_graph_cypher_ffi.' + suffix)
         if not library.is_file():
             raise ValueError('BLOCKED ZE-71: installed graph ' + flavor + ' input missing')
         consumer = work / ('profile-' + flavor)
         run(['clang', '-std=c11', '-Wall', '-Wextra', '-Werror', '-arch', 'arm64', '-mmacosx-version-min=14.0',
-             '-I', sdk / 'include', '-I', work, ROOT / 'crates/zeppelin-embed-ffi/tests/c/graph_profile_parity.c',
+             '-I', sdk / 'include', '-I', work, ROOT / 'crates/volantis-db-ffi/tests/c/graph_profile_parity.c',
              library, '-framework', 'Security', '-liconv', *artifact_tools().FULL_LINK_FLAGS, '-Wl,-rpath,' + str(sdk / 'lib'), '-o', consumer])
         fixture = work / ('profile-fixture-' + flavor)
         fixture.mkdir()
@@ -434,7 +434,7 @@ def run_c_profile_consumer(sdk, work, output):
 
 
 def profile_receipt_state(path):
-    header = (ROOT / 'crates/zeppelin-embed-ffi/include/zeppelin_graph_contracts.h').read_text()
+    header = (ROOT / 'crates/volantis-db-ffi/include/volantis_db_graph_contracts.h').read_text()
     if 'ze_store_graph_query(' not in header:
         raise ValueError('required public C structured query export is absent')
     if path is None:
@@ -465,8 +465,8 @@ def require_structured_execution(report):
 def qualify(args):
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    archive = args.artifact_root / 'xcframework-graph-cypher/ZeppelinEmbedGraph.xcframework.zip'
-    sdk_archive = args.artifact_root / 'macos-sdk-graph-cypher/zeppelin-embed-graph-cypher-macos-arm64.tar.gz'
+    archive = args.artifact_root / 'xcframework-graph-cypher/VolantisDBGraph.xcframework.zip'
+    sdk_archive = args.artifact_root / 'macos-sdk-graph-cypher/volantis-db-graph-cypher-macos-arm64.tar.gz'
     if not archive.is_file() or not sdk_archive.is_file():
         missing = [str(p) for p in (archive, sdk_archive) if not p.is_file()]
         (output / 'report.json').write_text(json.dumps(dict(state='blocked', missing_input='ZE-71', missing_artifacts=missing), indent=2)+'\n')
@@ -479,15 +479,15 @@ def qualify(args):
         work = Path(directory).resolve()
         with tarfile.open(sdk_archive) as tar:
             tar.extractall(work, filter='data')
-        with zipfile.ZipFile(args.legacy_xcframework or args.artifact_root / 'xcframework/ZeppelinEmbed.xcframework.zip') as legacy_zip:
+        with zipfile.ZipFile(args.legacy_xcframework or args.artifact_root / 'xcframework/VolantisDB.xcframework.zip') as legacy_zip:
             legacy_zip.extractall(work)
         run(['ditto', '-x', '-k', archive, work])
-        sdk = work / 'zeppelin-embed-graph-cypher-macos-arm64'
-        shutil.copy(ROOT / 'crates/zeppelin-embed-ffi/tests/c/graph_artifact_consumer.c', work / 'consumer.c')
+        sdk = work / 'volantis-db-graph-cypher-macos-arm64'
+        shutil.copy(ROOT / 'crates/volantis-db-ffi/tests/c/graph_artifact_consumer.c', work / 'consumer.c')
         check_packaged_headers(sdk / 'include', 'graph-cypher', work)
         report['xcframeworks'] = {identity: check_xcframework(work / name, identity, work, output)
-            for identity, name in [('legacy', 'ZeppelinEmbed.xcframework'), ('graph-cypher', 'ZeppelinEmbedGraph.xcframework')]}
-        dylib = sdk / 'lib/libzeppelin_embed_graph_cypher_ffi.dylib'
+            for identity, name in [('legacy', 'VolantisDB.xcframework'), ('graph-cypher', 'VolantisDBGraph.xcframework')]}
+        dylib = sdk / 'lib/libvolantis_db_graph_cypher_ffi.dylib'
         if subprocess.check_output(['lipo', '-archs', str(dylib)], text=True).split() != ['arm64']:
             raise ValueError('graph SDK dylib must be arm64 only')
         deployment = subprocess.check_output(['vtool', '-show-build', str(dylib)], text=True)
@@ -497,13 +497,13 @@ def qualify(args):
         report['c'] = run_c_consumer(sdk, work, output)
         report['rust'] = run_rust_consumer(sdk, work, output)
         report['c_profile'] = run_c_profile_consumer(sdk, work, output)
-        report['swift'] = run_swift_consumer(work / 'ZeppelinEmbedGraph.xcframework', work, output, args.disable_swift_sandbox)
+        report['swift'] = run_swift_consumer(work / 'VolantisDBGraph.xcframework', work, output, args.disable_swift_sandbox)
         # Graph-free stubs retain the same ABI; qualify their typed refusal.
-        legacy_library = next((work / 'ZeppelinEmbed.xcframework').rglob('*.a'))
+        legacy_library = next((work / 'VolantisDB.xcframework').rglob('*.a'))
         report['legacy_substitution'] = run_graph_free_refusal(
             legacy_library, sdk / 'include', work, output)
         # Missing packaged inputs must reject even with source headers present.
-        for missing in ('include/zeppelin_embed.h', 'lib/libzeppelin_embed_graph_cypher_ffi.a'):
+        for missing in ('include/volantis_db.h', 'lib/libvolantis_db_graph_cypher_ffi.a'):
             path = sdk / missing
             saved = path.read_bytes()
             path.unlink()
@@ -537,7 +537,7 @@ def remote_qualify(args):
         raise ValueError('remote tag must be an exact vMAJOR.MINOR.PATCH release')
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    base = 'https://github.com/zepdb/zeppelin-embed/releases/download/' + args.remote_tag + '/'
+    base = 'https://github.com/volantis-labs/volantis-db/releases/download/' + args.remote_tag + '/'
     with tempfile.TemporaryDirectory(prefix='ze71-remote-') as directory:
         work = Path(directory).resolve()
         def download(url, destination):
@@ -546,16 +546,16 @@ def remote_qualify(args):
                 shutil.copyfileobj(response, handle)
         checkout = work / 'release'
         run(['git', 'clone', '--depth', '1', '--branch', args.remote_tag,
-             'https://github.com/zepdb/zeppelin-embed.git', checkout], cwd=work)
-        archive = work / 'ZeppelinEmbedGraph.xcframework.zip'
+             'https://github.com/volantis-labs/volantis-db.git', checkout], cwd=work)
+        archive = work / 'VolantisDBGraph.xcframework.zip'
         download(base + archive.name, archive)
         contract = check_release_contract(checkout, archive, True)
-        sdk_archive = work / 'zeppelin-embed-graph-cypher-macos-arm64.tar.gz'
+        sdk_archive = work / 'volantis-db-graph-cypher-macos-arm64.tar.gz'
         download(base + sdk_archive.name, sdk_archive)
         with tarfile.open(sdk_archive) as tar:
             tar.extractall(work, filter='data')
-        shutil.copy(ROOT / 'crates/zeppelin-embed-ffi/tests/c/graph_artifact_consumer.c', work / 'consumer.c')
-        sdk = work / 'zeppelin-embed-graph-cypher-macos-arm64'
+        shutil.copy(ROOT / 'crates/volantis-db-ffi/tests/c/graph_artifact_consumer.c', work / 'consumer.c')
+        sdk = work / 'volantis-db-graph-cypher-macos-arm64'
         report = dict(contract=contract, c=run_c_consumer(sdk, work, output),
                       rust=run_rust_consumer(sdk, work, output))
         consumer = work / 'consumer'
@@ -565,9 +565,9 @@ def remote_qualify(args):
         (consumer / 'Package.swift').write_text(
             '// swift-tools-version: 5.10\nimport PackageDescription\n'
             'let package = Package(name: "RemoteConsumer", platforms: [.macOS(.v14)],'
-            'dependencies: [.package(url: "https://github.com/zepdb/zeppelin-embed.git", exact: "' + args.remote_tag[1:] + '")],'
+            'dependencies: [.package(url: "https://github.com/volantis-labs/volantis-db.git", exact: "' + args.remote_tag[1:] + '")],'
             'targets: [.executableTarget(name: "Consumer", dependencies: '
-            '[.product(name: "ZeppelinEmbed", package: "zeppelin-embed")])])\n')
+            '[.product(name: "VolantisDB", package: "volantis-db")])])\n')
         env = {k: v for k, v in os.environ.items() if not k.startswith('ZE_')}
         env['ZE_ENABLE_GRAPH'] = '1'
         env['CLANG_MODULE_CACHE_PATH'] = str(work / 'clang-cache')

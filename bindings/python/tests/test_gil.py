@@ -9,8 +9,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import zeppelin_embed as ze
-from zeppelin_embed._library import LIBRARY
+import volantis_db as ze
+from volantis_db._library import LIBRARY
 
 
 def test_query_observes_cancellation_from_another_python_thread(

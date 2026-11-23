@@ -6,20 +6,20 @@ macOS, Xcode's `xcrun coremlcompiler`, and the offline source pack. No download
 is performed by `release`.
 
 ```sh
-PYTHON=/Users/dev/Documents/code/zeppelin-embed-models/.venv/bin/python
-PACK=/Users/dev/Documents/code/zeppelin-embed-models/zeppelin-embed-clean71-v1-arctic-m-v2
-STEM=zeppelin-embed-clean71-v1-arctic-m-v2
-RELEASE=/Users/dev/Documents/code/zeppelin-embed-models/release
+PYTHON=/Users/dev/Documents/code/volantis-db-models/.venv/bin/python
+PACK=/Users/dev/Documents/code/volantis-db-models/volantis-db-clean71-v1-arctic-m-v2
+STEM=volantis-db-clean71-v1-arctic-m-v2
+RELEASE=/Users/dev/Documents/code/volantis-db-models/release
 "$PYTHON" tools/ze-model/ze-model release --pack "$PACK" \
   --out "$RELEASE/$STEM-fp16-coreml-int8" --name "$STEM" \
   --document-precision fp16 --query-coreml-precision int8
 ```
 
 Each output directory must be absent or empty. It contains only `<name>.zem`,
-`<name>.mlmodelc/`, `zeppelin-model.json`, `SHA256SUMS`, and a small `README.md`
+`<name>.mlmodelc/`, `volantis-model.json`, `SHA256SUMS`, and a small `README.md`
 stub that is replaced by the published model card before upload. The published
 repo is `volantis-labs/volantis-db-clean71-arctic-m-v2` at revision
-`d64b817c4021a3f1b9bded3152d9afdf9ac813e7`. The manifest lists the bundle
+`5833eb696dbc41def2421a7fb97d58f92db94fab`. The manifest lists the bundle
 and every compiled model file individually, sorted by relative path. The model
 card is excluded from the manifest. SHA256SUMS covers all shipped files except
 itself, including the manifest and model card. Both manifests hash actual disk

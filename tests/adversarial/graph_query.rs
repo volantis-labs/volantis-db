@@ -7,14 +7,14 @@ use super::fault_vfs::{
 use rand::RngCore;
 use std::sync::Arc;
 use std::time::Duration;
-use zeppelin_embed::lifecycle::{CancelToken, Deadline, ManualMonotonicClock, QueryControl};
-use zeppelin_embed::property_graph::query::plan::*;
-use zeppelin_embed::property_graph::query::{
+use volantis_db::lifecycle::{CancelToken, Deadline, ManualMonotonicClock, QueryControl};
+use volantis_db::property_graph::query::plan::*;
+use volantis_db::property_graph::query::{
     Comparison, QueryError, QueryList, QueryValue, QueryView, Truth, ValueContext,
 };
-use zeppelin_embed::property_graph::{GraphGeneration, NodeId, RelId, StoreInstanceId};
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed_adversarial_oracle::graph_query::{self as oracle, Observation, Value};
+use volantis_db::property_graph::{GraphGeneration, NodeId, RelId, StoreInstanceId};
+use volantis_db::vfs::StdVfs;
+use volantis_db_adversarial_oracle::graph_query::{self as oracle, Observation, Value};
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.query.numeric",
     "property-graph.query.grouping",
@@ -138,7 +138,7 @@ fn pattern_case(
     escapes: bool,
     context: &mut ValueContext<'_>,
 ) -> Result<(), PlanError> {
-    use zeppelin_embed::property_graph::GraphName;
+    use volantis_db::property_graph::GraphName;
     let alternatives = ["FIRST", "SECOND", "FIRST"].map(|name| GraphName::new(name).unwrap());
     let expressions = [
         Expression::Slot(SlotId(reference)),

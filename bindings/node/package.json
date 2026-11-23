@@ -1,19 +1,19 @@
 {
-  "name": "@zepdb/zeppelin-embed",
-  "version": "0.8.0",
+  "name": "volantis-db",
+  "version": "0.1.0",
   "description": "In-process vector, text and graph search for macOS and Windows x64",
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zepdb/zeppelin-embed.git",
+    "url": "git+https://github.com/volantis-labs/volantis-db.git",
     "directory": "bindings/node"
   },
-  "homepage": "https://github.com/zepdb/zeppelin-embed#readme",
-  "bugs": "https://github.com/zepdb/zeppelin-embed/issues",
+  "homepage": "https://github.com/volantis-labs/volantis-db#readme",
+  "bugs": "https://github.com/volantis-labs/volantis-db/issues",
   "main": "index.js",
   "bin": {
-    "zeppelin-verify": "bin/zeppelin-verify.js",
-    "zeppelin-shell": "bin/zeppelin-shell.js"
+    "volantis-verify": "bin/volantis-verify.js",
+    "volantis-shell": "bin/volantis-shell.js"
   },
   "types": "index.d.ts",
   "exports": {
@@ -26,15 +26,15 @@
   "files": [
     "index.js",
     "index.d.ts",
-    "bin/zeppelin-verify.js",
-    "bin/zeppelin-shell.js",
+    "bin/volantis-verify.js",
+    "bin/volantis-shell.js",
     "README.md",
     "LICENSE",
-    "prebuilds/darwin-arm64/zeppelin_embed.node",
+    "prebuilds/darwin-arm64/volantis_db.node",
     "prebuilds/darwin-arm64/mlx.metallib",
-    "prebuilds/darwin-x64/zeppelin_embed.node",
-    "prebuilds/win32-x64/node-napi8/zeppelin_embed.node",
-    "prebuilds/win32-x64/electron-44/zeppelin_embed.node"
+    "prebuilds/darwin-x64/volantis_db.node",
+    "prebuilds/win32-x64/node-napi8/volantis_db.node",
+    "prebuilds/win32-x64/electron-44/volantis_db.node"
   ],
   "os": [
     "darwin",

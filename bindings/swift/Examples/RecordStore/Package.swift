@@ -6,13 +6,13 @@ let package = Package(
     name: "RecordStore",
     platforms: [.macOS(.v14)],
     dependencies: [
-        .package(name: "zeppelin-embed", path: "../../../.."),
+        .package(name: "volantis-db", path: "../../../.."),
     ],
     targets: [
         .executableTarget(
             name: "RecordStore",
             dependencies: [
-                .product(name: "ZeppelinEmbed", package: "zeppelin-embed"),
+                .product(name: "VolantisDB", package: "volantis-db"),
             ]
         ),
     ]

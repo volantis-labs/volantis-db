@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
-use zeppelin_embed_adversarial_oracle::graph_fixture::*;
-use zeppelin_embed_adversarial_oracle::graph_lifecycle::*;
+use volantis_db_adversarial_oracle::graph_fixture::*;
+use volantis_db_adversarial_oracle::graph_lifecycle::*;
 
 fn batch() -> Vec<Mutation> {
     vec![

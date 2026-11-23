@@ -10,10 +10,10 @@ cd "$PROJECT_ROOT"
 WORKSPACE_ARGS=(--workspace)
 GRAPH_TARGET="$(graph_effective_target)"
 if graph_target_supports_native_graph "$GRAPH_TARGET"; then
-    WORKSPACE_ARGS+=(--features zeppelin-embed-workspace-tests/graph-result-test-support)
+    WORKSPACE_ARGS+=(--features volantis-db-workspace-tests/graph-result-test-support)
     echo "native graph qualification: selected for $GRAPH_TARGET"
 else
-    WORKSPACE_ARGS+=(--exclude zeppelin-embed-cypher)
+    WORKSPACE_ARGS+=(--exclude volantis-db-cypher)
     echo "native graph qualification: not selected for $GRAPH_TARGET; running legacy qualification"
 fi
 
@@ -27,9 +27,9 @@ done
 # ZE_VFS_SEAM_CLOSURE: mapping admission and graph checkpoints stay on Vfs.
 VFS_SEAM_DENIED='(^|[^[:alnum:]_])((std::)?fs::(read|read_to_string|write|rename|remove_file|metadata|copy|hard_link|create_dir_all)|File::(open|create|options))\(|(std::)?fs::OpenOptions::new\(|use[[:space:]]+std::fs([[:space:]]+as[[:space:]]+[[:alnum:]_]+)?[[:space:]]*;|use[[:space:]]+std::fs::(OpenOptions|read|read_to_string|write|rename|remove_file|metadata|copy|hard_link|create_dir_all)[[:space:]]*;'
 for source in \
-    crates/zeppelin-embed/src/segment/reader.rs \
-    crates/zeppelin-embed/src/graph/build.rs \
-    crates/zeppelin-embed/src/lifecycle/mod.rs; do
+    crates/volantis-db/src/segment/reader.rs \
+    crates/volantis-db/src/graph/build.rs \
+    crates/volantis-db/src/lifecycle/mod.rs; do
     if grep -n -E "$VFS_SEAM_DENIED" "$source"; then
         echo "forbidden direct filesystem operation in $source" >&2
         exit 1
@@ -42,12 +42,12 @@ if grep -n 'clean_control_passed' \
     exit 1
 fi
 
-if grep -R -n -E 'sync_(all|data)' crates/zeppelin-embed/src; then
-    echo "forbidden direct file synchronization under crates/zeppelin-embed/src" >&2
+if grep -R -n -E 'sync_(all|data)' crates/volantis-db/src; then
+    echo "forbidden direct file synchronization under crates/volantis-db/src" >&2
     exit 1
 fi
 
-if grep -R -n -E 'sleep|Duration|Instant|timeout' crates/zeppelin-embed/src/wal \
+if grep -R -n -E 'sleep|Duration|Instant|timeout' crates/volantis-db/src/wal \
     | grep -v 'ZE_AMENDMENT_N_LIVENESS_WATCHDOG'; then
     echo "forbidden timer-derived WAL control; amendment N watchdogs require ZE_AMENDMENT_N_LIVENESS_WATCHDOG" >&2
     exit 1
@@ -55,42 +55,42 @@ fi
 
 cargo fmt --all -- --check
 cargo clippy "${WORKSPACE_ARGS[@]}" --all-targets -- -D warnings
-cargo clippy -p zeppelin-embed --all-targets --features allocation-audit -- -D warnings
+cargo clippy -p volantis-db --all-targets --features allocation-audit -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc "${WORKSPACE_ARGS[@]}" --no-deps
 cargo test "${WORKSPACE_ARGS[@]}"
 # ZE-180: the graph-cypher library tests, unconditionally. The workspace run
 # above only enables the feature on aarch64-apple-darwin, so on every other
-# host zeppelin-embed's own unit tests never compile the native graph paths.
+# host volantis-db's own unit tests never compile the native graph paths.
 # That is how a store-lifetime accounting regression survived from ZE-45.
-cargo test -p zeppelin-embed --lib --features graph-cypher
-cargo test -p zeppelin-embed --features graph-cypher --test wal_unified_golden --test manifest_v3
-cargo test -p zeppelin-embed --features allocation-audit \
+cargo test -p volantis-db --lib --features graph-cypher
+cargo test -p volantis-db --features graph-cypher --test wal_unified_golden --test manifest_v3
+cargo test -p volantis-db --features allocation-audit \
     lifecycle::stats::tests::nothing_allocates_outside_accounting \
     -- --exact --test-threads=1
 # The query-path allocation gate (FTS optimization plan P0.4). Deterministic
 # allocator call counts, so zero flake budget; single-threaded for the same
 # reason the accounting audit above is.
-cargo test -p zeppelin-embed --features allocation-audit --lib \
+cargo test -p volantis-db --features allocation-audit --lib \
     fts::alloc_gate -- --test-threads=1
 # The graph allocation-audit tests compile only with both features on.
-cargo test -p zeppelin-embed --features graph-cypher,allocation-audit \
+cargo test -p volantis-db --features graph-cypher,allocation-audit \
     --test graph_query_allocation --test graph_artifact \
     --test graph_storage_prepare -- --test-threads=1
-cargo test -p zeppelin-embed-workspace-tests \
+cargo test -p volantis-db-workspace-tests \
     --test scaffold_gates deny_blacklist_rejects_banned_dep \
     -- --ignored --exact
 if [[ "$(uname -s)" == "Darwin" ]]; then
-    cargo run -p zeppelin-embed-bench --bin platform-truth -- --smoke
+    cargo run -p volantis-db-bench --bin platform-truth -- --smoke
     # BL-023: all Task-03 hot kernels carry evidence-derived roofline floors,
     # and equal-dimension float/i8 ratios automate the physical-byte sanity check.
-    cargo run --profile bench -p zeppelin-embed-bench --bin kernel-roofline-gate
+    cargo run --profile bench -p volantis-db-bench --bin kernel-roofline-gate
     # BL-101/BL-103: the traversal-relevant DRAM pair stays visible, and every
     # result is a median across independent processes with its between-process spread.
-    cargo build --profile bench -p zeppelin-embed-bench \
+    cargo build --profile bench -p volantis-db-bench \
         --bin gather-kernel --bin graph-search --bin platform-truth --bin dram-process-audit
     "${CARGO_TARGET_DIR:-$PROJECT_ROOT/target}/release/dram-process-audit" --processes 5
 fi
-cargo run -p zeppelin-embed-bench --bin wal-throughput -- --smoke
+cargo run -p volantis-db-bench --bin wal-throughput -- --smoke
 "$SCRIPT_DIR/coverage.sh"
 cargo deny check
 "$SCRIPT_DIR/size-budget.sh"

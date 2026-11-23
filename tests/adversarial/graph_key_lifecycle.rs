@@ -2,8 +2,8 @@
 //! Publication, allocator persistence, adjacency liveness and WAL are later owners.
 use super::coverage::CoverageRegistry;
 use rand::RngCore;
-use zeppelin_embed::property_graph::*;
-use zeppelin_embed_adversarial_oracle::graph_key_lifecycle::{
+use volantis_db::property_graph::*;
+use volantis_db_adversarial_oracle::graph_key_lifecycle::{
     Action, Expected, Observation, Origin, Record, Rejection, check,
 };
 

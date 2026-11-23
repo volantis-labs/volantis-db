@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ctypes as ct
 
-from zeppelin_embed import _structures as s
+from volantis_db import _structures as s
 
 LAYOUTS: dict[str, tuple[int, int, dict[str, int]]] = {
     "ZeEmbeddedNamespaceSpec": (104, 8, {'spec': 0, 'model': 48}),

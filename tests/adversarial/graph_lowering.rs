@@ -12,17 +12,17 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::{
     Deadline, ManualMonotonicClock, MonotonicClock, OpenOptions, QueryControl, Store,
 };
-use zeppelin_embed::property_graph::{
+use volantis_db::property_graph::{
     GraphGeneration, StoreInstanceId,
     query::{QueryValue, QueryView, ValueContext, plan::*, resources::*},
     resources::GraphResources,
 };
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed_adversarial_oracle::graph_lowering::{self as oracle, Observation};
-use zeppelin_embed_cypher::{
+use volantis_db::vfs::StdVfs;
+use volantis_db_adversarial_oracle::graph_lowering::{self as oracle, Observation};
+use volantis_db_cypher::{
     CompileLimits, ErrorKind, LoweredRead, ResourceError, compile_in, compile_read_in,
 };
 pub const REQUIRED_COVERAGE: &[&str] = &[

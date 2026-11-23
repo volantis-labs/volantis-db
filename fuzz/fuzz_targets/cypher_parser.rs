@@ -1,6 +1,6 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed_cypher::{Budget, CompileLimits, compile_with, parse_bytes};
+use volantis_db_cypher::{Budget, CompileLimits, compile_with, parse_bytes};
 
 fuzz_target!(|bytes: &[u8]| {
     if let Ok(text) = std::str::from_utf8(bytes) {

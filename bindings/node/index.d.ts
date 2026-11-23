@@ -193,7 +193,7 @@ export interface NamespaceSpec {
  * does so atomically with applying the call: no other write can land
  * between the check and the write. If any condition fails, the call writes
  * nothing (no log record; the generation does not change) and throws a
- * `ZeppelinError` with code `ZE_ERR_REVISION_CONFLICT`, whose `conflict`
+ * `VolantisError` with code `ZE_ERR_REVISION_CONFLICT`, whose `conflict`
  * names the first failed entry.
  *
  * Compare-and-set on a head document: read `r = get([id]).documents[0]
@@ -623,7 +623,7 @@ export declare class CancellationToken {
   close(): void;
 }
 
-export declare class ZeppelinError extends Error {
+export declare class VolantisError extends Error {
   constructor(message: string, code: string, errorCode: number);
   readonly code: string;
   readonly errorCode: number;
@@ -638,7 +638,7 @@ export declare class ZeppelinError extends Error {
 
 export declare class UnsupportedPlatformError extends Error {
   constructor(platform: string, arch: string);
-  readonly code: 'ERR_ZEPPELIN_UNSUPPORTED_PLATFORM';
+  readonly code: 'ERR_VOLANTIS_UNSUPPORTED_PLATFORM';
 }
 
 /**
@@ -648,7 +648,7 @@ export declare class UnsupportedPlatformError extends Error {
  */
 export declare class UnsupportedRuntimeError extends Error {
   constructor(detail: string);
-  readonly code: 'ERR_ZEPPELIN_UNSUPPORTED_RUNTIME';
+  readonly code: 'ERR_VOLANTIS_UNSUPPORTED_RUNTIME';
 }
 
 export interface MaintainBudget {
@@ -721,7 +721,7 @@ export declare class Store {
   queryEmbedded(request: EmbeddedQuery): EmbeddedHit[];
   queryEmbeddedAsync(request: EmbeddedQuery & { readonly signal?: AbortSignal }): Promise<EmbeddedHit[]>;
   /** AbortSignal cancels engine work cooperatively and rejects with
-   * ZeppelinError (ZE_ERR_CANCELLED), never partial results. The promise settles
+   * VolantisError (ZE_ERR_CANCELLED), never partial results. The promise settles
    * after the worker stops. Use either signal or cancelToken, not both; keep a
    * caller-owned cancelToken open until settlement. A completion may win an
    * abort race. */
@@ -1042,7 +1042,7 @@ export interface VerifyReport {
  * references and leftover temporary files are not findings; a writable open
  * removes them without losing data.
  *
- * Throws `ZeppelinError` `ZE_ERR_NOT_FOUND` when the path does not exist,
+ * Throws `VolantisError` `ZE_ERR_NOT_FOUND` when the path does not exist,
  * `ZE_ERR_IO` when it is not a directory, and `ZE_ERR_INVALID_ARGUMENT` for
  * an empty path or one containing a NUL character; a `TypeError` when `path`
  * is not a string. Verifying a store another process is writing can report a
@@ -1144,7 +1144,7 @@ export interface GraphMaintenanceReport {
 export type GraphQueryOptions = GraphControlOptions & {
   /**
    * Returned-row cap: integer 0..65536. Omitted or 0 selects 1024.
-   * Exceeding it throws ZeppelinError with ZE_ERR_BUDGET_EXCEEDED; never truncates.
+   * Exceeding it throws VolantisError with ZE_ERR_BUDGET_EXCEEDED; never truncates.
    * Other engine memory/work limits still apply.
    */
   readonly maxRows?: number;

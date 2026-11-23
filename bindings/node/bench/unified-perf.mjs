@@ -187,7 +187,7 @@ function loadPackage(path) {
   const checkout = resolve(path) === resolve(dirname(fileURLToPath(import.meta.url)), '..');
   path = resolve(path); const require = createRequire(import.meta.url);
   const metadata = read(join(path, 'package.json'));
-  assert.equal(metadata.name, '@zepdb/zeppelin-embed');
+  assert.equal(metadata.name, 'volantis-db');
   if (!checkout) { assert.equal(metadata.version, '0.6.0'); if (metadata.gitHead) assert.equal(metadata.gitHead, COMMIT); }
   const revision = checkout ? spawnSync('git', ['rev-parse', 'HEAD'], { cwd: path, encoding: 'utf8' }) : null;
   if (checkout) assert.equal(revision.status, 0);
@@ -405,7 +405,7 @@ export function validateMeasurement(v) {
   assert.equal(v.workloadSha256, workloadHash(v.manifest));
   assert.deepEqual(v.settings, SETTINGS); assert.ok(typeof v.root === 'string' && v.root.length);
   keys(v.provenance, 'source name version tag commit packageSha256 addonSha256 entrySha256 addonPath releaseFlags');
-  assert.equal(v.provenance.name, '@zepdb/zeppelin-embed');
+  assert.equal(v.provenance.name, 'volantis-db');
   assert.ok(['npm', 'checkout'].includes(v.provenance.source));
   if (v.provenance.source === 'npm') {
     assert.equal(v.provenance.version, '0.6.0'); assert.equal(v.provenance.tag, TAG); assert.equal(v.provenance.commit, COMMIT);

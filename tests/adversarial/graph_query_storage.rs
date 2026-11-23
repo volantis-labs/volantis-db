@@ -2,24 +2,24 @@
 //! The framed source is an immutable component fixture, not public view admission.
 use super::coverage::CoverageRegistry;
 use rand::RngCore;
-use zeppelin_embed::lifecycle::{CancelToken, OpenOptions, QueryControl, SnapshotLease, Store};
-use zeppelin_embed::property_graph::query::resources::{MemoryError, QueryMemory};
-use zeppelin_embed::property_graph::query::runtime::{
+use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl, SnapshotLease, Store};
+use volantis_db::property_graph::query::resources::{MemoryError, QueryMemory};
+use volantis_db::property_graph::query::runtime::{
     RetainedView, RuntimeContext, RuntimeError, RuntimeLimits, WorkKind,
 };
-use zeppelin_embed::property_graph::query::{QueryError, QueryView};
-use zeppelin_embed::property_graph::resources::GraphResources;
-use zeppelin_embed::property_graph::storage::adjacency::RangeScratch;
-use zeppelin_embed::property_graph::storage::artifact::{
+use volantis_db::property_graph::query::{QueryError, QueryView};
+use volantis_db::property_graph::resources::GraphResources;
+use volantis_db::property_graph::storage::adjacency::RangeScratch;
+use volantis_db::property_graph::storage::artifact::{
     self, ArtifactId, ArtifactIdentity, Block, BlockKind, ContainerKind, FramedBlock, PhysicalRef,
 };
-use zeppelin_embed::property_graph::storage::payload::PayloadRef;
-use zeppelin_embed::property_graph::storage::stream::PayloadSlice;
-use zeppelin_embed::property_graph::storage::tree::TreeKind;
-use zeppelin_embed::property_graph::storage::tree::directory::{
+use volantis_db::property_graph::storage::payload::PayloadRef;
+use volantis_db::property_graph::storage::stream::PayloadSlice;
+use volantis_db::property_graph::storage::tree::TreeKind;
+use volantis_db::property_graph::storage::tree::directory::{
     BlockSource, DirectoryCursor, DirectoryRoot, TreeError, TreeResources, lookup_entry,
 };
-use zeppelin_embed::property_graph::{GraphGeneration, StoreInstanceId};
+use volantis_db::property_graph::{GraphGeneration, StoreInstanceId};
 
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.query-storage.workspace",

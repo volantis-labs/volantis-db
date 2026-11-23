@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-const { Store, ZeppelinError } = createRequire(import.meta.url)('..');
+const { Store, VolantisError } = createRequire(import.meta.url)('..');
 const supported = (process.platform === 'darwin' && Number.parseInt(release(), 10) >= 23) ||
   (process.platform === 'win32' && process.arch === 'x64');
 const node = (key, extra = {}) => ({ kind: 'node', operation: 'create', namespace: 'docs', key, revision: 1n, labels: ['Doc'], ...extra });
@@ -47,12 +47,12 @@ test('exact retry reports Replayed', { skip: !supported }, () => fixture(s => {
 }));
 test('atomic failure mid-batch leaves nothing', { skip: !supported }, () => fixture(s => {
   assert.throws(() => s.graphApply([node('a'), { kind: 'relationship', operation: 'create', namespace: 'edges', key: 'bad', revision: 1n, type: 'LINKS', source: { local: 0 }, target: 999n }]),
-    e => e instanceof ZeppelinError && e.disposition === 'NotCommitted');
+    e => e instanceof VolantisError && e.disposition === 'NotCommitted');
   assert.deepEqual(s.cypher('MATCH (n) RETURN count(n)').rows, [[0n]]);
 }));
 test('malformed input is rejected before effect', { skip: !supported }, () => fixture(s => {
   for (const bad of [{ properties: { n: 1n << 63n } }, { properties: { n: NaN } }, { labels: 'bad' }, { revision: -1n }, { vector: [1] }, { operation: 'typo' }]) {
-    assert.throws(() => s.graphApply([node('good'), node('bad', bad)]), e => e instanceof ZeppelinError && e.code === 'ZE_ERR_INVALID_ARGUMENT' && e.disposition === 'NotCommitted');
+    assert.throws(() => s.graphApply([node('good'), node('bad', bad)]), e => e instanceof VolantisError && e.code === 'ZE_ERR_INVALID_ARGUMENT' && e.disposition === 'NotCommitted');
   }
   assert.throws(() => s.cypher('CREATE (n:Doc) RETURN n', { unsupported: [{}] }), e => e.code === 'ZE_ERR_INVALID_ARGUMENT');
   assert.deepEqual(s.cypher('MATCH (n) RETURN count(n)').rows, [[0n]]);
@@ -65,7 +65,7 @@ test('typed scalar parameters and list results', { skip: !supported }, () => fix
 test('row limits fail without truncation and allow more than 1024 rows', { skip: !supported }, () => fixture(s => {
   s.graphApply(Array.from({ length: 33 }, (_, i) => node(String(i))));
   for (const options of [undefined, { maxRows: 0 }, { maxRows: 1024 }, { maxRows: 1 }]) {
-    assert.throws(() => s.cypher('MATCH (a), (b) RETURN 7 AS k', {}, options), e => e instanceof ZeppelinError && e.code === 'ZE_ERR_BUDGET_EXCEEDED');
+    assert.throws(() => s.cypher('MATCH (a), (b) RETURN 7 AS k', {}, options), e => e instanceof VolantisError && e.code === 'ZE_ERR_BUDGET_EXCEEDED');
   }
   assert.equal(s.cypher('MATCH (a), (b) RETURN 7 AS k', {}, { maxRows: 1089 }).rows.length, 1089);
   for (const maxRows of [-1, 65537, 1.5, NaN]) assert.throws(() => s.cypher('CREATE (n) RETURN n', {}, { maxRows }), e => e.code === 'ZE_ERR_INVALID_ARGUMENT');

@@ -1,5 +1,5 @@
 [package]
-name = "zeppelin-embed-graph-feature-core-probe"
+name = "volantis-db-graph-feature-core-probe"
 version = "0.0.0"
 edition = "2024"
 publish = false
@@ -7,4 +7,4 @@ publish = false
 [workspace]
 
 [dependencies]
-zeppelin-embed = { path = "../../../crates/zeppelin-embed", default-features = false }
+volantis-db = { path = "../../../crates/volantis-db", default-features = false }

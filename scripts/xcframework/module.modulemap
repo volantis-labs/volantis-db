@@ -1,4 +1,4 @@
-module CZeppelinEmbed {
-    header "zeppelin_embed.h"
+module CVolantisDB {
+    header "volantis_db.h"
     export *
 }

@@ -8,14 +8,14 @@
 use super::coverage::CoverageRegistry;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
-use zeppelin_embed::lifecycle::durability::{CommitTier, DurabilityMode};
-use zeppelin_embed::lifecycle::{CancelToken, OpenOptions, QueryControl, Store};
-use zeppelin_embed::property_graph::query::QueryValue;
-use zeppelin_embed::property_graph::query::completed::{
+use volantis_db::lifecycle::durability::{CommitTier, DurabilityMode};
+use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl, Store};
+use volantis_db::property_graph::query::QueryValue;
+use volantis_db::property_graph::query::completed::{
     CompletedGraphResult, GraphQueryErrorKind, GraphQueryOptions, Outcome, Value,
 };
-use zeppelin_embed::property_graph::query::plan::ParameterBinding;
-use zeppelin_embed_cypher::{CompileLimits, ErrorKind, StatementError, execute};
+use volantis_db::property_graph::query::plan::ParameterBinding;
+use volantis_db_cypher::{CompileLimits, ErrorKind, StatementError, execute};
 
 pub const REQUIRED_COVERAGE: [&str; 39] = [
     "property-graph.cypher-entry.no-return.commit",
@@ -120,9 +120,9 @@ fn read(store: &Store) -> Result<(Vec<i64>, u64), String> {
             ));
         }
     }
-    let limits = zeppelin_embed::property_graph::query::runtime::RuntimeLimits::default()
+    let limits = volantis_db::property_graph::query::runtime::RuntimeLimits::default()
         .with_limit(
-            zeppelin_embed::property_graph::query::runtime::WorkKind::Scans,
+            volantis_db::property_graph::query::runtime::WorkKind::Scans,
             0,
         )
         .map_err(|error| error.to_string())?;
@@ -184,13 +184,13 @@ fn once(seed: u64, run_index: u32) -> Result<Report, String> {
         .map_err(|error| format!("cypher entry setup: {error}"))?;
         committed_no_rows(&setup)?;
         store
-            .ingest(zeppelin_embed::ingest::IngestBatch::new(
+            .ingest(volantis_db::ingest::IngestBatch::new(
                 (10_000..10_032)
                     .map(|id| {
-                        zeppelin_embed::ingest::IngestDocument::new(
-                            zeppelin_embed::ingest::DocumentVersion::new(
-                                zeppelin_embed::ingest::DocId::new(id),
-                                zeppelin_embed::ingest::Revision::new(1),
+                        volantis_db::ingest::IngestDocument::new(
+                            volantis_db::ingest::DocumentVersion::new(
+                                volantis_db::ingest::DocId::new(id),
+                                volantis_db::ingest::Revision::new(1),
                             ),
                             vec![1.0],
                         )
@@ -329,7 +329,7 @@ fn once(seed: u64, run_index: u32) -> Result<Report, String> {
 }
 
 fn probe_reversed_pattern(store: &Store) -> Result<(), String> {
-    use zeppelin_embed::property_graph::query::runtime::{RuntimeLimits, WorkKind};
+    use volantis_db::property_graph::query::runtime::{RuntimeLimits, WorkKind};
     let query = "MATCH (g:Guard) WHERE ()-[:R]->(g) RETURN count(*)";
     let generation = read(store)?.1;
     for (text, count) in [
@@ -394,7 +394,7 @@ fn probe_reversed_pattern(store: &Store) -> Result<(), String> {
 }
 
 fn probe_page_validation(store: &Store) -> Result<(), String> {
-    use zeppelin_embed::property_graph::query::runtime::WorkKind;
+    use volantis_db::property_graph::query::runtime::WorkKind;
     let mut page_counts = Vec::new();
     let once = "MATCH (a:P)-[r:R]->(b) RETURN count(r)";
     let twice = "MATCH (a:P)-[r:R]->(b) MATCH (c:P)-[s:R]->(d) RETURN count(r)";
@@ -421,7 +421,7 @@ fn probe_page_validation(store: &Store) -> Result<(), String> {
 }
 
 fn probe_other_anchor_shapes(store: &Store) -> Result<(), String> {
-    use zeppelin_embed::property_graph::query::pattern_test_support::{
+    use volantis_db::property_graph::query::pattern_test_support::{
         observe_document_visits, with_original_node_sources,
     };
     for (text, count) in [
@@ -448,7 +448,7 @@ fn probe_other_anchor_shapes(store: &Store) -> Result<(), String> {
             || zero
                 .metadata()
                 .counters
-                .get(zeppelin_embed::property_graph::query::runtime::WorkKind::Scans)
+                .get(volantis_db::property_graph::query::runtime::WorkKind::Scans)
                 != 0
         {
             return Err("sparse anchor LIMIT 0 scanned".into());
@@ -478,7 +478,7 @@ fn probe_other_anchor_shapes(store: &Store) -> Result<(), String> {
         )
     })
     .map_err(|error| error.to_string())?;
-    use zeppelin_embed::property_graph::query::runtime::WorkKind;
+    use volantis_db::property_graph::query::runtime::WorkKind;
     if values(&result)? != [1]
         || values(&original)? != [1]
         || result.metadata().counters.get(WorkKind::Scans)
@@ -531,7 +531,7 @@ fn probe_expansion_rebind(store: &Store, base: i64) -> Result<(), String> {
 }
 
 fn probe_document_scan(store: &Store) -> Result<(), String> {
-    use zeppelin_embed::property_graph::query::runtime::{RuntimeLimits, WorkKind};
+    use volantis_db::property_graph::query::runtime::{RuntimeLimits, WorkKind};
     let full =
         run(store, "MATCH (n) RETURN count(n) AS c", &[]).map_err(|error| error.to_string())?;
     let lazy = run(
@@ -653,7 +653,7 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
 }
 
 fn probe_id_lookup(store: &Store) -> Result<(), String> {
-    use zeppelin_embed::property_graph::query::runtime::{RuntimeLimits, WorkKind};
+    use volantis_db::property_graph::query::runtime::{RuntimeLimits, WorkKind};
     let all = run(store, "MATCH (p:P) RETURN ze.node_id(p) AS id", &[])
         .map_err(|error| error.to_string())?;
     let Some(Value::String(span)) = all.cell(0, 0) else {
@@ -725,7 +725,7 @@ fn probe_id_lookup(store: &Store) -> Result<(), String> {
 }
 
 fn incident_source_controls(store: &Store) -> Result<(), String> {
-    use zeppelin_embed::property_graph::query::runtime::{RuntimeLimits, WorkKind};
+    use volantis_db::property_graph::query::runtime::{RuntimeLimits, WorkKind};
     let outgoing = "MATCH ()-[r]->() RETURN count(r)";
     for text in [
         outgoing,
@@ -763,7 +763,7 @@ fn incident_source_controls(store: &Store) -> Result<(), String> {
         return Err(String::from("incident source LIMIT 0 scanned"));
     }
     // S5 uses the same sparse-source work refusal, with paired clean controls.
-    use zeppelin_embed::property_graph::query::pattern_test_support::observe_document_visits;
+    use volantis_db::property_graph::query::pattern_test_support::observe_document_visits;
     for (pattern, expected) in [
         ("(a)<-[r]-(b)", 1),
         ("(a)-[r]-(b)", 2),
@@ -809,7 +809,7 @@ fn incident_source_controls(store: &Store) -> Result<(), String> {
 /// Receipt for repeated reads of immutable directory pages within one statement,
 /// followed by a fresh statement that must validate those pages again.
 pub fn page_memo_controls(store: &Store) -> Result<(), String> {
-    use zeppelin_embed::property_graph::query::runtime::WorkKind;
+    use volantis_db::property_graph::query::runtime::WorkKind;
     for query in [
         "MATCH ()-[r]->() RETURN count(r)",
         "MATCH ()-[r]->(), ()-[s]->() RETURN count(r)",

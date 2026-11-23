@@ -35,12 +35,12 @@ jobs:
       - name: Clippy supported workspace targets
         run: >-
           cargo clippy --workspace --all-targets
-          --features zeppelin-embed-workspace-tests/graph-result-test-support
+          --features volantis-db-workspace-tests/graph-result-test-support
           -- -D warnings
       - name: Clippy shipped graph library
-        run: cargo clippy -p zeppelin-embed --features graph-cypher -- -D warnings
+        run: cargo clippy -p volantis-db --features graph-cypher -- -D warnings
       - name: Clippy default core library
-        run: cargo clippy -p zeppelin-embed -- -D warnings
+        run: cargo clippy -p volantis-db -- -D warnings
 
   doc:
     name: doc (macos-14)
@@ -54,7 +54,7 @@ jobs:
       - name: Document supported workspace targets
         run: >-
           RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
-          --features zeppelin-embed-workspace-tests/graph-result-test-support
+          --features volantis-db-workspace-tests/graph-result-test-support
 
   test:
     name: test (macos-14)
@@ -71,33 +71,33 @@ jobs:
           tool: cargo-llvm-cov,cbindgen@0.29.4
       - name: Test supported workspace targets
         run: >-
-          cargo test --workspace --exclude zeppelin-embed-workspace-tests
-          --features zeppelin-embed-ffi/graph-cypher
+          cargo test --workspace --exclude volantis-db-workspace-tests
+          --features volantis-db-ffi/graph-cypher
       - name: Test FFI lib with graph-result allocation hooks
         run: >-
-          cargo test -p zeppelin-embed-ffi
+          cargo test -p volantis-db-ffi
           --features graph-result-test-support --lib
       - name: Exercise the scoped graph-result allocation hook
         run: >-
-          cargo test -p zeppelin-embed-workspace-tests
+          cargo test -p volantis-db-workspace-tests
           --features graph-result-test-support
           --test adversarial_tests
           property_graph_response_probe_checks_real_owners_and_paired_faults
           -- --exact
       - name: Exercise bounded unified-store runner contracts
         run: >-
-          cargo test -p zeppelin-embed-workspace-tests
+          cargo test -p volantis-db-workspace-tests
           --features graph-result-test-support
           --test adversarial_tests unified_store::
       - name: Graph allocation-audit gates (deterministic allocator counts)
         run: >-
-          cargo test -p zeppelin-embed --features graph-cypher,allocation-audit
+          cargo test -p volantis-db --features graph-cypher,allocation-audit
           --test graph_query_allocation --test graph_artifact
           --test graph_storage_prepare -- --test-threads=1
       - name: Exercise unified performance counter smoke (no timing acceptance)
-        run: cargo test -p zeppelin-embed-bench --features graph-cypher --test unified_perf_gate
+        run: cargo test -p volantis-db-bench --features graph-cypher --test unified_perf_gate
       - name: Exercise every runtime kernel arm
-        run: PROPTEST_CASES=1024 cargo test -p zeppelin-embed kernels
+        run: PROPTEST_CASES=1024 cargo test -p volantis-db kernels
 
   format-compat:
     name: format-compat (macos-14)
@@ -115,10 +115,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Populate the offline release-reader build cache
         run: cargo fetch --locked
-      - run: cargo test -p zeppelin-embed --features graph-cypher --test format_compat
-      - run: cargo test -p zeppelin-embed --features graph-cypher --test wal_unified_golden --test manifest_v3
-      - run: cargo test -p zeppelin-embed --features graph-cypher --test format_compat -- --ignored
-      - run: cargo test -p zeppelin-embed --features graph-cypher --test namespace_relocate -- --ignored conversion_accepts_the_routed_layout_written_by_0_6_0
+      - run: cargo test -p volantis-db --features graph-cypher --test format_compat
+      - run: cargo test -p volantis-db --features graph-cypher --test wal_unified_golden --test manifest_v3
+      - run: cargo test -p volantis-db --features graph-cypher --test format_compat -- --ignored
+      - run: cargo test -p volantis-db --features graph-cypher --test namespace_relocate -- --ignored conversion_accepts_the_routed_layout_written_by_0_6_0
 
   swift-test:
     name: swift-test (macos-14)
@@ -129,9 +129,9 @@ jobs:
         with:
           toolchain: 1.93.0
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build -p zeppelin-embed-ffi --release --features swift-query-test-support
+      - run: cargo build -p volantis-db-ffi --release --features swift-query-test-support
       - run: ZE_USE_LOCAL_FFI=1 swift test --jobs 4 -Xswiftc -DZE_SWIFT_QUERY_TEST_SUPPORT
-      - run: cargo build -p zeppelin-embed-ffi --release --features graph-bindings-test-support,swift-query-test-support
+      - run: cargo build -p volantis-db-ffi --release --features graph-bindings-test-support,swift-query-test-support
       - run: ZE_USE_LOCAL_FFI=1 ZE_ENABLE_GRAPH=1 swift test --jobs 4 -Xswiftc -DZE72_TEST_BRIDGE -Xswiftc -DZE_SWIFT_QUERY_TEST_SUPPORT
 
   deny:
@@ -148,7 +148,7 @@ jobs:
       - run: cargo deny check
       - name: Prove the deny policy rejects Tokio
         run: >-
-          cargo test -p zeppelin-embed-workspace-tests
+          cargo test -p volantis-db-workspace-tests
           --test scaffold_gates deny_blacklist_rejects_banned_dep
           -- --ignored --exact
 
@@ -166,12 +166,12 @@ jobs:
         env:
           CARGO_BUILD_JOBS: "3"
         run: |
-          cargo build --locked --release -p zeppelin-embed -p zeppelin-embed-ffi --no-default-features --target-dir target/ze107/legacy
-          MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --locked --release -p zeppelin-embed-ffi --no-default-features --features graph-cypher --target-dir target/ze107/graph-cypher
-          scripts/size-budget.sh --core-archive target/ze107/legacy/release/libzeppelin_embed.a
-          scripts/size-budget.sh --ffi-archive target/ze107/legacy/release/libzeppelin_embed_ffi.a
-          scripts/size-budget.sh --graph-archive target/ze107/graph-cypher/release/libzeppelin_embed_ffi.a
-          python3 scripts/release/check-graph-artifact.py --legacy target/ze107/legacy/release/libzeppelin_embed_ffi.a --graph target/ze107/graph-cypher/release/libzeppelin_embed_ffi.a --graph-only --output target/ze107/evidence
+          cargo build --locked --release -p volantis-db -p volantis-db-ffi --no-default-features --target-dir target/ze107/legacy
+          MACOSX_DEPLOYMENT_TARGET=14.0 cargo build --locked --release -p volantis-db-ffi --no-default-features --features graph-cypher --target-dir target/ze107/graph-cypher
+          scripts/size-budget.sh --core-archive target/ze107/legacy/release/libvolantis_db.a
+          scripts/size-budget.sh --ffi-archive target/ze107/legacy/release/libvolantis_db_ffi.a
+          scripts/size-budget.sh --graph-archive target/ze107/graph-cypher/release/libvolantis_db_ffi.a
+          python3 scripts/release/check-graph-artifact.py --legacy target/ze107/legacy/release/libvolantis_db_ffi.a --graph target/ze107/graph-cypher/release/libvolantis_db_ffi.a --graph-only --output target/ze107/evidence
 
   platform-truth-smoke:
     name: platform-truth-smoke (macos-14)
@@ -182,7 +182,7 @@ jobs:
         with:
           toolchain: 1.93.0
       - uses: Swatinem/rust-cache@v2
-      - run: cargo run -p zeppelin-embed-bench --bin platform-truth -- --smoke
+      - run: cargo run -p volantis-db-bench --bin platform-truth -- --smoke
 
   ffi-sanitizers:
     name: ffi-${{ matrix.sanitizer }} (macos-14)
@@ -207,7 +207,7 @@ jobs:
           ZE_CARGO_TEST_ARGS: -Zbuild-std --target aarch64-apple-darwin
         run: >-
           cargo +nightly test -Zbuild-std --target aarch64-apple-darwin
-          -p zeppelin-embed-ffi --lib --test ffi_query --test ffi_contract
+          -p volantis-db-ffi --lib --test ffi_query --test ffi_contract
           --test ffi_adversarial --test ffi_ownership
       - name: bounded graph binding suites under ${{ matrix.sanitizer }} sanitizer
         env:
@@ -217,7 +217,7 @@ jobs:
           RUSTFLAGS: -Zsanitizer=${{ matrix.sanitizer }}
         run: >-
           cargo +nightly test -Zbuild-std --target aarch64-apple-darwin
-          -p zeppelin-embed-ffi --features graph-bindings-test-support
+          -p volantis-db-ffi --features graph-bindings-test-support
           --test ffi_graph_full --test ffi_graph_ownership --test ffi_graph_poison
           -- --test-threads=1
       - name: ffi soak under ${{ matrix.sanitizer }} sanitizer
@@ -228,7 +228,7 @@ jobs:
           ZE_FFI_SOAK_ITERATIONS: 2000
         run: >-
           cargo +nightly test -Zbuild-std --target aarch64-apple-darwin
-          -p zeppelin-embed-ffi --test ffi_soak -- --ignored
+          -p volantis-db-ffi --test ffi_soak -- --ignored
 
   ffi-soak:
     name: ffi-soak (macos-14, 10k rounds)
@@ -239,7 +239,7 @@ jobs:
         with:
           toolchain: 1.93.0
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p zeppelin-embed-ffi --test ffi_soak -- --ignored --nocapture
+      - run: cargo test -p volantis-db-ffi --test ffi_soak -- --ignored --nocapture
 
   kernel-perf-floor:
     name: kernel-perf-floor (macos-14)
@@ -251,5 +251,5 @@ jobs:
           toolchain: 1.93.0
       - uses: Swatinem/rust-cache@v2
       - run: >-
-          cargo test --release -p zeppelin-embed --test kernels
+          cargo test --release -p volantis-db --test kernels
           kernels::perf -- --ignored --nocapture

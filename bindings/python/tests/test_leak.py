@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 ROUNDS = 10_000
 MAX_GROWTH_BYTES = 8 * 1024 * 1024

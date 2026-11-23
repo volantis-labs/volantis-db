@@ -12,11 +12,11 @@ use super::fault_vfs::{
 use graph_search::*;
 use rand::Rng;
 use std::sync::Arc;
-use zeppelin_embed::graph_commit_recovery_test_support::{ProbeStore, document};
-use zeppelin_embed::property_graph::staging::*;
-use zeppelin_embed::property_graph::*;
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed_adversarial_oracle::graph_fixture as oracle;
+use volantis_db::graph_commit_recovery_test_support::{ProbeStore, document};
+use volantis_db::property_graph::staging::*;
+use volantis_db::property_graph::*;
+use volantis_db::vfs::StdVfs;
+use volantis_db_adversarial_oracle::graph_fixture as oracle;
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.search-qualification.membership",
     "property-graph.search-qualification.artifact.fire",
@@ -85,7 +85,7 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
 pub fn lifecycle_observations(
     seed: u64,
     coverage: &mut CoverageRegistry,
-) -> Result<Vec<zeppelin_embed_bench::harness_json::Value>, String> {
+) -> Result<Vec<volantis_db_bench::harness_json::Value>, String> {
     let mut observations = Vec::new();
     for (name, site, needle) in schedule(seed) {
         for fault in [true, false] {
@@ -198,7 +198,7 @@ pub fn lifecycle_observations(
                     Some(CanonicalEmbedding::new(&tower, &point).unwrap()),
                 )
                 .unwrap();
-                use zeppelin_embed::ingest::{
+                use volantis_db::ingest::{
                     DocId, DocumentVersion, IngestBatch, IngestDocument, Revision,
                 };
                 let documents = IngestBatch::new(vec![
@@ -274,7 +274,7 @@ pub fn lifecycle_observations(
             if oracle::compare_rows(&after, &dropped, true).is_ok() {
                 return Err("comparator accepted dropped membership".into());
             }
-            observations.push(zeppelin_embed_bench::harness_json::json!({
+            observations.push(volantis_db_bench::harness_json::json!({
                 "site": name, "fault": fault, "fires": u64::from(fault),
                 "controls": u64::from(!fault), "error": error,
                 "before": format!("{before:?}"), "after": format!("{after:?}"),

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo=$(git rev-parse --show-toplevel)
+. "$repo/scripts/fixtures/release-commits.sh"
 out=${1:-"$repo/tests/fixtures/releases"}
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
@@ -18,7 +19,7 @@ trap cleanup EXIT
 git clone --quiet --shared --no-checkout "$repo" "$scratch/repo"
 export CARGO_BUILD_JOBS=3 ZE_TEST_SEED=0
 for tag in v0.4.2 v0.5.0 v0.6.0; do
-  git -C "$scratch/repo" worktree add --quiet --detach "$scratch/$tag" "$tag"
+  git -C "$scratch/repo" worktree add --quiet --detach "$scratch/$tag" "$(release_commit "$tag")"
   release="$scratch/$tag"
   sha=$(git -C "$release" rev-parse HEAD)
   mkdir -p "$release/crates/zeppelin-embed/examples"

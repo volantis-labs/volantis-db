@@ -1,0 +1,66 @@
+[package]
+name = "volantis-db-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[features]
+default = []
+graph-cypher = ["volantis-db/graph-cypher", "dep:volantis-db-cypher"]
+# Scoped allocation-site scheduling for the opt-in canonical test runner only.
+graph-result-test-support = ["graph-cypher"]
+graph-bindings-test-support = ["graph-result-test-support", "abi-panic-probe", "volantis-db/test-seams"]
+abi-panic-probe = []
+swift-query-test-support = ["volantis-db/test-seams"]
+text = ["dep:volantis-db-text"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+
+[dependencies]
+volantis-db = { path = "../volantis-db", version = "=0.1.0" }
+volantis-db-cypher = { path = "../volantis-db-cypher", version = "=0.1.0", optional = true }
+volantis-db-text = { path = "../volantis-db-text", version = "=0.1.0", optional = true }
+
+# loom is compiled only under `--cfg loom`, the model-checking build of the
+# handle state machine (task 22 phase 3). It never enters a default build.
+[target.'cfg(loom)'.dependencies]
+loom = "=0.7.2"
+
+[dev-dependencies]
+volantis-db-adversarial-oracle = { path = "../../tests/adversarial-oracle", version = "=0.1.0" }
+volantis-db = { path = "../volantis-db", version = "=0.1.0", features = ["test-seams"] }
+tempfile.workspace = true
+
+[[test]]
+name = "ffi_graph_contract"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "ffi_graph_header"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "ffi_graph_layout"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "ffi_graph_entry"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "ffi_graph_poison"
+required-features = ["graph-cypher", "abi-panic-probe"]
+
+[[test]]
+name = "ffi_graph_ownership"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "ffi_graph_full"
+required-features = ["graph-cypher"]

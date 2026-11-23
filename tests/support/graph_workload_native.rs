@@ -1,9 +1,9 @@
 //! Pointer-free tooling records consumed by the C public ABI adapter.
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
-use zeppelin_embed::property_graph::query::Comparison;
-use zeppelin_embed::property_graph::{GraphQueryPlan, query::plan::*};
-use zeppelin_embed_bench::harness_json::{Value, json};
+use volantis_db::property_graph::query::Comparison;
+use volantis_db::property_graph::{GraphQueryPlan, query::plan::*};
+use volantis_db_bench::harness_json::{Value, json};
 #[derive(Default)]
 struct Job {
     bytes: Vec<u8>,

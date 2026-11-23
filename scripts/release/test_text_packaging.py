@@ -18,27 +18,27 @@ def load(name):
 
 class TextPackaging(unittest.TestCase):
     def test_full_header_preserves_open_model_and_v2_abi(self):
-        source = ROOT / 'crates/zeppelin-embed-ffi/include/zeppelin_embed.h'
+        source = ROOT / 'crates/volantis-db-ffi/include/volantis_db.h'
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp)
             load('core_header').write_artifact_headers(source, destination, 'graph-cypher')
-            self.assertEqual((destination / 'zeppelin_embed.h').read_bytes(), source.read_bytes())
+            self.assertEqual((destination / 'volantis_db.h').read_bytes(), source.read_bytes())
             for symbol in ('ze_text_default_model', 'ZeTextModelRef', 'ze_text_open_model', 'ze_text_ingest_v2', 'ze_text_query_v2', 'ze_text_query_outcome_free'):
-                self.assertIn(symbol, (destination / 'zeppelin_embed.h').read_text())
+                self.assertIn(symbol, (destination / 'volantis_db.h').read_text())
 
     def test_legacy_header_has_no_text_declarations(self):
-        source = ROOT / 'crates/zeppelin-embed-ffi/include/zeppelin_embed.h'
+        source = ROOT / 'crates/volantis-db-ffi/include/volantis_db.h'
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp)
             load('core_header').write_artifact_headers(source, destination, 'legacy')
-            contents = (destination / 'zeppelin_embed.h').read_text()
+            contents = (destination / 'volantis_db.h').read_text()
             self.assertNotIn('ZeText', contents)
             self.assertNotIn('ze_text_', contents)
             self.assertIn('ze_open(', contents)
 
     def test_full_exports_include_complete_text_abi(self):
         checker = load('check-graph-artifact')
-        source = ROOT / 'crates/zeppelin-embed-ffi/include/zeppelin_embed.h'
+        source = ROOT / 'crates/volantis-db-ffi/include/volantis_db.h'
         declared = set(re.findall(r'\b(ze_text_\w+)\s*\(', source.read_text()))
         expected = {s for s in checker.expected_symbols('graph-cypher') if s.startswith('ze_text_')}
         self.assertEqual(declared, expected)
@@ -46,7 +46,7 @@ class TextPackaging(unittest.TestCase):
 
     def test_graph_export_profiles_require_exact_symbols(self):
         checker = load('check-graph-artifact')
-        graph = {s for s in (ROOT / 'crates/zeppelin-embed-ffi/symbols.graph.allowlist').read_text().splitlines()
+        graph = {s for s in (ROOT / 'crates/volantis-db-ffi/symbols.graph.allowlist').read_text().splitlines()
                  if s.startswith('ze_') and not s.startswith('ze_text_')}
         for text in (False, True):
             for suffix in ('.a', '.dylib'):

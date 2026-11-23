@@ -17,9 +17,9 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const { ZeppelinError, openNamespace, verify } = require('..');
+const { VolantisError, openNamespace, verify } = require('..');
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'zeppelin-verify.js');
+const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'volantis-verify.js');
 const SPEC = { attributes: [{ id: 1, name: 'meeting', type: 'u64' }] };
 const OPTIONS = { durability: 'durable', commitTier: 'none' };
 const WAL_HEADER_LEN = 40;
@@ -192,13 +192,13 @@ test('verify rejects input that does not name a store directory', () => {
     assert.throws(() => verify(), { name: 'TypeError', code: 'ERR_INVALID_ARG_TYPE' });
     assert.throws(() => verify(42), { name: 'TypeError', code: 'ERR_INVALID_ARG_TYPE' });
     assert.throws(() => verify(''), (error) => {
-      assert.ok(error instanceof ZeppelinError);
+      assert.ok(error instanceof VolantisError);
       assert.equal(error.code, 'ZE_ERR_INVALID_ARGUMENT');
       return true;
     });
     assert.throws(() => verify(`${root}\0x`), { code: 'ZE_ERR_INVALID_ARGUMENT' });
     assert.throws(() => verify(join(root, 'absent')), (error) => {
-      assert.ok(error instanceof ZeppelinError);
+      assert.ok(error instanceof VolantisError);
       assert.equal(error.code, 'ZE_ERR_NOT_FOUND');
       assert.match(error.message, /does not exist/);
       return true;
@@ -212,7 +212,7 @@ test('verify rejects input that does not name a store directory', () => {
   }
 });
 
-test('zeppelin-verify prints the report and exits 0 clean, 1 damaged, 2 unusable', () => {
+test('volantis-verify prints the report and exits 0 clean, 1 damaged, 2 unusable', () => {
   const { root, directory } = fixture();
   try {
     const clean = cli(directory);
@@ -231,7 +231,7 @@ test('zeppelin-verify prints the report and exits 0 clean, 1 damaged, 2 unusable
 
     const usage = cli();
     assert.equal(usage.status, 2);
-    assert.match(usage.stderr, /usage: zeppelin-verify <store-directory>/);
+    assert.match(usage.stderr, /usage: volantis-verify <store-directory>/);
     assert.equal(cli(directory, directory).status, 2);
     assert.equal(cli('--bogus').status, 2);
     const help = cli('--help');

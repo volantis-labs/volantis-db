@@ -6,18 +6,18 @@ use super::fault_vfs::{
 };
 use rand::RngCore;
 use std::{sync::Arc, time::Duration};
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::{
     Deadline, ManualMonotonicClock, OpenOptions, QueryControl, SnapshotLease, Store,
 };
-use zeppelin_embed::property_graph::query::{QueryError, QueryValue, QueryView};
-use zeppelin_embed::property_graph::query::{
+use volantis_db::property_graph::query::{QueryError, QueryValue, QueryView};
+use volantis_db::property_graph::query::{
     eligibility::EligibleNodeSet, plan::SlotId, relational::*, resources::*, runtime::*,
 };
-use zeppelin_embed::property_graph::{
+use volantis_db::property_graph::{
     GraphGeneration, NodeId, StoreInstanceId, resources::GraphResources,
 };
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed_adversarial_oracle::graph_relational as oracle;
+use volantis_db::vfs::StdVfs;
+use volantis_db_adversarial_oracle::graph_relational as oracle;
 
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.relational.order-bags",

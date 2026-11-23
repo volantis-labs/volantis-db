@@ -10,16 +10,16 @@ publish = false
 
 [features]
 default = []
-query-timing = ["zeppelin-embed/query-timing"]
+query-timing = ["volantis-db/query-timing"]
 
 [dependencies]
 serde_json = "=1.0.151"
-zeppelin-embed = { path = "../../crates/zeppelin-embed" }
-zeppelin-embed-text = { path = "../../crates/zeppelin-embed-text" }
+volantis-db = { path = "../../crates/volantis-db" }
+volantis-db-text = { path = "../../crates/volantis-db-text" }
 
 [[bin]]
 name = "query-budget-api"
-path = "../../crates/zeppelin-embed-bench/examples/query-budget.rs"
+path = "../../crates/volantis-db-bench/examples/query-budget.rs"
 
 [profile.bench]
 opt-level = 3

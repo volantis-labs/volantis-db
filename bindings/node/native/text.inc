@@ -215,7 +215,7 @@ napi_value TextOpen(napi_env env, napi_callback_info info) {
         return nullptr;
       if (present) {
         if (!NapiOk(env,
-                    napi_create_string_utf8(env, "zeppelin.download",
+                    napi_create_string_utf8(env, "volantis.download",
                                             NAPI_AUTO_LENGTH, &name),
                     "progress name") ||
             !NapiOk(env,
@@ -285,7 +285,7 @@ bool SetTextDiagnostics(napi_env env, napi_value result,
                         const ZeQueryResult &d) {
   const char *const modes[] = {"vector", "lexical", "hybrid"};
   if (d.mode < 0 || d.mode >= 3) {
-    napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+    napi_throw_error(env, "ERR_VOLANTIS_NATIVE",
                      "text query returned an unknown execution mode");
     return false;
   }
@@ -312,7 +312,7 @@ bool SetTextDiagnostics(napi_env env, napi_value result,
   if (d.has_fusion) {
     const char *const methods[] = {"convex", "reciprocalRank"};
     if (d.fusion_method < 0 || d.fusion_method >= 2) {
-      napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+      napi_throw_error(env, "ERR_VOLANTIS_NATIVE",
                        "text query returned an unknown fusion method");
       return false;
     }
@@ -355,7 +355,7 @@ bool SetTextBackend(napi_env env, napi_value result,
                     const ZeTextQueryOutcome &outcome) {
   if (outcome.requested_compute_units < 1 ||
       outcome.requested_compute_units > 4) {
-    napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+    napi_throw_error(env, "ERR_VOLANTIS_NATIVE",
                      "text query returned unknown compute units");
     return false;
   }

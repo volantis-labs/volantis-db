@@ -67,9 +67,9 @@ run() {
   rustc --version
   swift --version
 } > "$output/identity.log"
-run rust cargo test -p zeppelin-embed-workspace-tests --features graph-result-test-support --test graph_bindings ze72_ -- --test-threads=1
-run c cargo test -p zeppelin-embed-ffi --features graph-bindings-test-support --test ffi_graph_full ze72_ -- --test-threads=1
-run archive cargo build -p zeppelin-embed-ffi --release --features graph-bindings-test-support
+run rust cargo test -p volantis-db-workspace-tests --features graph-result-test-support --test graph_bindings ze72_ -- --test-threads=1
+run c cargo test -p volantis-db-ffi --features graph-bindings-test-support --test ffi_graph_full ze72_ -- --test-threads=1
+run archive cargo build -p volantis-db-ffi --release --features graph-bindings-test-support
 run swift env ZE_USE_LOCAL_FFI=1 ZE_ENABLE_GRAPH=1 CLANG_MODULE_CACHE_PATH="$output/clang-cache" SWIFTPM_MODULECACHE_OVERRIDE="$output/swift-cache" swift test --disable-sandbox --jobs 3 --scratch-path "$output/swift-build" --package-path . --filter GraphBindingsParityTests -Xswiftc -DZE72_TEST_BRIDGE
 run swift-summary python3 scripts/check_swift_qualification.py "$output/swift.log" GraphBindingsParityTests
 if [ "$final" -eq 1 ]; then

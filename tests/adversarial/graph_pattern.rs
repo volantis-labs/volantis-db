@@ -2,8 +2,8 @@
 
 use super::coverage::CoverageRegistry;
 use std::collections::{BTreeMap, BTreeSet};
-use zeppelin_embed::property_graph::query::pattern_test_support::{ProbeReport, run_actual_probe};
-use zeppelin_embed_adversarial_oracle::graph_pattern::{
+use volantis_db::property_graph::query::pattern_test_support::{ProbeReport, run_actual_probe};
+use volantis_db_adversarial_oracle::graph_pattern::{
     Cell, Direction, Edge, Graph, Node, PatternId, Row, TinyPattern, evaluate,
 };
 

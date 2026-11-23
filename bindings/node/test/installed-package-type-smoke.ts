@@ -19,7 +19,7 @@ import {
   type StoreStats,
   type VerifyFindingKind,
   type VerifyReport,
-} from '@zepdb/zeppelin-embed';
+} from 'volantis-db';
 
 const documents: readonly Document[] = [
   { id: 1n, revision: 1n, vector: new Float32Array([1, 0]), text: 'harbour', metadata: Uint8Array.of(42) },
@@ -84,7 +84,7 @@ void graphReport;
 void values;
 graph.close();
 
-import { TextStore, TextQueryResult, TextHealthReport, TextIngestReport } from '@zepdb/zeppelin-embed';
+import { TextStore, TextQueryResult, TextHealthReport, TextIngestReport } from 'volantis-db';
 async function textExample(bundle: string) {
   const text = await TextStore.openAsync('/tmp/text-store', bundle);
   const docs = [{id: 1n, revision: 1n, text: 'bronze zeppelin'}];

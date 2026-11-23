@@ -18,11 +18,11 @@ class Contracts(unittest.TestCase):
             root = Path(d) / 'repo'
             output = (Path(d) / 'workload').resolve()
             (root / 'target/debug').mkdir(parents=True)
-            for name in ('graph-workload', 'graph-fixture', 'libzeppelin_embed_ffi.a'):
+            for name in ('graph-workload', 'graph-fixture', 'libvolantis_db_ffi.a'):
                 (root / 'target/debug' / name).write_bytes(b'artifact')
-            headers = root / 'crates/zeppelin-embed-ffi/include'
+            headers = root / 'crates/volantis-db-ffi/include'
             headers.mkdir(parents=True)
-            for name in ('zeppelin_embed.h', 'zeppelin_graph_contracts.h'):
+            for name in ('volantis_db.h', 'volantis_db_graph_contracts.h'):
                 (headers / name).write_bytes(b'header')
             bindir = output / 'swift-build/debug'
             bindir.mkdir(parents=True)

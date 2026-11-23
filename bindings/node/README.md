@@ -1,16 +1,16 @@
-# Zeppelin Embed for Node.js
+# Volantis DB for Node.js
 
-`@zepdb/zeppelin-embed` provides in-process vector, text and hybrid search for
+`volantis-db` provides in-process vector, text and hybrid search for
 macOS on Apple silicon and Intel, and for Windows x64. The package uses stable
 Node-API and includes its native engine, so it does not need a separate dynamic
 library at runtime.
 
 ```bash
-npm install @zepdb/zeppelin-embed
+npm install volantis-db
 ```
 
 ```js
-const { Store } = require('@zepdb/zeppelin-embed');
+const { Store } = require('volantis-db');
 
 const store = new Store('my-index');
 store.ingest(
@@ -38,7 +38,7 @@ collected.
 `store.state()` returns the engine lifecycle state as `'open'`, `'closing'`,
 or `'closed'` while the handle is live. `store.stats()` reads the open store's
 exact resource counters. Both calls are synchronous. After `store.close()`
-releases the handle, either call throws `ZeppelinError` with
+releases the handle, either call throws `VolantisError` with
 `code === 'ZE_ERR_CLOSED'`.
 
 The `StoreStats` counters are `bigint` values. Byte fields report memory,
@@ -62,7 +62,7 @@ big-endian integer and `idToUuid` formats an ID back as a lowercase UUID; the
 pair is exact for every 128-bit value:
 
 ```js
-const { uuidToId, idToUuid } = require('@zepdb/zeppelin-embed');
+const { uuidToId, idToUuid } = require('volantis-db');
 
 const id = uuidToId('123e4567-e89b-12d3-a456-426614174000');
 store.upsert([{ id, text: 'meeting notes' }]);
@@ -77,7 +77,7 @@ outside `0n..2n ** 128n - 1n`.
 Namespaces add typed records without changing the existing vector API:
 
 ```js
-const { openNamespace, listNamespaces } = require('@zepdb/zeppelin-embed');
+const { openNamespace, listNamespaces } = require('volantis-db');
 
 const store = openNamespace('my-database', 'documents', {
   attributes: [{ id: 1, name: 'category', type: 'dictionaryString' }],
@@ -246,7 +246,7 @@ in either field returns budget exhausted with all counters at zero.
 report. It copies the budget at the call and runs on a native worker in the
 store's async write queue. Both calls require a writable handle and have no
 cancellation option. Invalid budgets and read-only handles produce
-`ZeppelinError` with `ZE_ERR_INVALID_ARGUMENT` and `ZE_ERR_ACCESS_MODE`,
+`VolantisError` with `ZE_ERR_INVALID_ARGUMENT` and `ZE_ERR_ACCESS_MODE`,
 respectively. For the sealed merge previously available as `maintainAsync()`,
 call `await store.mergeAsync()`.
 
@@ -343,7 +343,7 @@ shutdown, before reopening, or from diagnostics. Damage comes back as
 findings rather than an exception:
 
 ```js
-const { verify } = require('@zepdb/zeppelin-embed');
+const { verify } = require('volantis-db');
 
 const report = verify(path.join('my-database', 'notes'));
 if (!report.ok) {
@@ -356,7 +356,7 @@ if (!report.ok) {
 
 Every finding is damage: the store will not open, or would lose data. A torn
 log tail is damage too, because recovery refuses it. The package also installs
-a `zeppelin-verify <store-directory>` command that prints the same report as
+a `volantis-verify <store-directory>` command that prints the same report as
 JSON and exits 0 when the store is clean, 1 when it found damage, and 2 when
 it could not run.
 
@@ -365,7 +365,7 @@ selects the vector leg, and both together run hybrid fusion; a request with
 neither is refused.
 
 ```js
-const { CancellationToken } = require('@zepdb/zeppelin-embed');
+const { CancellationToken } = require('volantis-db');
 
 // Lexical, with the last term treated as a type-ahead prefix.
 store.query({ text: 'harb', k: 10, lastAsPrefix: true });
@@ -453,20 +453,20 @@ in the main process, in a utility process, and in two utility processes using
 different stores. Node tests also exercise worker threads, garbage collection,
 and process exit with an unclosed store.
 
-Declare `@zepdb/zeppelin-embed` as a production dependency and include this in
+Declare `volantis-db` as a production dependency and include this in
 your electron-builder configuration:
 
 ```json
 {
   "asar": true,
-  "asarUnpack": ["node_modules/@zepdb/zeppelin-embed/prebuilds/**/*.node"],
+  "asarUnpack": ["node_modules/volantis-db/prebuilds/**/*.node"],
   "npmRebuild": false
 }
 ```
 
 The unpack pattern is relative to the app directory. It keeps the native files
 in `app.asar.unpacked`; Electron redirects their ASAR paths automatically, so
-keep using `require('@zepdb/zeppelin-embed')`. The published prebuilds need no
+keep using `require('volantis-db')`. The published prebuilds need no
 rebuild for macOS Electron. `npmRebuild: false` is appropriate for this minimal
 app; applications with other native dependencies must handle those dependencies'
 rebuild requirements separately. Windows requires the shipped Electron-major
@@ -475,7 +475,7 @@ variant described above.
 Call `utilityProcess.fork` after `app.whenReady()`. In the utility entry point:
 
 ```js
-const { openNamespace } = require('@zepdb/zeppelin-embed');
+const { openNamespace } = require('volantis-db');
 const store = openNamespace('/absolute/writable/data/path', 'notes', {});
 try {
   store.upsert([{ id: 1n, text: 'harbour lights' }]);
@@ -521,29 +521,29 @@ one real identity, remove the ad-hoc library-validation exception and retest,
 then separately notarize, staple, and assess distribution. No certificate or
 notarization credentials are required for this CI fixture.
 
-Zeppelin Embed is licensed under GPL-3.0-only.
+Volantis DB is licensed under GPL-3.0-only.
 
 ### Read-only diagnostics shell
 
-The package installs `zeppelin-shell` (Node 18+ and the packaged native addon).
+The package installs `volantis-shell` (Node 18+ and the packaged native addon).
 Run it against an extracted, quiescent **copy** of a store. Every open is
 read-only: the shell has no mutation commands or writable mode, never repairs a
 WAL, and does not create missing stores. A truncated WAL may prevent reads;
 `verify` works without opening the store and reports the damage.
 
 ```sh
-zeppelin-shell /diagnostics/root namespaces
-zeppelin-shell /diagnostics/root/docs schema
-zeppelin-shell /diagnostics/root/docs get 18446744073709551617
-zeppelin-shell /diagnostics/root/docs scan '{"order":{"attributeId":1,"direction":"descending"},"limit":10,"filter":{"op":"exists","attributeId":1}}'
-zeppelin-shell /diagnostics/root/docs count '{"filter":{"op":"eq","attributeId":1,"values":[{"id":1,"type":"u64","value":{"$bigint":"42"}}]}}'
-zeppelin-shell /diagnostics/root/docs query '{"text":"hello world","k":10}'
-zeppelin-shell /diagnostics/root/docs dump '{"limit":100}' > documents.jsonl
-zeppelin-shell /diagnostics/root/docs verify
+volantis-shell /diagnostics/root namespaces
+volantis-shell /diagnostics/root/docs schema
+volantis-shell /diagnostics/root/docs get 18446744073709551617
+volantis-shell /diagnostics/root/docs scan '{"order":{"attributeId":1,"direction":"descending"},"limit":10,"filter":{"op":"exists","attributeId":1}}'
+volantis-shell /diagnostics/root/docs count '{"filter":{"op":"eq","attributeId":1,"values":[{"id":1,"type":"u64","value":{"$bigint":"42"}}]}}'
+volantis-shell /diagnostics/root/docs query '{"text":"hello world","k":10}'
+volantis-shell /diagnostics/root/docs dump '{"limit":100}' > documents.jsonl
+volantis-shell /diagnostics/root/docs verify
 ```
 
-From this checkout, substitute `node bindings/node/bin/zeppelin-shell.js` for
-`zeppelin-shell`. `--help` lists the commands. `namespaces` takes a namespace
+From this checkout, substitute `node bindings/node/bin/volantis-shell.js` for
+`volantis-shell`. `--help` lists the commands. `namespaces` takes a namespace
 root; all other commands take a store directory. Namespace listings include
 attribute ids, names, types and nullability (the built-in timestamp is omitted).
 
@@ -560,7 +560,7 @@ exit codes are 0 for success, 1 for verify findings, and 2 for usage/open errors
 The same inspection capabilities are available programmatically:
 
 ```js
-const { openInspection } = require('@zepdb/zeppelin-embed');
+const { openInspection } = require('volantis-db');
 const store = openInspection('/diagnostics/root/docs');
 try {
   console.log(store.schema());
@@ -582,7 +582,7 @@ opening a Store or checking `Store.graphSupported()` does not enable it.
 Graph-free builds expose the methods and throw `ZE_ERR_GRAPH_UNSUPPORTED_BUILD`.
 
 ```js
-const { Store } = require('@zepdb/zeppelin-embed');
+const { Store } = require('volantis-db');
 const store = new Store('/path/to/store', { maxResidentBytes: 268435456n });
 try {
   store.enableGraph();
@@ -664,7 +664,7 @@ dispositions, including `NotCommitted`, `Committed`, `Replayed`, and
 `Indeterminate`; do not blindly retry a write because it threw. Invalid JS inputs
 are rejected before calling the engine.
 
-The [documented Cypher profile](https://github.com/zepdb/zeppelin-embed/blob/main/crates/zeppelin-embed-cypher/README.md)
+The [documented Cypher profile](https://github.com/volantis-labs/volantis-db/blob/main/crates/volantis-db-cypher/README.md)
 defines supported statements and functions. This binding does not add syntax,
 graph search or vector inputs. The example uses synchronous
 calls; use the async API with `AbortSignal` for potentially long operations.
@@ -695,10 +695,10 @@ keep Wallflower's event loop free.
 Requires macOS 13.0 or later on Apple silicon. `TextStore` embeds text locally and searches dense, lexical or hybrid legs. The
 arm64 prebuild includes MLX and its `mlx.metallib` beside the addon; keep both
 files together when repackaging. Intel macOS and Windows builds throw a typed
-`ZeppelinError` with code `ZE_ERR_UNSUPPORTED` and the message
+`VolantisError` with code `ZE_ERR_UNSUPPORTED` and the message
 `text API is available on macOS arm64 only`.
 
-Electron apps must `asarUnpack` both `mlx.metallib` and `zeppelin_embed.node`,
+Electron apps must `asarUnpack` both `mlx.metallib` and `volantis_db.node`,
 because MLX loads the metallib from the directory of the native binary.
 
 MLX keeps a process-global buffer cache, capped at 4 GiB by default during text
@@ -712,7 +712,7 @@ Zero disables caching. After initialization, omitting the limit reuses the
 process setting. A different explicit limit returns `ZE_ERR_MLX_CACHE_LIMIT_CONFLICT`.
 
 ```js
-const { TextStore } = require('@zepdb/zeppelin-embed');
+const { TextStore } = require('volantis-db');
 
 async function main() {
   const store = await TextStore.openModel({ path: './notes' }); // default model
@@ -780,17 +780,17 @@ To download and cache a model, use the asynchronous `TextStore.openModel` with
 `revision` must be a pinned 40-hex commit and `manifestSha256` the manifest's
 64-hex SHA-256. Omit all three pins (`TextStore.openModel({path})`) to use
 `TextStore.defaultModel`: `volantis-labs/volantis-db-clean71-arctic-m-v2` at
-`d64b817c4021a3f1b9bded3152d9afdf9ac813e7`. A partial set of pins is an error. `onProgress({done, total})` receives
+`5833eb696dbc41def2421a7fb97d58f92db94fab`. A partial set of pins is an error. `onProgress({done, total})` receives
 bigint byte counts on the JS thread. Intermediate reports require both at least
 64 KiB and at least 100 ms since the last report; each verified file also reports
 completion. `(0n, 0n)` means fetching the manifest.
 
 The first open downloads and verifies the pinned model; subsequent opens reuse
 the verified cache. `cacheDir` overrides `ZE_MODEL_CACHE` and the default
-`~/Library/Caches/zeppelin-embed/models`. `offline: true` or `ZE_MODEL_OFFLINE=1`
+`~/Library/Caches/volantis-db/models`. `offline: true` or `ZE_MODEL_OFFLINE=1`
 prohibits networking; a cache miss throws `ZE_ERR_NOT_FOUND`. `ZE_MODEL_ENDPOINT`
 overrides the download endpoint. `TextStore.openAsync(path, bundlePath)` opens a
-preinstalled bundle. See the [model card](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/d64b817c4021a3f1b9bded3152d9afdf9ac813e7/README.md)
+preinstalled bundle. See the [model card](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/5833eb696dbc41def2421a7fb97d58f92db94fab/README.md)
 and [root text API guide](../../README.md#text-api-macos-apple-silicon) for model
 limits, download size, and measured performance.
 

@@ -6,7 +6,7 @@ import PackageDescription
 let repositoryRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let environment = ProcessInfo.processInfo.environment
 let ffiArchive = environment["ZE_LOCAL_FFI_ARCHIVE"] ?? repositoryRoot
-    .appendingPathComponent("target/release/libzeppelin_embed_ffi.a")
+    .appendingPathComponent("target/release/libvolantis_db_ffi.a")
     .standardizedFileURL.path
 let useLocalFFI = environment["ZE_USE_LOCAL_FFI"] == "1"
 let graph = environment["ZE_ENABLE_GRAPH"] == "1"
@@ -26,26 +26,26 @@ let graphBinaryChecksum = "ef3963ca69bcb09d0c6cc192483068df9aa8f7d17c33c7f4f7eef
 
 // Framework discovery uses the framework's name; preserve the public C import
 // through a source re-export when selecting the dynamic full artifact.
-let binaryTargetName = graph && !useLocalFFI ? "ZeppelinEmbedGraph" : "CZeppelinEmbed"
+let binaryTargetName = graph && !useLocalFFI ? "VolantisDBGraph" : "CVolantisDB"
 let cTarget: Target
 if useLocalFFI {
     cTarget = .systemLibrary(
-        name: "CZeppelinEmbed",
-        path: "bindings/swift/Sources/CZeppelinEmbed"
+        name: "CVolantisDB",
+        path: "bindings/swift/Sources/CVolantisDB"
     )
 } else if useLocalXCFramework {
     cTarget = .binaryTarget(
         name: binaryTargetName,
         path: graph
-            ? "target/xcframework-graph-cypher/ZeppelinEmbedGraph.xcframework"
-            : "target/xcframework/ZeppelinEmbed.xcframework"
+            ? "target/xcframework-graph-cypher/VolantisDBGraph.xcframework"
+            : "target/xcframework/VolantisDB.xcframework"
     )
 } else {
     cTarget = .binaryTarget(
         name: binaryTargetName,
         url: graph
-            ? "https://github.com/zepdb/zeppelin-embed/releases/download/v0.8.0/ZeppelinEmbedGraph.xcframework.zip"
-            : "https://github.com/zepdb/zeppelin-embed/releases/download/v0.8.0/ZeppelinEmbed.xcframework.zip",
+            ? "https://github.com/volantis-labs/volantis-db/releases/download/v0.1.0/VolantisDBGraph.xcframework.zip"
+            : "https://github.com/volantis-labs/volantis-db/releases/download/v0.1.0/VolantisDB.xcframework.zip",
         checksum: graph ? graphBinaryChecksum : binaryChecksum
     )
 }
@@ -68,32 +68,32 @@ let graphSwiftSettings: [SwiftSetting]? = graph
     : nil
 
 let package = Package(
-    name: "ZeppelinEmbed",
+    name: "VolantisDB",
     platforms: [.macOS(.v14)],
     products: [
-        .library(name: "ZeppelinEmbed", targets: ["ZeppelinEmbed"]),
+        .library(name: "VolantisDB", targets: ["VolantisDB"]),
     ],
     targets: [
         cTarget,
     ] + (graph && !useLocalFFI ? [
-        .target(name: "CZeppelinEmbed", dependencies: ["ZeppelinEmbedGraph"],
-                path: "bindings/swift/Sources/CZeppelinEmbedGraph"),
+        .target(name: "CVolantisDB", dependencies: ["VolantisDBGraph"],
+                path: "bindings/swift/Sources/CVolantisDBGraph"),
     ] : []) + [
         .target(
-            name: "ZeppelinEmbed",
-            dependencies: ["CZeppelinEmbed"],
-            path: "bindings/swift/Sources/ZeppelinEmbed",
+            name: "VolantisDB",
+            dependencies: ["CVolantisDB"],
+            path: "bindings/swift/Sources/VolantisDB",
             swiftSettings: graphSwiftSettings,
             linkerSettings: localLinkerSettings
         ),
         .testTarget(
-            name: "ZeppelinEmbedTests",
-            dependencies: ["ZeppelinEmbed"],
-            path: "bindings/swift/Tests/ZeppelinEmbedTests",
+            name: "VolantisDBTests",
+            dependencies: ["VolantisDB"],
+            path: "bindings/swift/Tests/VolantisDBTests",
             swiftSettings: graphSwiftSettings
         ),
     ] + (graph ? [
-        .executableTarget(name: "GraphWorkload", dependencies: ["ZeppelinEmbed"],
+        .executableTarget(name: "GraphWorkload", dependencies: ["VolantisDB"],
             path: "bindings/swift/Examples", exclude: ["InstalledGraphConsumer", "FiveVectorsSearch", "RecordStore"],
             sources: ["GraphWorkload.swift"]),
     ] : [])

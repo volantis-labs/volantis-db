@@ -84,7 +84,7 @@ def test_wheel_build_features_and_runtime_assets(
         )
         wheel = setup["PlatformWheel"](setuptools.Distribution())
         assert wheel.get_tag() == ("py3", "none", "macosx_13_0_arm64")
-    assets = Path(builder.build_lib) / "zeppelin_embed/.dylibs"
+    assets = Path(builder.build_lib) / "volantis_db/.dylibs"
     assert (assets / native).read_bytes() == b"native"
     assert (assets / "mlx.metallib").exists() == text
     if text:

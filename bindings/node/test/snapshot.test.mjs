@@ -8,7 +8,7 @@ import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { ZeppelinError, openNamespace } = require('..');
+const { VolantisError, openNamespace } = require('..');
 
 // Page-cache durability keeps the write loop fast; the snapshot itself always
 // syncs its files.
@@ -68,7 +68,7 @@ function contents(store, ids) {
 
 async function rejectsWith(promise, code, pattern) {
   await assert.rejects(promise, (error) => {
-    assert.ok(error instanceof ZeppelinError, `${error}`);
+    assert.ok(error instanceof VolantisError, `${error}`);
     assert.equal(error.code, code);
     if (pattern !== undefined) assert.match(error.message, pattern);
     return true;

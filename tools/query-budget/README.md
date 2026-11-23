@@ -13,7 +13,7 @@ CARGO_TARGET_DIR=/private/tmp/ze-query-budget-api-target \
   cargo build --offline --manifest-path tools/query-budget/Cargo.toml \
   --profile bench --features query-timing
 cargo tree --offline --manifest-path tools/query-budget/Cargo.toml \
-  --features query-timing -e features -i zeppelin-embed
+  --features query-timing -e features -i volantis-db
 ```
 
 The dependency tree must not contain `test-support`. Omit `--features
@@ -42,7 +42,7 @@ Preserve its modifications and use its separate build target:
 ```sh
 cd /private/tmp/ze-clean71-smoke-bmoljupi/worktree
 CARGO_TARGET_DIR=/private/tmp/ze-clean71-4bit-mscs_8rg/target \
-  cargo build --profile bench -p zeppelin-embed-bench \
+  cargo build --profile bench -p volantis-db-bench \
   --example query-budget --features text,query-timing
 ```
 
@@ -96,7 +96,7 @@ stable per-device embedding bits; cosines are not retrieval qualification.
 
 ```sh
 /private/tmp/ze-coreml-v3/bin/python tools/query-budget/export_sweep.py \
-  /private/tmp/ze-clean71-smoke-bmoljupi/zeppelin-embed-clean71-v1-arctic-m-v2/query \
+  /private/tmp/ze-clean71-smoke-bmoljupi/volantis-db-clean71-v1-arctic-m-v2/query \
   FRESH_EXPORT_DIRECTORY \
   --python-packages /private/tmp/ze-clean71-smoke-bmoljupi/reference-packages \
   --python-packages /private/tmp/ze-clean71-smoke-bmoljupi/python-packages
@@ -119,9 +119,9 @@ Unknown devices fail. Compute plans are compiler intent, not hardware traces.
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tools/query-budget -p 'test_*.py'
 clang -O3 -fobjc-arc -fblocks -framework CoreML -framework Foundation \
-  crates/zeppelin-embed-text/tests/coreml_output_copy.m -o /tmp/coreml_output_copy
+  crates/volantis-db-text/tests/coreml_output_copy.m -o /tmp/coreml_output_copy
 /tmp/coreml_output_copy
-rustfmt --edition 2024 --check crates/zeppelin-embed-bench/examples/query-budget.rs
+rustfmt --edition 2024 --check crates/volantis-db-bench/examples/query-budget.rs
 git diff --check
 ```
 

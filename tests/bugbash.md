@@ -113,13 +113,13 @@ pass and a planted second Unicode-3.0 crate must fail. Cost: XS.
 **Batch 3 — Test hermeticity** [test-gap]
 Items: BL-156 [test-gap], BL-161 [test-gap][format], BL-003 [test-gap].
 Verified: `ffi_header.rs:101` still shells a nested
-`cargo build -p zeppelin-embed-ffi --release` with no private target dir,
+`cargo build -p volantis-db-ffi --release` with no private target dir,
 so a coverage run poisons `target/release` and the gate cannot run twice;
 `tests/corruption.rs` now derives *segment region* offsets from the encoded
 bytes (`entry_offset`/`region_offset` helpers) but still lacks the
 changed-the-byte-it-intended guard BL-161 asks for on manifest mutations.
-Files: `crates/zeppelin-embed-ffi/tests/ffi_header.rs`,
-`crates/zeppelin-embed/tests/corruption.rs`, `tests/` size-budget test.
+Files: `crates/volantis-db-ffi/tests/ffi_header.rs`,
+`crates/volantis-db/tests/corruption.rs`, `tests/` size-budget test.
 DEFER-OK: test-only. RED: (BL-156) a new
 `header_gate_passes_twice_in_a_row_after_an_instrumented_build` test —
 currently reproducibly RED per the entry's three measured runs; (BL-161) a
@@ -134,7 +134,7 @@ spawns a 2 ms sleeping thread and asserts `elapsed < 25ms` — a nonzero
 flake budget against the zero-budget rule. Fix per the entry: keep the
 cross-thread visibility test, add a deterministic pre-cancelled entry-check
 case, drive the cancel from a counting token after N hops. Files:
-`crates/zeppelin-embed/src/graph/search.rs` (test module only). DEFER-OK.
+`crates/volantis-db/src/graph/search.rs` (test module only). DEFER-OK.
 RED: the counting-token test does not exist; write it against a token that
 never fires and observe the wrong variant. Cost: S.
 
@@ -157,7 +157,7 @@ unfiltered search and observe I13 stay green today. Cost: M.
 Items: R13 [test-gap]. New bench binary at the public `Store` seam with
 checksum-bytes and allocation counters (diag already carries ScanStats,
 GraphSearchStats, lexical counters, plans, QoS, epochs). Files:
-`crates/zeppelin-embed-bench/src/bin/` + counter plumbing in bench crate.
+`crates/volantis-db-bench/src/bin/` + counter plumbing in bench crate.
 DEFER-OK: bench crate only. **Sequence-critical despite being DEFER-OK: its
 baseline numbers must be banked before batches 10, 12, and 22 merge, or
 there is no honest before/after.** RED: n/a (new instrument); acceptance is
@@ -178,7 +178,7 @@ the DRAM prefetch pair as a recurring measurement (note: runtime
 `TraversalPrefetch` A/B arms now exist in `graph/search.rs:216`, so most of
 BL-101's ask is wiring, not building); annotate exactly the three void
 27-B1 rows and add the profile+codegen-honesty guard. Files:
-`tasks/cross-benchmark/run_matrix.py`, `zeppelin-embed-bench/src/**`,
+`tasks/cross-benchmark/run_matrix.py`, `volantis-db-bench/src/**`,
 `tasks/evidence/opt-ledger`. DEFER-OK: tooling only. RED: per-item — e.g.
 the load-gate change is proven by the entry's own self-poisoning trace;
 the core-class fix by deleting the hardcode and watching nothing fail
@@ -316,8 +316,8 @@ selects `SiftClass`; a normalized shape has no owner-approved profile and
 returns the typed `GraphProfileError::UnrecognizedEpochShape` instead of
 silently using SIFT. Executable evidence:
 [`auto_profile_follows_epoch_normalization` and
-`genuine_sift_epoch_selects_sift_class`](../crates/zeppelin-embed/tests/store_graph_search.rs),
-and [`maintain_builds_with_the_same_profile_auto_query_selects`](../crates/zeppelin-embed/src/tier/maintain.rs).
+`genuine_sift_epoch_selects_sift_class`](../crates/volantis-db/tests/store_graph_search.rs),
+and [`maintain_builds_with_the_same_profile_auto_query_selects`](../crates/volantis-db/src/tier/maintain.rs).
 The separate recall-evidence campaign remains outstanding (§5). Cost: landed.
 
 **Batch 17 — R05: lexical stats consistency** [correctness][owner]
@@ -435,7 +435,7 @@ wait, don't work around it.
 | checkpoint | after | command | why this command |
 | --- | --- | --- | --- |
 | CP1 | batches 1–8 | `cargo test --workspace --no-fail-fast`, then `scripts/coverage.sh` **twice back-to-back** (proves BL-156), one `cargo deny check` (proves Batch 2), `RUSTDOCFLAGS="-D warnings" cargo doc` (proves Batch 1) | the only stacked block; failures here are attributable because nothing engine-side moved |
-| per-batch 9–22 | each VERIFY-NOW batch | `cargo test -p zeppelin-embed` + the named suites for the touched layer: crash matrix + `purge_proof` (9, 13, 20), `corruption` (10, 19), adversarial tests (11), memory-accounting suites (12, 18) | a later full run cannot attribute a silent break on these layers |
+| per-batch 9–22 | each VERIFY-NOW batch | `cargo test -p volantis-db` + the named suites for the touched layer: crash matrix + `purge_proof` (9, 13, 20), `corruption` (10, 19), adversarial tests (11), memory-accounting suites (12, 18) | a later full run cannot attribute a silent break on these layers |
 | CP2 | batch 12 | `cargo test --workspace --no-fail-fast` | before the maintenance rewrite stacks on the reader changes |
 | CP3 | batch 20 | `cargo test --workspace --no-fail-fast` + `cargo fuzz run fuzz_smoke -- -max_total_time=60` | parser + publication path just changed |
 | FINAL | batch 24 | `scripts/ci-gates.sh` end to end, in a clean shell | the gate script is the gate; a remembered subset is not (BL-153's lesson) |

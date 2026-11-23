@@ -69,7 +69,7 @@ writeFileSync(
       description: 'ADR-012 packaged lifecycle probe',
       license: 'GPL-3.0-only',
       main: 'main.cjs',
-      dependencies: { '@zepdb/zeppelin-embed': `file:${tarball}` },
+      dependencies: { 'volantis-db': `file:${tarball}` },
     },
     null,
     2,
@@ -99,12 +99,12 @@ await build({
   projectDir: fixture,
   targets: Platform.MAC.createTarget(['dir'], Arch[arch]),
   config: {
-    appId: 'dev.zepdb.electron.fixture',
-    productName: 'ZeppelinElectronFixture',
+    appId: 'dev.volantislabs.electron.fixture',
+    productName: 'VolantisElectronFixture',
     electronVersion: '44.4.1',
     npmRebuild: false,
     asar: true,
-    asarUnpack: ['node_modules/@zepdb/zeppelin-embed/prebuilds/**/*.node'],
+    asarUnpack: ['node_modules/volantis-db/prebuilds/**/*.node'],
     files: ['*.cjs', 'package.json'],
     directories: { app: appSource, output },
     mac: {
@@ -121,16 +121,16 @@ await build({
 const app = join(
   output,
   arch === 'arm64' ? 'mac-arm64' : 'mac',
-  'ZeppelinElectronFixture.app',
+  'VolantisElectronFixture.app',
 );
 const contents = join(app, 'Contents');
-const binary = join(contents, 'MacOS/ZeppelinElectronFixture');
-const helper = join(contents, 'Frameworks/ZeppelinElectronFixture Helper.app');
+const binary = join(contents, 'MacOS/VolantisElectronFixture');
+const helper = join(contents, 'Frameworks/VolantisElectronFixture Helper.app');
 const addon = join(
   contents,
-  'Resources/app.asar.unpacked/node_modules/@zepdb/zeppelin-embed/prebuilds',
+  'Resources/app.asar.unpacked/node_modules/volantis-db/prebuilds',
   `darwin-${arch}`,
-  'zeppelin_embed.node',
+  'volantis_db.node',
 );
 assert.ok(existsSync(join(contents, 'Resources/app.asar')));
 assert.ok(existsSync(addon), 'native addon must be unpacked');
@@ -209,7 +209,7 @@ try {
     assert.equal(result.nativeLoads, 2);
     assert.ok(result.addon.startsWith(join(contents, 'Resources/app.asar')));
     assert.ok(
-      result.addon.endsWith(`prebuilds/darwin-${arch}/zeppelin_embed.node`),
+      result.addon.endsWith(`prebuilds/darwin-${arch}/volantis_db.node`),
     );
   }
   console.log(`WF-137 packaged ${arch} ${mode} passed`);

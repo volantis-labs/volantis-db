@@ -148,7 +148,7 @@ def build_workers(output, release=False):
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, CARGO_BUILD_JOBS='3')
-    cmd = ['cargo', 'build', '-p', 'zeppelin-embed-workspace-tests',
+    cmd = ['cargo', 'build', '-p', 'volantis-db-workspace-tests',
            '--features', 'graph-cypher', '--bin', 'graph-workload', '--bin', 'graph-fixture']
     if release:
         cmd.append('--release')
@@ -156,12 +156,12 @@ def build_workers(output, release=False):
     profile = 'release' if release else 'debug'
     for name in ('graph-workload', 'graph-fixture'):
         shutil.copy2(ROOT / 'target' / profile / name, output / name)
-    run(['cargo', 'build', '-p', 'zeppelin-embed-ffi', '--features', 'graph-cypher'] +
+    run(['cargo', 'build', '-p', 'volantis-db-ffi', '--features', 'graph-cypher'] +
         (['--release'] if release else []), env=env)
-    archive = ROOT / 'target' / profile / 'libzeppelin_embed_ffi.a'
+    archive = ROOT / 'target' / profile / 'libvolantis_db_ffi.a'
     run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-O3',
-         '-I', ROOT / 'crates/zeppelin-embed-ffi/include',
-         ROOT / 'crates/zeppelin-embed-ffi/tests/c/graph_workload.c', archive,
+         '-I', ROOT / 'crates/volantis-db-ffi/include',
+         ROOT / 'crates/volantis-db-ffi/tests/c/graph_workload.c', archive,
          '-framework', 'Security', '-framework', 'CoreFoundation', '-lpthread', '-ldl',
          '-o', output / 'graph-workload-c'])
     # Link the public typed Swift wrapper against this build.
@@ -181,7 +181,7 @@ def build_workers(output, release=False):
                 capture_output=True, text=True).stdout.strip(),
                 'dirty': run(['git', 'status', '--porcelain'], capture_output=True, text=True).stdout,
                 'rustc': run(['rustc', '--version'], capture_output=True, text=True).stdout.strip(),
-                'archive_sha256': digest(archive), 'header_sha256': digest(ROOT / 'crates/zeppelin-embed-ffi/include/zeppelin_graph_contracts.h'),
+                'archive_sha256': digest(archive), 'header_sha256': digest(ROOT / 'crates/volantis-db-ffi/include/volantis_db_graph_contracts.h'),
                 'workers': {p.name: digest(p) for p in output.glob('graph-workload*')}}
     (output / 'build.json').write_text(json.dumps(metadata, indent=2) + '\n')
 

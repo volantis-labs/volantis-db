@@ -5,24 +5,24 @@ use rand::RngCore;
 use std::cell::Cell;
 use std::num::NonZeroU64;
 use std::sync::{Arc, Barrier};
-use zeppelin_embed::lifecycle::{CancelToken, OpenOptions, QueryControl, SnapshotLease, Store};
-use zeppelin_embed::property_graph::query::completed::Value;
-use zeppelin_embed::property_graph::query::resources::{MemoryError, QueryArena, QueryMemory};
-use zeppelin_embed::property_graph::query::runtime::{
+use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl, SnapshotLease, Store};
+use volantis_db::property_graph::query::completed::Value;
+use volantis_db::property_graph::query::resources::{MemoryError, QueryArena, QueryMemory};
+use volantis_db::property_graph::query::runtime::{
     RetainedView, RuntimeContext, RuntimeError, RuntimeLimits, WorkKind,
 };
-use zeppelin_embed::property_graph::query::{QueryError, QueryView};
-use zeppelin_embed::property_graph::resources::GraphResources;
-use zeppelin_embed::property_graph::{GraphGeneration, StoreInstanceId};
-use zeppelin_embed_adversarial_oracle::graph_response::{
+use volantis_db::property_graph::query::{QueryError, QueryView};
+use volantis_db::property_graph::resources::GraphResources;
+use volantis_db::property_graph::{GraphGeneration, StoreInstanceId};
+use volantis_db_adversarial_oracle::graph_response::{
     self as oracle, Fault, Observation, Refusal,
 };
-use zeppelin_embed_ffi::graph_result::test_support::{
+use volantis_db_ffi::graph_result::test_support::{
     NativeConversionCase, NativeConversionObservation, NativeConversionOutcome,
     NativeConversionRefusal, NativeConversionStage, run_native_conversion_case,
 };
-use zeppelin_embed_ffi::graph_result::{test_support::AllocationFaultScope, *};
-use zeppelin_embed_ffi::*;
+use volantis_db_ffi::graph_result::{test_support::AllocationFaultScope, *};
+use volantis_db_ffi::*;
 
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.response.aligned-owner",

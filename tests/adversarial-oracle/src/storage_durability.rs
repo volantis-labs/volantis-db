@@ -3894,8 +3894,8 @@ mod tests {
     #[test]
     fn raw_parsers_accept_frozen_wal_manifest_and_segment_bytes() {
         let wal = decode_hex(include_str!(concat!(
-            "../../../crates/zeppelin",
-            "-embed/tests/fixtures/format/wal_single_v1.hex"
+            "../../../crates/volantis",
+            "-db/tests/fixtures/format/wal_single_v1.hex"
         )));
         let parsed_wal = parse_wal("wal.ze", &wal).expect("parse frozen WAL");
         assert_eq!(parsed_wal.first_seq, 1);
@@ -3904,8 +3904,8 @@ mod tests {
         assert_eq!(parsed_wal.terminator, WalTerminator::CleanEnd);
 
         let manifest = decode_hex(include_str!(concat!(
-            "../../../crates/zeppelin",
-            "-embed/tests/fixtures/format/manifest_v2.hex"
+            "../../../crates/volantis",
+            "-db/tests/fixtures/format/manifest_v2.hex"
         )));
         let parsed_manifest = parse_manifest("manifest.ze", &manifest).expect("parse manifest v2");
         assert_eq!(parsed_manifest.generation, 21);
@@ -3913,8 +3913,8 @@ mod tests {
         assert_eq!(parsed_manifest.segments.len(), 1);
 
         let segment = decode_hex(include_str!(concat!(
-            "../../../crates/zeppelin",
-            "-embed/tests/fixtures/format/segment_prechange_full_v1.hex"
+            "../../../crates/volantis",
+            "-db/tests/fixtures/format/segment_prechange_full_v1.hex"
         )));
         let parsed_segment = parse_segment("segment.zseg", &segment).expect("parse segment v1");
         assert_eq!(parsed_segment.fact.rows, 1);
@@ -4069,8 +4069,8 @@ mod tests {
     #[test]
     fn i19_reachability_is_manifest_derived_with_exact_control_names() {
         let manifest_bytes = decode_hex(include_str!(concat!(
-            "../../../crates/zeppelin",
-            "-embed/tests/fixtures/format/manifest_v2.hex"
+            "../../../crates/volantis",
+            "-db/tests/fixtures/format/manifest_v2.hex"
         )));
         let parsed = parse_manifest("manifest.ze", &manifest_bytes).expect("parse manifest");
         let referenced_name = segment_file_name(&parsed.segments[0].id);

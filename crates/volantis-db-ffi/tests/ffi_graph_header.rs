@@ -1,0 +1,335 @@
+//! Compile the opt-in graph data contract as an actual external C consumer.
+#![cfg(target_os = "macos")]
+use std::path::Path;
+use std::process::Command;
+
+#[test]
+fn graph_c_consumer_preserves_strong_full_width_identity_layouts() {
+    let directory = tempfile::tempdir().expect("external C consumer");
+    let source = directory.path().join("graph.c");
+    let executable = directory.path().join("graph");
+    std::fs::write(
+        &source,
+        r#"#include "volantis_db_graph_contracts.h"
+_Static_assert(sizeof(ZeNodeId) == 16, "node width");
+_Static_assert(sizeof(ZeRelId) == 16, "relationship width");
+_Static_assert(offsetof(ZeNodeId, high) == 0, "high word first");
+_Static_assert(offsetof(ZeNodeId, low) == 8, "low word second");
+_Static_assert(sizeof(ze_handle) == 8, "store handle");
+int main(void) {
+    ZeNodeId a = {UINT64_C(0x8000000000000000), UINT64_C(7)};
+    ZeNodeId b = {UINT64_C(0x8000000000000001), UINT64_C(7)};
+    ZeRelId r = {UINT64_MAX, UINT64_MAX};
+    ze_handle handle = UINT64_C(19);
+    return !(a.low == b.low && a.high != b.high &&
+             r.high == UINT64_MAX && r.low == UINT64_MAX && handle == 19);
+}
+"#,
+    )
+    .expect("C source");
+    let compile = Command::new("clang")
+        .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-I"])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("include"))
+        .arg(&source)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .expect("C compiler");
+    assert!(
+        compile.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(
+        Command::new(executable)
+            .status()
+            .expect("C consumer")
+            .success()
+    );
+}
+
+#[test]
+fn graph_c_identity_kinds_cannot_be_assigned_to_each_other() {
+    let directory = tempfile::tempdir().expect("external C type rejection");
+    let source = directory.path().join("invalid.c");
+    std::fs::write(
+        &source,
+        r#"#include "volantis_db_graph_contracts.h"
+int main(void) {
+    ZeRelId relationship = {1, 7};
+    ZeNodeId node = relationship;
+    return node.low == 7;
+}
+"#,
+    )
+    .expect("invalid cross-kind C source");
+    let compile = Command::new("clang")
+        .args([
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-fsyntax-only",
+            "-I",
+        ])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("include"))
+        .arg(source)
+        .output()
+        .expect("C compiler");
+    assert!(
+        !compile.status.success(),
+        "C accepted a relationship as a node identity"
+    );
+    assert!(String::from_utf8_lossy(&compile.stderr).contains("incompatible type"));
+}
+
+#[test]
+fn graph_contract_header_is_exact_separate_cbindgen_output() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let version = Command::new("cbindgen")
+        .arg("--version")
+        .output()
+        .expect("cbindgen installed");
+    assert!(String::from_utf8_lossy(&version.stdout).starts_with("cbindgen 0.29."));
+    let generated = Command::new("cbindgen")
+        .current_dir(root)
+        .args(["--config", "cbindgen.graph.toml", "src/graph_contracts.rs"])
+        .output()
+        .expect("graph cbindgen");
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    assert_eq!(
+        generated.stdout,
+        std::fs::read(root.join("include/volantis_db_graph_contracts.h")).expect("graph header")
+    );
+}
+
+#[test]
+fn legacy_header_and_exports_do_not_advertise_graph_contracts() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let header =
+        std::fs::read_to_string(root.join("include/volantis_db.h")).expect("legacy header");
+    for forbidden in [
+        "ZeGraph",
+        "ZeNodeId",
+        "ZeRelId",
+        "ze_graph_",
+        "volantis_db_graph_contracts.h",
+    ] {
+        assert!(
+            !header.contains(forbidden),
+            "legacy header advertises {forbidden}"
+        );
+    }
+    let symbols = std::fs::read_to_string(root.join("symbols.allowlist")).expect("legacy symbols");
+    // Graph exports are allowlisted separately from the legacy header surface.
+    assert_eq!(
+        symbols
+            .lines()
+            .filter(|s| s.starts_with("ze_graph_"))
+            .collect::<Vec<_>>(),
+        vec!["ze_graph_response_free"]
+    );
+}
+
+fn compile_and_run(name: &str, source_text: &str) {
+    let directory = tempfile::tempdir().expect("external graph consumer");
+    let source = directory.path().join(format!("{name}.c"));
+    let executable = directory.path().join(name);
+    std::fs::write(&source, source_text).unwrap();
+    let result = Command::new("clang")
+        .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-I"])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("include"))
+        .arg(source)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(Command::new(executable).status().unwrap().success());
+}
+
+#[test]
+fn graph_c_batch_pool_distinguishes_empty_payloads_and_local_endpoints() {
+    compile_and_run("batch", include_str!("c/graph_batch.c"));
+}
+
+#[test]
+fn graph_c_typed_plan_retains_search_presence_components_and_path_predicates() {
+    compile_and_run("plan", include_str!("c/graph_plan.c"));
+}
+
+#[test]
+fn graph_c_requests_and_response_preserve_disposition_and_search_provenance() {
+    compile_and_run("response", include_str!("c/graph_response.c"));
+}
+
+#[test]
+fn graph_c_frozen_sizes_offsets_and_discriminants_match_the_reviewed_contract() {
+    compile_and_run("layout", include_str!("c/graph_layout.c"));
+}
+
+#[test]
+fn graph_contract_header_is_usable_from_cpp_without_legacy_export_changes() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("graph.cpp");
+    std::fs::write(
+        &source,
+        r#"#include "volantis_db_graph_contracts.h"
+#include <type_traits>
+static_assert(!std::is_same<ZeNodeId, ZeRelId>::value, "distinct identity domains");
+int main() { ZeGraphDiagnostic diagnostic{}; diagnostic.operator_index.present = 1;
+return diagnostic.operator_index.present != 1; }
+"#,
+    )
+    .unwrap();
+    let result = Command::new("clang++")
+        .args([
+            "-std=c++17",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-fsyntax-only",
+            "-I",
+        ])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("include"))
+        .arg(source)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
+fn graph_entry_prototypes_are_callable_from_c() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let result = Command::new("clang")
+        .args([
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-fsyntax-only",
+            "-I",
+        ])
+        .arg(root.join("include"))
+        .arg(root.join("tests/c/graph_entry.c"))
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
+fn graph_runtime_header_matches_the_graph_export_allowlist() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let header = std::fs::read_to_string(root.join("include/volantis_db_graph_contracts.h")).unwrap();
+    let declared: std::collections::BTreeSet<_> = header
+        .lines()
+        .filter(|line| {
+            line.starts_with("ze_error_code ze_graph_")
+                || line.starts_with("ze_error_code ze_store_")
+        })
+        .filter_map(|line| {
+            line.split_whitespace()
+                .nth(1)
+                .map(|rest| rest.split('(').next().unwrap().to_owned())
+        })
+        .collect();
+    let symbols = std::fs::read_to_string(root.join("symbols.graph.allowlist")).unwrap();
+    let allowed: std::collections::BTreeSet<_> = symbols
+        .lines()
+        .filter(|line| line.starts_with("ze_graph_") || line.starts_with("ze_store_"))
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(declared.len(), 13);
+    assert_eq!(declared, allowed);
+}
+
+#[cfg(feature = "graph-cypher")]
+#[test]
+fn ze399_external_c_applies_queries_and_reopens_a_document_node() {
+    compile_and_run_graph("graph_apply_v2");
+}
+
+#[test]
+fn ze318_c_parameter_shapes() {
+    compile_and_run_graph("graph_parameters");
+}
+
+fn compile_and_run_graph(name: &str) {
+    let triple = format!("{}-apple-darwin", std::env::consts::ARCH);
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let directory = tempfile::tempdir().unwrap();
+    let executable = directory.path().join(name);
+    let deps = std::env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    // The default cdylib path can be overwritten by a graph-free Cargo build.
+    // Build this C consumer's graph library in its own feature-specific target.
+    let target = deps.join("c-graph-consumers");
+    let build = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
+        .current_dir(root.parent().unwrap().parent().unwrap())
+        .args([
+            "build",
+            "--offline",
+            "-p",
+            "volantis-db-ffi",
+            "--features",
+            "graph-cypher",
+            "--target-dir",
+        ])
+        .arg(&target)
+        .arg("--target")
+        .arg(&triple)
+        .output()
+        .unwrap();
+    assert!(
+        build.status.success(),
+        "{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let library = target.join(&triple).join("debug");
+    let result = Command::new("clang")
+        .arg(format!("--target={triple}"))
+        .args(["-std=c11", "-Wall", "-Wextra", "-Werror", "-I"])
+        .arg(root.join("include"))
+        .arg(root.join("tests/c").join(format!("{name}.c")))
+        .arg(library.join("libvolantis_db_ffi.dylib"))
+        .arg(format!("-Wl,-rpath,{}", library.display()))
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let result = Command::new(executable)
+        .arg(directory.path().join("store"))
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    println!("{}", String::from_utf8_lossy(&result.stdout));
+}

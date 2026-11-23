@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-const { TextStore, ZeppelinError } = createRequire(import.meta.url)('..');
-const bundle = fileURLToPath(new URL('../../../crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem', import.meta.url));
+const { TextStore, VolantisError } = createRequire(import.meta.url)('..');
+const bundle = fileURLToPath(new URL('../../../crates/volantis-db-text/tests/fixtures/ze115/gte.zem', import.meta.url));
 
 test('TextStore exposes the text API', () => {
   assert.equal(typeof TextStore, 'function');
@@ -113,7 +113,7 @@ test('text query returns the v2 outcome in sync and async calls', {skip: !suppor
         assert.equal(empty.embeddingCalls, 0n);
       }
       const options = {text: 'bronze', legs: 'lexical', signal: AbortSignal.abort()};
-      const cancelled = error => error instanceof ZeppelinError &&
+      const cancelled = error => error instanceof VolantisError &&
         error.code === 'ZE_ERR_CANCELLED' && error.errorCode === 12;
       assert.throws(() => store.query(options), cancelled);
       await assert.rejects(store.queryAsync(options), cancelled);
@@ -154,10 +154,10 @@ test('text observed compute units loads the tiny CoreML plan (ZE-521)', {skip: !
   const root = mkdtempSync(join(tmpdir(), 'ze521-compute-'));
   const previous = process.env.ZE_QUERY_COREML;
   try {
-    const model = fileURLToPath(new URL('../../../crates/zeppelin-embed-text/tests/fixtures/ze115/tiny.mlmodel', import.meta.url));
+    const model = fileURLToPath(new URL('../../../crates/volantis-db-text/tests/fixtures/ze115/tiny.mlmodel', import.meta.url));
     execFileSync('xcrun', ['coremlcompiler', 'compile', model, root]);
     process.env.ZE_QUERY_COREML = join(root, 'tiny.mlmodelc');
-    const computeBundle = fileURLToPath(new URL('../../../crates/zeppelin-embed-ffi/tests/fixtures/compute_units.zem', import.meta.url));
+    const computeBundle = fileURLToPath(new URL('../../../crates/volantis-db-ffi/tests/fixtures/compute_units.zem', import.meta.url));
     // Each variant must load the plan on a fresh store.
     for (const method of ['observedComputeUnits', 'observedComputeUnitsAsync']) {
       const store = TextStore.open(join(root, method), computeBundle);
@@ -214,7 +214,7 @@ test('text health maintenance cancellation and worker lifetime', {skip: !support
   assert.ok([0, 1].includes(store.maintain({wallTimeNs: 100000000n, bytes: 67108864n}).status));
   assert.equal(store.health().unresolvedFaultCount, 0n);
   const c = new AbortController(); c.abort();
-  assert.throws(() => store.ingest([{id, revision: 2n, text: 'bronze'}], {signal: c.signal}), error => error.name === 'ZeppelinError' && error.code === 'ZE_ERR_INVALID_ARGUMENT' && error.errorCode === 1);
+  assert.throws(() => store.ingest([{id, revision: 2n, text: 'bronze'}], {signal: c.signal}), error => error.name === 'VolantisError' && error.code === 'ZE_ERR_INVALID_ARGUMENT' && error.errorCode === 1);
   const cancelled = error => error.code === 'ZE_ERR_CANCELLED';
   await assert.rejects(store.queryAsync({text: 'bronze', legs: 'lexical', signal: c.signal}), cancelled);
   assert.throws(() => store.query({text: 'bronze', legs: 'lexical', signal: c.signal}), cancelled);
@@ -236,7 +236,7 @@ test('openModel downloads pinned local fixture with progress and opens offline c
   const requests = [];
   const server = createServer((request, response) => {
     requests.push(request.url);
-    const body = request.url.endsWith('/zeppelin-model.json') ? manifest : bytes;
+    const body = request.url.endsWith('/volantis-model.json') ? manifest : bytes;
     response.writeHead(200, {'content-length': body.length}); response.end(body);
   });
   const previous = [process.env.ZE_MODEL_ENDPOINT, process.env.ZE_MODEL_ALLOW_HTTP];
@@ -279,7 +279,7 @@ test('openModel downloads pinned local fixture with progress and opens offline c
 });
 
 test('text-free prebuild reports a typed platform error', {skip: supported}, async () => {
-  const unavailable = error => error.name === 'ZeppelinError' && error.code === 'ZE_ERR_UNSUPPORTED' && /text API is available on macOS arm64 only/.test(error.message);
+  const unavailable = error => error.name === 'VolantisError' && error.code === 'ZE_ERR_UNSUPPORTED' && /text API is available on macOS arm64 only/.test(error.message);
   assert.throws(() => TextStore.open('unused', 'unused'), unavailable);
   await assert.rejects(TextStore.openAsync('unused', 'unused'), unavailable);
   await assert.rejects(TextStore.openModel({}), unavailable);
@@ -291,13 +291,13 @@ test('openModel offline miss is a typed not-found error without loading MLX', {s
     await assert.rejects(TextStore.openModel({path: join(root, 'store'), repo: 'fixture/tiny',
       revision: '0123456789abcdef0123456789abcdef01234567', manifestSha256: '00'.repeat(32),
       cacheDir: join(root, 'empty-cache'), offline: true}),
-    error => error.name === 'ZeppelinError' && error.code === 'ZE_ERR_NOT_FOUND' && /offline/i.test(error.message));
+    error => error.name === 'VolantisError' && error.code === 'ZE_ERR_NOT_FOUND' && /offline/i.test(error.message));
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
 
 test('default model matches Rust constant and requires complete pins', {skip: !supported}, async () => {
-  const native = createRequire(import.meta.url)('../prebuilds/darwin-arm64/zeppelin_embed.node');
+  const native = createRequire(import.meta.url)('../prebuilds/darwin-arm64/volantis_db.node');
   assert.deepEqual(TextStore.defaultModel, native.textDefaultModel());
   for (const [key, value] of Object.entries(TextStore.defaultModel)) {
     await assert.rejects(TextStore.openModel({path: '/unused', [key]: value, offline: true}), /all three/);

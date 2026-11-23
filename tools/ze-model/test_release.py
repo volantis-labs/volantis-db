@@ -90,7 +90,7 @@ class Release(unittest.TestCase):
                     readme = (out / "README.md").read_text()
                     self.assertIn(f"{query_precision.upper()} MLX query weights", readme)
                     self.assertIn(f"CoreML query: {coreml_precision}", readme)
-                    manifest = json.loads((out / "zeppelin-model.json").read_text())
+                    manifest = json.loads((out / "volantis-model.json").read_text())
                     self.assertEqual(manifest["query_coreml"], "tiny.mlmodelc")
                     self.assertEqual([f["path"] for f in manifest["files"]],
                                      ["tiny.mlmodelc/weights/weight.bin", "tiny.zem"])

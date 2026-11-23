@@ -3,10 +3,10 @@
 const path = require('node:path');
 const os = require('node:os');
 
-class ZeppelinError extends Error {
+class VolantisError extends Error {
   constructor(message, code, errorCode) {
     super(message);
-    this.name = 'ZeppelinError';
+    this.name = 'VolantisError';
     this.code = code;
     this.errorCode = errorCode;
   }
@@ -15,19 +15,19 @@ class ZeppelinError extends Error {
 class UnsupportedPlatformError extends Error {
   constructor(platform, arch) {
     super(
-      `@zepdb/zeppelin-embed supports macOS on Apple silicon and Intel, and ` +
+      `volantis-db supports macOS on Apple silicon and Intel, and ` +
         `Windows x64; received ${platform}/${arch}`,
     );
     this.name = 'UnsupportedPlatformError';
-    this.code = 'ERR_ZEPPELIN_UNSUPPORTED_PLATFORM';
+    this.code = 'ERR_VOLANTIS_UNSUPPORTED_PLATFORM';
   }
 }
 
 class UnsupportedRuntimeError extends Error {
   constructor(detail) {
-    super(`@zepdb/zeppelin-embed does not ship a binary for this runtime: ${detail}`);
+    super(`volantis-db does not ship a binary for this runtime: ${detail}`);
     this.name = 'UnsupportedRuntimeError';
-    this.code = 'ERR_ZEPPELIN_UNSUPPORTED_RUNTIME';
+    this.code = 'ERR_VOLANTIS_UNSUPPORTED_RUNTIME';
   }
 }
 
@@ -58,10 +58,10 @@ function resolveBindingPath() {
   // delay-loads `node.exe`.
   if (platform === 'darwin') {
     if (arch === 'arm64') {
-      return path.join(prebuilds, 'darwin-arm64', 'zeppelin_embed.node');
+      return path.join(prebuilds, 'darwin-arm64', 'volantis_db.node');
     }
     if (arch === 'x64') {
-      return path.join(prebuilds, 'darwin-x64', 'zeppelin_embed.node');
+      return path.join(prebuilds, 'darwin-x64', 'volantis_db.node');
     }
   }
 
@@ -75,7 +75,7 @@ function resolveBindingPath() {
             `${[...SUPPORTED_ELECTRON_MAJORS].join(', ')} binaries for win32-x64`,
         );
       }
-      return path.join(prebuilds, 'win32-x64', `electron-${major}`, 'zeppelin_embed.node');
+      return path.join(prebuilds, 'win32-x64', `electron-${major}`, 'volantis_db.node');
     }
 
     const napi = Number.parseInt(process.versions.napi ?? '0', 10);
@@ -85,7 +85,7 @@ function resolveBindingPath() {
           `Node-API ${REQUIRED_NAPI_VERSION} or later`,
       );
     }
-    return path.join(prebuilds, 'win32-x64', 'node-napi8', 'zeppelin_embed.node');
+    return path.join(prebuilds, 'win32-x64', 'node-napi8', 'volantis_db.node');
   }
 
   throw new UnsupportedPlatformError(platform, arch);
@@ -100,7 +100,7 @@ function translateError(error) {
     error.code.startsWith('ZE_') &&
     typeof error.errorCode === 'number'
   ) {
-    const translated = new ZeppelinError(error.message, error.code, error.errorCode);
+    const translated = new VolantisError(error.message, error.code, error.errorCode);
     // A failed revision condition names the document the caller must re-read.
     if (error.conflict !== undefined) translated.conflict = error.conflict;
     for (const key of ['disposition', 'generation', 'admittedGeneration', 'changedGeneration']) {
@@ -123,13 +123,13 @@ function maintenanceBudget(budget) {
   if (budget === null || typeof budget !== 'object' || Array.isArray(budget) ||
       !Object.hasOwn(budget, 'wallTimeNs') || !Object.hasOwn(budget, 'bytes') ||
       Reflect.ownKeys(budget).length !== 2) {
-    throw new ZeppelinError('maintenance budget requires wallTimeNs and bytes', 'ZE_ERR_INVALID_ARGUMENT', 1);
+    throw new VolantisError('maintenance budget requires wallTimeNs and bytes', 'ZE_ERR_INVALID_ARGUMENT', 1);
   }
   const { wallTimeNs, bytes } = budget;
   const limit = 1n << 64n;
   for (const [field, value] of [['wallTimeNs', wallTimeNs], ['bytes', bytes]]) {
     if (typeof value !== 'bigint' || value < 0n || value >= limit) {
-      throw new ZeppelinError(`${field} must be an unsigned 64-bit bigint`, 'ZE_ERR_INVALID_ARGUMENT', 1);
+      throw new VolantisError(`${field} must be an unsigned 64-bit bigint`, 'ZE_ERR_INVALID_ARGUMENT', 1);
     }
   }
   return { wallTimeNs, bytes };
@@ -139,7 +139,7 @@ function maintenanceBudget(budget) {
  * The native token handle, kept off the public shape so a token is used
  * through its methods rather than by reading a bigint out of it.
  */
-const nativeToken = Symbol('zeppelin.cancelToken');
+const nativeToken = Symbol('volantis.cancelToken');
 
 /**
  * A cancellation token that a query can be asked to observe.
@@ -158,7 +158,7 @@ class CancellationToken {
 
   cancel() {
     if (this._closed) {
-      throw new ZeppelinError('cancellation token is closed', 'ZE_ERR_CLOSED', 0);
+      throw new VolantisError('cancellation token is closed', 'ZE_ERR_CLOSED', 0);
     }
     callNative(() => binding.cancelToken(this[nativeToken]));
   }
@@ -796,7 +796,7 @@ function verify(storePath) {
 
 
 function graphInvalid(message) {
-  const error = new ZeppelinError(message, 'ZE_ERR_INVALID_ARGUMENT', 1);
+  const error = new VolantisError(message, 'ZE_ERR_INVALID_ARGUMENT', 1);
   error.disposition = 'NotCommitted';
   throw error;
 }
@@ -839,7 +839,7 @@ function graphParameter(value, state, depth = 0) {
     return;
   }
   try { graphScalar(value); } catch (error) {
-    if (error instanceof ZeppelinError) graphInvalid(`unsupported parameter list/scalar value: ${error.message}`);
+    if (error instanceof VolantisError) graphInvalid(`unsupported parameter list/scalar value: ${error.message}`);
     throw error;
   }
 }
@@ -862,20 +862,20 @@ function graphEndpoint(value) {
   if (!Number.isInteger(value.local) || value.local < 0 || value.local > 0xffffffff) graphInvalid('local endpoint must be an unsigned item index');
 }
 function requireGraph() {
-  if (!Store.graphSupported()) throw new ZeppelinError('graph is unavailable in this build', 'ZE_ERR_GRAPH_UNSUPPORTED_BUILD', 59);
+  if (!Store.graphSupported()) throw new VolantisError('graph is unavailable in this build', 'ZE_ERR_GRAPH_UNSUPPORTED_BUILD', 59);
 }
 
 // Text handles use the same generation registry and native worker pool as Store.
 function requireText() {
   if (process.platform !== 'darwin' || process.arch !== 'arm64' || binding.textSupported !== true) {
-    throw new ZeppelinError('text API is available on macOS arm64 only', 'ZE_ERR_UNSUPPORTED', 11);
+    throw new VolantisError('text API is available on macOS arm64 only', 'ZE_ERR_UNSUPPORTED', 11);
   }
 }
 
 const DEFAULT_MODEL = Object.freeze({
   repo: 'volantis-labs/volantis-db-clean71-arctic-m-v2',
-  revision: 'd64b817c4021a3f1b9bded3152d9afdf9ac813e7',
-  manifestSha256: '123c6308e00f769c68498f9df60dfb9efc688f58c4ff2c4da266f978fcb215dc',
+  revision: '5833eb696dbc41def2421a7fb97d58f92db94fab',
+  manifestSha256: '7fafd7a3a086544f5ef5b25265ac4404b8fbeb9289cbe3e1e6d2b36622b263b3',
 });
 
 class TextStore {
@@ -948,7 +948,7 @@ module.exports = {
   Store,
   UnsupportedPlatformError,
   UnsupportedRuntimeError,
-  ZeppelinError,
+  VolantisError,
   idToUuid,
   listNamespaces,
   namespaceBatch,

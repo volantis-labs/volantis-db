@@ -8,9 +8,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import zeppelin_embed as ze
-from zeppelin_embed import _structures as s
-from zeppelin_embed._library import LIBRARY
+import volantis_db as ze
+from volantis_db import _structures as s
+from volantis_db._library import LIBRARY
 
 
 def _vector_spec(*, nullable: bool = False) -> ze.NamespaceSpec:

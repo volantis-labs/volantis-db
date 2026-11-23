@@ -1,4 +1,4 @@
-use zeppelin_embed_adversarial_oracle::graph_wal::*;
+use volantis_db_adversarial_oracle::graph_wal::*;
 fn state(seq: u64) -> State {
     State {
         store: (1u128 << 100) + 3,

@@ -20,7 +20,7 @@ if cargo check \
     echo "default core consumer unexpectedly imported property_graph" >&2
     exit 1
 fi
-if ! grep -q 'could not find `property_graph` in `zeppelin_embed`' "$default_core_log"; then
+if ! grep -q 'could not find `property_graph` in `volantis_db`' "$default_core_log"; then
     cat "$default_core_log" >&2
     echo "default core failure was not the intended unavailable-module diagnostic" >&2
     exit 1
@@ -49,15 +49,15 @@ packages = {package["id"]: package for package in metadata["packages"]}
 ffi_id = next(
     package_id
     for package_id, package in packages.items()
-    if package["name"] == "zeppelin-embed-ffi"
-    and pathlib.Path(package["manifest_path"]).parent.name == "zeppelin-embed-ffi"
+    if package["name"] == "volantis-db-ffi"
+    and pathlib.Path(package["manifest_path"]).parent.name == "volantis-db-ffi"
 )
 nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
 direct = sorted(dependency["name"] for dependency in nodes[ffi_id]["deps"])
 expected = (
-    ["zeppelin_embed"]
+    ["volantis_db"]
     if selection == "default"
-    else ["zeppelin_embed", "zeppelin_embed_cypher"]
+    else ["volantis_db", "volantis_db_cypher"]
 )
 if direct != expected:
     raise SystemExit(
@@ -67,10 +67,10 @@ if selection == "graph":
     cypher_id = next(
         dependency["pkg"]
         for dependency in nodes[ffi_id]["deps"]
-        if dependency["name"] == "zeppelin_embed_cypher"
+        if dependency["name"] == "volantis_db_cypher"
     )
     cypher_direct = sorted(dependency["name"] for dependency in nodes[cypher_id]["deps"])
-    if cypher_direct != ["zeppelin_embed"]:
+    if cypher_direct != ["volantis_db"]:
         raise SystemExit(
             "graph compiler dependencies: expected internal core only, "
             f"observed {cypher_direct!r}"
@@ -130,7 +130,7 @@ def selected_targets(package_name, feature):
         if (target.get("required-features") or []) == [feature]
     }
 
-observed_core = selected_targets("zeppelin-embed", "graph-cypher")
+observed_core = selected_targets("volantis-db", "graph-cypher")
 if observed_core != core_graph_tests:
     raise SystemExit(
         "core graph test targets drifted: "
@@ -140,7 +140,7 @@ if observed_core != core_graph_tests:
 
 core_targets = {
     target["name"]: target
-    for target in packages["zeppelin-embed"]["targets"]
+    for target in packages["volantis-db"]["targets"]
 }
 if core_targets["graph_node_blocks"].get("required-features"):
     raise SystemExit("legacy ANN graph_node_blocks became graph-feature-only")
@@ -152,7 +152,7 @@ ffi_graph_tests = {
     "ffi_graph_layout",
     "ffi_graph_ownership",
 }
-observed_ffi = selected_targets("zeppelin-embed-ffi", "graph-cypher")
+observed_ffi = selected_targets("volantis-db-ffi", "graph-cypher")
 if observed_ffi != ffi_graph_tests:
     raise SystemExit(
         "FFI graph test targets drifted: "
@@ -161,7 +161,7 @@ if observed_ffi != ffi_graph_tests:
 
 workspace_targets = {
     target["name"]: target
-    for target in packages["zeppelin-embed-workspace-tests"]["targets"]
+    for target in packages["volantis-db-workspace-tests"]["targets"]
 }
 for target_name in ["graph_fixture", "graph-fixture"]:
     required = workspace_targets[target_name].get("required-features") or []
@@ -170,10 +170,10 @@ for target_name in ["graph_fixture", "graph-fixture"]:
             f"workspace target {target_name} has required features {required!r}"
         )
 
-features = packages["zeppelin-embed-ffi"]["features"]
+features = packages["volantis-db-ffi"]["features"]
 if sorted(features["graph-cypher"]) != [
-    "dep:zeppelin-embed-cypher",
-    "zeppelin-embed/graph-cypher",
+    "dep:volantis-db-cypher",
+    "volantis-db/graph-cypher",
 ]:
     raise SystemExit(f"FFI graph feature drifted: {features['"'"'graph-cypher'"'"']!r}")
 if features["graph-result-test-support"] != ["graph-cypher"]:
@@ -181,11 +181,11 @@ if features["graph-result-test-support"] != ["graph-cypher"]:
         "FFI graph result hook no longer stays separate from ordinary graph selection"
     )
 
-compiler = packages["zeppelin-embed-cypher"]
+compiler = packages["volantis-db-cypher"]
 core_dependency = next(
     dependency
     for dependency in compiler["dependencies"]
-    if dependency["name"] == "zeppelin-embed"
+    if dependency["name"] == "volantis-db"
 )
 if core_dependency["features"] != ["graph-cypher"]:
     raise SystemExit(
@@ -227,13 +227,13 @@ print(f"fuzz graph-required targets: {len(observed)}")
 '
 
 cargo check \
-    --manifest-path "$repo_root/crates/zeppelin-embed/Cargo.toml" \
+    --manifest-path "$repo_root/crates/volantis-db/Cargo.toml" \
     --target x86_64-apple-darwin \
     --target-dir "$target_root/x86_64-legacy"
 
 for graph_target in x86_64-apple-darwin x86_64-pc-windows-msvc; do
     cargo check \
-        --manifest-path "$repo_root/crates/zeppelin-embed/Cargo.toml" \
+        --manifest-path "$repo_root/crates/volantis-db/Cargo.toml" \
         --features graph-cypher \
         --target "$graph_target" \
         --target-dir "$target_root/$graph_target-graph"
@@ -241,7 +241,7 @@ done
 
 linux_graph_log="$temporary/linux-graph.log"
 if cargo check \
-    --manifest-path "$repo_root/crates/zeppelin-embed/Cargo.toml" \
+    --manifest-path "$repo_root/crates/volantis-db/Cargo.toml" \
     --features graph-cypher \
     --target x86_64-unknown-linux-gnu \
     --target-dir "$target_root/linux-graph" \

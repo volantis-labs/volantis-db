@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 BUNDLE = (
     Path(__file__).resolve().parents[3]
-    / "crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem"
+    / "crates/volantis-db-text/tests/fixtures/ze115/gte.zem"
 )
 REVISION = "0123456789abcdef0123456789abcdef01234567"
 
@@ -109,7 +109,7 @@ def test_open_model_download_progress_cache_and_offline(
             ],
         }
     ).encode()
-    (remote / "zeppelin-model.json").write_bytes(manifest)
+    (remote / "volantis-model.json").write_bytes(manifest)
     server = ThreadingHTTPServer(
         ("127.0.0.1", 0),
         partial(SimpleHTTPRequestHandler, directory=str(tmp_path / "remote")),
@@ -171,8 +171,8 @@ def test_open_model_offline_miss(tmp_path: Path) -> None:
 def test_default_model_matches_rust_constant_and_requires_complete_pins(tmp_path: Path) -> None:
     import ctypes as ct
 
-    from zeppelin_embed._library import LIBRARY
-    from zeppelin_embed._structures import ZeTextModelRef
+    from volantis_db._library import LIBRARY
+    from volantis_db._structures import ZeTextModelRef
 
     model = ZeTextModelRef(abi_size=ct.sizeof(ZeTextModelRef))
     assert LIBRARY.ze_text_default_model(ct.byref(model)) == 0
@@ -183,6 +183,6 @@ def test_default_model_matches_rust_constant_and_requires_complete_pins(tmp_path
     for field, value in ze.DEFAULT_MODEL_REF.items():
         with pytest.raises(ValueError, match="all three"):
             ze.open_model(tmp_path / "partial", **{field: value}, offline=True)
-    with pytest.raises(ze.ZeppelinError) as failure:
+    with pytest.raises(ze.VolantisError) as failure:
         ze.open_model(tmp_path / "store", cache_dir=tmp_path / "cache", offline=True)
     assert failure.value.code == ze.ErrorCode.ERR_NOT_FOUND

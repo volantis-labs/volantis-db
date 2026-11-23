@@ -1,8 +1,8 @@
 //! Decode observed production bytes in their emitted order. Never normalize the
 //! observation to make it agree with the independent logical model.
 use super::*;
-use zeppelin_embed::property_graph::storage::payload::PayloadRef;
-use zeppelin_embed::property_graph::storage::tree::Key;
+use volantis_db::property_graph::storage::payload::PayloadRef;
+use volantis_db::property_graph::storage::tree::Key;
 fn bytes<S: BlockSource>(
     source: PayloadSlice<'_, S>,
     r: &mut TreeResources<'_>,

@@ -5,8 +5,8 @@ const { doubleLoad, leaveForExit } = require('./double-load.cjs');
 assert.equal(process.type, 'utility');
 assert.equal(process.versions.electron, '44.4.1');
 process.parentPort.once('message', ({ data }) => {
-  const result = doubleLoad('@zepdb/zeppelin-embed', data.root);
-  leaveForExit('@zepdb/zeppelin-embed', data.root);
+  const result = doubleLoad('volantis-db', data.root);
+  leaveForExit('volantis-db', data.root);
   process.parentPort.once('message', ({ data: shutdown }) => {
     assert.equal(shutdown, 'shutdown');
   });

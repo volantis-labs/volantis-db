@@ -1,14 +1,14 @@
 //! PG11 production compile/bind seam; no graph execution/writer claim.
 use super::coverage::CoverageRegistry;
 use rand::RngCore;
-use zeppelin_embed::property_graph::query::{
+use volantis_db::property_graph::query::{
     QueryValue,
     plan::{ParameterBinding, ValueKinds},
 };
-use zeppelin_embed_adversarial_oracle::graph_binding::{
+use volantis_db_adversarial_oracle::graph_binding::{
     self as oracle, Case, Column, Kind, Observation, Outcome,
 };
-use zeppelin_embed_cypher::{
+use volantis_db_cypher::{
     BoundSearchMode, BoundSearchRequest, CompileLimits, ErrorKind, ResourceError, Resources,
     compile_with, parse_with,
 };

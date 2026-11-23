@@ -21,7 +21,7 @@ function literalReceipt() {
       queryCount: 1, excludedQueryCount: 1, queries: [{ id: 'q', text: 'literal', qrels: { d: 2 } }],
       inputs: { corpus: artifact, queries: artifact, qrels: artifact }, mapping: artifact, queryFile: artifact })) };
   return { schema: 'zeppelin-unified-perf-measurement-v1', manifest, workloadSha256: createHash('sha256').update(JSON.stringify(manifest, (key, value) => key === 'path' ? undefined : value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.keys(value).sort().map(k => [k, value[k]])) : value)).digest('hex'),
-    provenance: { source: 'npm', name: '@zepdb/zeppelin-embed', version: '0.6.0',
+    provenance: { source: 'npm', name: 'volantis-db', version: '0.6.0',
       tag: 'v0.6.0', commit: 'f39087d7b20016138d9a1946055bc229cdffdd23',
       packageSha256: digest, addonSha256: digest, entrySha256: digest,
       addonPath: '/literal/addon.node', releaseFlags: 'published npm prebuild; flags unavailable' },

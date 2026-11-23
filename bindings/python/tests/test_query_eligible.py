@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 
 def test_query_eligible_ids(tmp_path: Path) -> None:
@@ -16,5 +16,5 @@ def test_query_eligible_ids(tmp_path: Path) -> None:
             assert store.query(**legs, eligible_ids=[]).hits == ()
             assert [hit.doc_id for hit in store.query(**legs, eligible_ids=[3, 3, 999], k=1).hits] == [3]
         for ids in ([-1], [1 << 128], ["bad"]):
-            with pytest.raises(ze.ZeppelinError):
+            with pytest.raises(ze.VolantisError):
                 store.query(text="amber", eligible_ids=ids)

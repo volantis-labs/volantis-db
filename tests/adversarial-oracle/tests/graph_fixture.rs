@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use zeppelin_embed_adversarial_oracle::graph_fixture::*;
+use volantis_db_adversarial_oracle::graph_fixture::*;
 fn small() -> Snapshot {
     let a = (1_u128 << 80) + 7;
     let b = (2_u128 << 80) + 7;

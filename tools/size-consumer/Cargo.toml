@@ -1,11 +1,11 @@
 [package]
-name = "zeppelin-embed-size-consumer"
+name = "volantis-db-size-consumer"
 version = "0.0.0"
 edition = "2024"
 publish = false
 
 [dependencies]
-zeppelin-embed = { path = "../../crates/zeppelin-embed" }
+volantis-db = { path = "../../crates/volantis-db" }
 
 [workspace]
 members = ["."]

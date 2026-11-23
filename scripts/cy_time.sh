@@ -14,6 +14,6 @@ case "$(uname -s)/$(uname -m)" in
   *) echo 'Unsupported timing host' >&2; exit 1 ;;
 esac
 printf 'HEAD_SHA=%s\n' "$(git -C "$W" rev-parse HEAD)"
-printf 'ADDON_SHA256=%s\n' "$(shasum -a 256 "prebuilds/$P/zeppelin_embed.node" | cut -d ' ' -f 1)"
+printf 'ADDON_SHA256=%s\n' "$(shasum -a 256 "prebuilds/$P/volantis_db.node" | cut -d ' ' -f 1)"
 uptime
 node bench/relationship-timing.mjs "$STORES"

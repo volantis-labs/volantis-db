@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch Hugging Face checkpoints and bake immutable Zeppelin .zem bundles."""
+"""Fetch Hugging Face checkpoints and bake immutable Volantis DB .zem bundles."""
 
 from __future__ import annotations
 
@@ -465,7 +465,7 @@ def release(args: argparse.Namespace) -> None:
                           "size": path.stat().st_size, "sha256": digest})
         manifest = {"format": 1, "name": args.name, "bundle": f"{args.name}.zem",
                     "query_coreml": f"{args.name}.mlmodelc", "files": files}
-        (stage / "zeppelin-model.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        (stage / "volantis-model.json").write_text(json.dumps(manifest, indent=2) + "\n")
         sizes = {"document_precision": args.document_precision,
                  "bundle_bytes": (stage / f"{args.name}.zem").stat().st_size,
                  "query_coreml_bytes": sum(p.stat().st_size for p in compiled_files)}
@@ -474,14 +474,14 @@ def release(args: argparse.Namespace) -> None:
             f"Document weights: {args.document_precision}; CoreML query: {args.query_coreml_precision}, 96 tokens.\n"
             f"The bundle retains {(args.query_mlx_precision or args.document_precision).upper()} MLX query weights and both tokenizers.\n\n"
             f"Sizes (bytes): bundle {sizes['bundle_bytes']}; compiled query {sizes['query_coreml_bytes']}.\n")
-        payload.extend([stage / "zeppelin-model.json", stage / "README.md"])
+        payload.extend([stage / "volantis-model.json", stage / "README.md"])
         checksums = []
         for path in sorted(payload):
             with path.open("rb") as source:
                 checksums.append(f"{hashlib.file_digest(source, 'sha256').hexdigest()}  {path.relative_to(stage).as_posix()}\n")
         (stage / "SHA256SUMS").write_text("".join(checksums))
         out.mkdir(exist_ok=True)
-        for path in [stage / f"{args.name}.zem", compiled, stage / "zeppelin-model.json",
+        for path in [stage / f"{args.name}.zem", compiled, stage / "volantis-model.json",
                      stage / "README.md", stage / "SHA256SUMS"]:
             shutil.move(str(path), out / path.name)
         print(json.dumps(sizes, sort_keys=True))

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import test from 'node:test';
-const { Store, ZeppelinError } = createRequire(import.meta.url)('..');
+const { Store, VolantisError } = createRequire(import.meta.url)('..');
 test('Cypher IN accepts string list parameters', { skip: !Store.graphSupported() }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'ze-list-'));
   const s = openGraph(join(dir, 'graph'));
@@ -18,7 +18,7 @@ test('Cypher IN accepts string list parameters', { skip: !Store.graphSupported()
 test('list parameters preserve ABI values and bounds, synchronously and asynchronously', { skip: !Store.graphSupported() }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ze-list-'));
   const s = openGraph(join(dir, 'graph'));
-  const invalid = pattern => e => e instanceof ZeppelinError && e.code === 'ZE_ERR_INVALID_ARGUMENT' && pattern.test(e.message);
+  const invalid = pattern => e => e instanceof VolantisError && e.code === 'ZE_ERR_INVALID_ARGUMENT' && pattern.test(e.message);
   try {
     s.graphApply([1n, 2n].map(id => ({ kind: 'node', operation: 'create', namespace: 'docs', key: String(id), revision: 1n, properties: { id } })));
     // The current engine expression arena has 1024 cells; stay within its budget.
@@ -51,6 +51,6 @@ test('list parameters preserve ABI values and bounds, synchronously and asynchro
     ids[0] = 9n;
     assert.deepEqual((await pending).rows, [[1n], [2n]]);
     controller.abort();
-    await assert.rejects(s.cypherAsync(query, { ids: [1n] }, { signal: controller.signal }), e => e instanceof ZeppelinError && e.code === 'ZE_ERR_CANCELLED');
+    await assert.rejects(s.cypherAsync(query, { ids: [1n] }, { signal: controller.signal }), e => e instanceof VolantisError && e.code === 'ZE_ERR_CANCELLED');
   } finally { s.close(); rmSync(dir, { recursive: true, force: true }); }
 });

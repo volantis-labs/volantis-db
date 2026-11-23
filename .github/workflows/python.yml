@@ -27,7 +27,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: python -m pip install --upgrade pip 'setuptools>=77'
       - run: python -m pip install --editable './bindings/python[dev]'
-      - run: cargo build --locked -p zeppelin-embed-ffi --features text
+      - run: cargo build --locked -p volantis-db-ffi --features text
       - name: Ruff
         working-directory: bindings/python
         run: ruff check .
@@ -37,7 +37,7 @@ jobs:
       - name: Pytest core and text bindings (synthetic model + local HTTP cache)
         working-directory: bindings/python
         env:
-          ZEPPELIN_EMBED_LIBRARY: ${{ github.workspace }}/target/debug/libzeppelin_embed_ffi.dylib
+          VOLANTIS_DB_LIBRARY: ${{ github.workspace }}/target/debug/libvolantis_db_ffi.dylib
         run: pytest tests
 
   wheels:
@@ -60,5 +60,5 @@ jobs:
         run: python bindings/python/tests/verify_wheel.py wheelhouse/*.whl
       - uses: actions/upload-artifact@v4
         with:
-          name: zeppelin-embed-macos-arm64
+          name: volantis-db-macos-arm64
           path: wheelhouse/*.whl

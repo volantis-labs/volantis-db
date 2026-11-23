@@ -20,7 +20,7 @@ fn run() -> Result<(), String> {
     cases.extend(graph_profile::original_cases());
     if args == ["describe"] {
         for case in &mut cases {
-            case["parameter_cells"] = zeppelin_embed_bench::harness_json::json!(
+            case["parameter_cells"] = volantis_db_bench::harness_json::json!(
                 case["parameters"]
                     .as_array()
                     .unwrap()
@@ -34,7 +34,7 @@ fn run() -> Result<(), String> {
                     .collect::<std::collections::BTreeMap<_, _>>()
             );
             if !case["error"].is_null() {
-                use zeppelin_embed_ffi::ZeErrorCode as E;
+                use volantis_db_ffi::ZeErrorCode as E;
                 let code = match case["error"]["c"].as_str().unwrap() {
                     "ZeErrInvalidArgument" => E::ZeErrInvalidArgument,
                     "ZeErrQueryUnsupported" => E::ZeErrQueryUnsupported,
@@ -42,10 +42,10 @@ fn run() -> Result<(), String> {
                     "ZeErrEndpoint" => E::ZeErrEndpoint,
                     _ => return Err("unmapped declared error".into()),
                 };
-                case["error"]["c_code"] = zeppelin_embed_bench::harness_json::json!(code as i32);
+                case["error"]["c_code"] = volantis_db_bench::harness_json::json!(code as i32);
             }
 
-            case["expected_cells"] = zeppelin_embed_bench::harness_json::json!(
+            case["expected_cells"] = volantis_db_bench::harness_json::json!(
                 case["rows"]
                     .as_array()
                     .unwrap()
@@ -87,9 +87,9 @@ fn run() -> Result<(), String> {
             if !case["ordered"].as_bool().unwrap() {
                 rows.sort();
             }
-            case["expected_rows"] = zeppelin_embed_bench::harness_json::json!(rows);
+            case["expected_rows"] = volantis_db_bench::harness_json::json!(rows);
         }
-        m["cases"] = zeppelin_embed_bench::harness_json::json!(cases);
+        m["cases"] = volantis_db_bench::harness_json::json!(cases);
         println!("{m}");
         return Ok(());
     }

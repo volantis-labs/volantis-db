@@ -1,12 +1,12 @@
-# ZeppelinEmbed for Swift
+# VolantisDB for Swift
 
-`ZeppelinStore` is the async Swift actor over the frozen Zeppelin Embed C ABI.
+`VolantisStore` is the async Swift actor over the frozen Volantis DB C ABI.
 The package targets macOS 14 or newer on Apple silicon and Intel. Release
 consumers use the checksum-pinned XCFramework binary target in the root
 `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/zepdb/zeppelin-embed", from: "0.8.0")
+.package(url: "https://github.com/volantis-labs/volantis-db", from: "0.1.0")
 ```
 
 Local source builds set `ZE_USE_LOCAL_FFI=1` after building the release FFI
@@ -17,7 +17,7 @@ To include the deterministic mid-query cancellation test in a local core run,
 build the test-support archive and enable the matching Swift test flag:
 
 ```sh
-cargo build -p zeppelin-embed-ffi --release --features swift-query-test-support
+cargo build -p volantis-db-ffi --release --features swift-query-test-support
 ZE_USE_LOCAL_FFI=1 swift test --disable-sandbox --jobs 4 -Xswiftc -DZE_SWIFT_QUERY_TEST_SUPPORT
 ```
 
@@ -35,8 +35,8 @@ background work.
 ### Write documents with attributes
 
 Use `try await store.upsert(documents)` to store `IngestDocument.attributes`.
-`ZeppelinStore.ingest(_:)` accepts attribute-free batches. If any document
-carries attributes, ingest throws `ZeppelinIngestError.attributesRequireUpsert`
+`VolantisStore.ingest(_:)` accepts attribute-free batches. If any document
+carries attributes, ingest throws `VolantisIngestError.attributesRequireUpsert`
 before writing any document in the batch.
 
 ### ID128 attributes
@@ -51,7 +51,7 @@ let spec = NamespaceSpec(
     attributes: [AttributeDefinition(id: 1, name: "parent", type: .id128, nullable: false)],
     vectorSpace: nil
 )
-let store = try await ZeppelinStore.openNamespace(root: root, name: "children", spec: spec)
+let store = try await VolantisStore.openNamespace(root: root, name: "children", spec: spec)
 _ = try await store.upsert([
     IngestDocument(
         id: DocumentID(high: 0, low: 1), revision: 1, timestamp: 0, vector: [],
@@ -86,8 +86,8 @@ Equal values sort by ascending document ID. Floating-point values sort
 numerically with signed zeros treated as equal. Missing and NaN values sort
 last in both directions. An unsupported or undeclared attribute, or a cursor
 used with a different order, attribute, or direction, throws
-`ZeppelinError.invalidArgument`. If a write invalidates a cursor, the next
-page throws `ZeppelinError.scanStale`. Restart the scan without a cursor.
+`VolantisError.invalidArgument`. If a write invalidates a cursor, the next
+page throws `VolantisError.scanStale`. Restart the scan without a cursor.
 
 ### Count by attribute
 
@@ -110,12 +110,12 @@ numeric order for integers and byte order for strings. The result reports
 one `generation`, and `count` includes both the group counts and `missingCount`
 for documents with a null attribute. The group limit defaults to 1,024 and
 accepts 1 through 65,536. Exceeding the limit throws
-`ZeppelinError.budgetExceeded`. An unsupported attribute or an out-of-range
-limit throws `ZeppelinError.invalidArgument`.
+`VolantisError.budgetExceeded`. An unsupported attribute or an out-of-range
+limit throws `VolantisError.invalidArgument`.
 
 ### Filter structured queries and return snippets
 
-`ZeppelinStore.query` accepts the same typed `Filter` used by scans. A
+`VolantisStore.query` accepts the same typed `Filter` used by scans. A
 `timestampRange` includes its lower bound and excludes its upper bound.
 The engine intersects both constraints with `eligibleIds` before ranking
 and fusion. An empty ID list matches no documents.
@@ -138,7 +138,7 @@ for hit in result.hits {
 ```
 
 The example uses a namespace whose attribute ID 1 stores a string. An unknown
-attribute or a filter value of the wrong type throws `ZeppelinError.invalidArgument`.
+attribute or a filter value of the wrong type throws `VolantisError.invalidArgument`.
 
 A positive `snippetBytes` requests an excerpt for each hit whose text matched.
 The engine uses the query analyzer, including prefix expansion, to find
@@ -146,7 +146,7 @@ highlights. Only matches fully inside the excerpt are highlighted. The budget
 is in UTF-8 bytes and the excerpt can extend by up to three bytes to finish a
 Unicode scalar. `truncatedStart` and `truncatedEnd` indicate where source text
 was cut. Snippets require a lexical leg. A vector-only request with snippets
-or a nonpositive byte budget throws `ZeppelinError.invalidArgument`.
+or a nonpositive byte budget throws `VolantisError.invalidArgument`.
 Omit `snippetBytes` to skip excerpt generation.
 
 `SnippetHighlight.byteRange` addresses the excerpt's UTF-8 bytes.
@@ -164,7 +164,7 @@ let attributes = try await store.schema()
 entry contains its ID, name, type (including `.id128`), and nullability.
 The list contains user attributes and omits the built-in timestamp column.
 A store without user attributes returns an empty list. A closed store throws
-`ZeppelinError.closed`.
+`VolantisError.closed`.
 
 ### Merge sealed segments
 
@@ -180,8 +180,8 @@ Active writes and the WAL stay unchanged. Call `seal()` first to include
 active writes. The `GenerationReport` contains the final generation, which
 stays the same if no compatible batch fits.
 
-Pass a `ZeppelinCancellationToken` with `merge(cancellationToken:)` to request
-cooperative cancellation. A cancelled call throws `ZeppelinError.cancelled`.
+Pass a `VolantisCancellationToken` with `merge(cancellationToken:)` to request
+cooperative cancellation. A cancelled call throws `VolantisError.cancelled`.
 Batches published before cancellation remain committed.
 
 ### Namespace tokenizers, batches, and cascades
@@ -190,15 +190,15 @@ Set `NamespaceSpec.tokenizerProfile` when opening a namespace. The default is
 `.textDefault`. Use `.code` to preserve stopwords and skip stemming, or
 `.voice` to match transcript number words such as “twenty five” with “25”.
 These profiles work on record-only and vector namespaces in core builds.
-Reopen with the same profile or receive `ZeppelinError.epochMismatch`. A
+Reopen with the same profile or receive `VolantisError.epochMismatch`. A
 custom vector `Epoch` must declare the same tokenizer profile as its spec.
 
 ```swift
 let spec = NamespaceSpec(attributes: [], vectorSpace: nil, tokenizerProfile: .voice)
-let notes = try await ZeppelinStore.openNamespace(root: root, name: "notes", spec: spec)
+let notes = try await VolantisStore.openNamespace(root: root, name: "notes", spec: spec)
 ```
 
-`ZeppelinStore.namespaceBatch(root:participants:)` commits changes to 2–128
+`VolantisStore.namespaceBatch(root:participants:)` commits changes to 2–128
 existing namespaces of one root in a single durable transaction. Supply the
 exact spec for each unique namespace and close its writer and any open snapshot
 views first. Each `NamespaceMutation` accepts `NamespaceUpsert` documents with
@@ -207,26 +207,26 @@ to delete, and a structured `deleteWhere` filter. Conditions see the original
 state. The engine applies upserts, explicit deletes, and filter deletes in
 that order. Generations are returned in participant order.
 
-`ZeppelinStore.namespaceBatchLive(root:participants:)` takes the same mutations
-paired with their open, writable `ZeppelinStore` actors using
+`VolantisStore.namespaceBatchLive(root:participants:)` takes the same mutations
+paired with their open, writable `VolantisStore` actors using
 `LiveNamespaceMutation(store:mutation:)`. The actors remain usable after
 success. An I/O failure during commit can leave the outcome indeterminate.
 Reopen participating stores before retrying. Readers opened before a
 closed-writer batch keep their old snapshots. New opens see the shared decision.
 
-`ZeppelinStore.declareCascade(root:participants:declaration:)` durably registers
+`VolantisStore.declareCascade(root:participants:declaration:)` durably registers
 a rule between existing namespaces. Pass their exact specs as 1–128
 `CascadeParticipant` values. A
 `CascadeDeclaration(parentIndex:childIndex:attributeID:)` identifies the
 participants by zero-based index and the child's `.id128` attribute. Set the
 child's attribute to `.id128(parentID)` on upsert. Declaring the same rule twice
-is idempotent. A cycle throws `ZeppelinError.cascadeCycle`.
+is idempotent. A cycle throws `VolantisError.cascadeCycle`.
 
-`ZeppelinStore.deleteCascade(root:participants:)` atomically deletes the explicit
+`VolantisStore.deleteCascade(root:participants:)` atomically deletes the explicit
 IDs and their transitive dependants. Supply 1–128 `CascadeDeleteParticipant`
 values including every reachable namespace, with an empty delete list where
 there are no explicit IDs. Omitting a reachable namespace throws
-`ZeppelinError.io` before publication. The returned
+`VolantisError.io` before publication. The returned
 generations follow participant order. Close writers and snapshot views for
 both cascade calls. Rules take effect when calling `deleteCascade`. Keep the
 root intact and treat deletions as logical because old stores and abandoned
@@ -269,8 +269,8 @@ usual revision rules, including the revision floor left by a delete.
 matches and physically removes their bytes from the store before returning.
 If interrupted, the next writable open finishes the removal. The report
 contains `deleted` and `generation`. Zero matches leave the generation
-unchanged. An invalid filter throws `ZeppelinError.invalidArgument`, and a
-read-only handle throws `ZeppelinError.accessMode`. The call runs to completion
+unchanged. An invalid filter throws `VolantisError.invalidArgument`, and a
+read-only handle throws `VolantisError.accessMode`. The call runs to completion
 without a cancellation token.
 
 ```swift
@@ -281,7 +281,7 @@ print(report.deleted, report.generation)
 
 ### Verify a store
 
-Use `ZeppelinStore.verify(at:)` with a local file URL for the store directory.
+Use `VolantisStore.verify(at:)` with a local file URL for the store directory.
 For a namespace, pass its directory under the root. Verification is read-only,
 requires no open handle, and can run after an unclean shutdown. It checks
 the manifest, referenced segments, WAL replay, and any pending purge intent.
@@ -289,7 +289,7 @@ The graph-enabled build also checks graph objects and inventory. A concurrent
 writer can cause verification to report a write in progress.
 
 ```swift
-let report = try await ZeppelinStore.verify(at: root.appendingPathComponent("notes"))
+let report = try await VolantisStore.verify(at: root.appendingPathComponent("notes"))
 for finding in report.findings {
     print(finding.kind, finding.file, finding.offset as Any, finding.detail)
 }
@@ -300,14 +300,14 @@ for finding in report.findings {
 `findings` is empty. Each `VerifyFinding` has a typed `VerifyFindingKind`, a
 relative file name, an optional byte offset, and decoder detail.
 
-If the walk cannot start, the call throws `ZeppelinError`. A missing directory
+If the walk cannot start, the call throws `VolantisError`. A missing directory
 throws `.notFound`, a non-directory or unlistable path throws `.io`, and an
 invalid path or a URL that does not refer to the local filesystem throws
 `.invalidArgument`.
 
 ### Graph
 
-Graph methods use the same `ZeppelinStore` handle: `enableGraph`, `graphApply`,
+Graph methods use the same `VolantisStore` handle: `enableGraph`, `graphApply`,
 `graphQuery`, `cypher`, `getNodes`, `getRelationships`, and `graphResources`.
 Call `enableGraph()` before graph queries on a store created with ordinary
 `open(at:options:)`. `GraphNodeID` is an alias for `DocumentID`. A document node created with
@@ -323,7 +323,7 @@ creation-only `open(at:relationshipTypes:maxResidentBytes:readerDrainTimeoutMill
 overload with a new path.
 
 ```swift
-let store = try await ZeppelinStore.open(at: path, relationshipTypes: [
+let store = try await VolantisStore.open(at: path, relationshipTypes: [
     GraphRelationshipType(type: "DEPENDS_ON", onDelete: .cascade),
     GraphRelationshipType(type: "REFERENCES", onDelete: .restrict),
 ])
@@ -351,15 +351,15 @@ must be at least 1 MiB. Apply a custom policy again after reopening.
 `graphMaintain(interruption:)` runs one bounded step and returns the last
 published generation, step counters, and `cycleComplete`. Pass
 `.cancellation(token)` or `.deadlineNanoseconds(ns)` to interrupt the step.
-Both maintenance methods require a writer and can throw `ZeppelinError.busy`
+Both maintenance methods require a writer and can throw `VolantisError.busy`
 when another writer operation is in progress. On a core-only build, the
 creation overload and both maintenance methods throw
-`ZeppelinError.graphUnsupportedBuild`.
+`VolantisError.graphUnsupportedBuild`.
 
 For local graph builds, link one full archive:
 
 ```sh
-CARGO_BUILD_JOBS=4 cargo build -p zeppelin-embed-ffi --release --features graph-bindings-test-support,swift-query-test-support
+CARGO_BUILD_JOBS=4 cargo build -p volantis-db-ffi --release --features graph-bindings-test-support,swift-query-test-support
 CLANG_MODULE_CACHE_PATH=/tmp/ze-swift-clang ZE_USE_LOCAL_FFI=1 ZE_ENABLE_GRAPH=1 swift build --disable-sandbox --jobs 4
 CLANG_MODULE_CACHE_PATH=/tmp/ze-swift-clang ZE_USE_LOCAL_FFI=1 ZE_ENABLE_GRAPH=1 swift test --disable-sandbox --jobs 4 -Xswiftc -DZE72_TEST_BRIDGE -Xswiftc -DZE_SWIFT_QUERY_TEST_SUPPORT
 ```
@@ -367,32 +367,32 @@ CLANG_MODULE_CACHE_PATH=/tmp/ze-swift-clang ZE_USE_LOCAL_FFI=1 ZE_ENABLE_GRAPH=1
 The separate graph package is retired. The default package resolves the
 universal graph-free XCFramework on Apple silicon and Intel. Set
 `ZE_ENABLE_GRAPH=1` when resolving and building the package to select the
-checksum-pinned graph XCFramework and expose graph methods on `ZeppelinStore`.
+checksum-pinned graph XCFramework and expose graph methods on `VolantisStore`.
 The graph XCFramework is the full macOS 14+ Apple silicon artifact and includes
 the model-backed text C ABI; the default universal, Intel and non-macOS artifacts
-are text-free. Its dynamic `ZeppelinEmbedGraph.framework` carries
+are text-free. Its dynamic `VolantisDBGraph.framework` carries
 `Resources/mlx.metallib`, so SwiftPM consumers need no shader-copy step. For local
 artifact validation, also set `ZE_USE_LOCAL_XCFRAMEWORK=1`; the package selects
-`target/xcframework-graph-cypher/ZeppelinEmbedGraph.xcframework`.
+`target/xcframework-graph-cypher/VolantisDBGraph.xcframework`.
 
 ### Embedded text namespaces
 
 Use the full graph + text XCFramework (`ZE_ENABLE_GRAPH=1`) on macOS 14+
-arm64. Core and graph-only builds throw `ZeppelinError.unsupported` for
+arm64. Core and graph-only builds throw `VolantisError.unsupported` for
 embedded namespace operations.
 
 `NamespaceSpec(attributes:embeddedModel:)` accepts a pinned `TextModel`.
 The model supplies the vector space and embedding epoch. Supplying an
 explicit vector space or epoch as well is an error. Namespace open resolves
 the model through the standard model cache, and reopen uses the same
-model pins. Send text with an empty vector to `ZeppelinStore.upsert`.
+model pins. Send text with an empty vector to `VolantisStore.upsert`.
 
 ```swift
 let spec = NamespaceSpec(
     attributes: [AttributeDefinition(id: 1, name: "meeting", type: .u64, nullable: false)],
     embeddedModel: .default
 )
-let notes = try await ZeppelinStore.openNamespace(root: rootURL, name: "notes", spec: spec)
+let notes = try await VolantisStore.openNamespace(root: rootURL, name: "notes", spec: spec)
 let noteID = DocumentID(high: 0, low: 1)
 _ = try await notes.upsert([
     IngestDocument(id: noteID, revision: 1, timestamp: 10, vector: [],
@@ -423,7 +423,7 @@ Each `ChunkNeighbour` has an ID, zero-based chunk and negative squared L2
 score, with zero for an exact match. Ties sort by ID and chunk. Source
 document chunks are excluded unless `includeSource` is true. Batch results
 preserve input order, duplicate sources and empty groups. An unknown
-source ID or chunk throws `ZeppelinError.notFound`.
+source ID or chunk throws `VolantisError.notFound`.
 
 `NeighbourOptions.k` limits results to 1–4096 per source. With only a
 `threshold`, the result contains every score strictly above it. Omitting
@@ -457,9 +457,9 @@ process setting. A different explicit limit returns `ZE_ERR_MLX_CACHE_LIMIT_CONF
 
 ```swift
 import Foundation
-import ZeppelinEmbed
+import VolantisDB
 
-let storeURL = URL.applicationSupportDirectory.appending(path: "ZeppelinText")
+let storeURL = URL.applicationSupportDirectory.appending(path: "VolantisText")
 let store = try await TextStore.open(at: storeURL, model: .default)
 let report = try await store.ingest([
     TextDocument(id: DocumentID(high: 0, low: 1), revision: 1, text: "hello world")
@@ -480,9 +480,9 @@ To download a pinned model, use
 `TextStore.open(at:model:cacheDirectory:offline:options:progress:)` with a
 `TextModel(repo:revision:manifestSHA256:)`. Omit `model` to use `TextModel.default`:
 `volantis-labs/volantis-db-clean71-arctic-m-v2` at
-`d64b817c4021a3f1b9bded3152d9afdf9ac813e7`. The revision is a 40-hex commit and
+`5833eb696dbc41def2421a7fb97d58f92db94fab`. The revision is a 40-hex commit and
 the manifest pin is a 64-hex SHA-256. The call runs on a detached task, like
-`ZeppelinStore`. The optional `@Sendable` progress closure receives
+`VolantisStore`. The optional `@Sendable` progress closure receives
 `completedBytes` and `totalBytes` on that task's thread; total is zero while
 fetching the manifest. Intermediate reports require both at least 64 KiB and
 at least 100 ms since the last report; each verified file also reports completion.
@@ -491,11 +491,11 @@ callback.
 
 The first open downloads and verifies the pinned model; subsequent opens reuse
 the verified cache. `cacheDirectory` overrides `ZE_MODEL_CACHE` and the default
-`~/Library/Caches/zeppelin-embed/models`. `offline: true` or `ZE_MODEL_OFFLINE=1`
-prohibits networking; an offline miss throws `ZeppelinError.notFound`.
+`~/Library/Caches/volantis-db/models`. `offline: true` or `ZE_MODEL_OFFLINE=1`
+prohibits networking; an offline miss throws `VolantisError.notFound`.
 `ZE_MODEL_ENDPOINT` overrides the download endpoint.
 `TextStore.open(at: storeURL, bundle: bundleURL)` opens a preinstalled bundle.
-See the [model card](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/d64b817c4021a3f1b9bded3152d9afdf9ac813e7/README.md)
+See the [model card](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/5833eb696dbc41def2421a7fb97d58f92db94fab/README.md)
 and [root text API guide](../../README.md#text-api-macos-apple-silicon) for model
 limits, download size, and measured performance.
 

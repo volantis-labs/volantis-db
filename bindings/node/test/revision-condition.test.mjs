@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { ZeppelinError, openNamespace } = require('..');
+const { VolantisError, openNamespace } = require('..');
 
 /** Opens a record-only namespace, runs `body`, and always cleans up. */
 function withStore(body) {
@@ -39,7 +39,7 @@ function liveRevision(store, id) {
 
 function assertConflict(write, expected) {
   assert.throws(write, (error) => {
-    assert.ok(error instanceof ZeppelinError);
+    assert.ok(error instanceof VolantisError);
     assert.equal(error.code, 'ZE_ERR_REVISION_CONFLICT');
     assert.deepEqual(error.conflict, expected);
     return true;

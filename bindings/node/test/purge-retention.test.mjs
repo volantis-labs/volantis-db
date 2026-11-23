@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 
-const { openNamespace, ZeppelinError } = createRequire(import.meta.url)('..');
+const { openNamespace, VolantisError } = createRequire(import.meta.url)('..');
 const options = { durability: 'durable', commitTier: 'durable' };
 const marker = 'ze246removedsentinel';
 const survivor = 'ze246survivorsentinel';
@@ -29,7 +29,7 @@ function fixture(fn) {
     rmSync(root, { recursive: true, force: true });
   }
 }
-const code = expected => error => error instanceof ZeppelinError && error.code === expected;
+const code = expected => error => error instanceof VolantisError && error.code === expected;
 
 test('deferred purge removes deleted and superseded text from every file', () => fixture((store, root, reopen) => {
   store.upsert([{ id: 1n, text: marker }]);

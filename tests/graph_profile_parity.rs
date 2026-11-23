@@ -22,11 +22,11 @@ fn ze74_local_profile_uses_independent_rust_and_c_plans() {
     }
 }
 
-#[path = "../crates/zeppelin-embed-cypher/tests/support/conformance.rs"]
+#[path = "../crates/volantis-db-cypher/tests/support/conformance.rs"]
 mod conformance;
-#[path = "../crates/zeppelin-embed-cypher/tests/support/graph.rs"]
+#[path = "../crates/volantis-db-cypher/tests/support/graph.rs"]
 mod graph;
-#[path = "../crates/zeppelin-embed-cypher/tests/support/mod.rs"]
+#[path = "../crates/volantis-db-cypher/tests/support/mod.rs"]
 mod support;
 use graph_profile::tck;
 #[test]
@@ -34,11 +34,11 @@ fn ze74_original_rust_cypher_profile_preserves_pinned_expectations() {
     for (write, fixture) in [
         (
             false,
-            include_str!("../crates/zeppelin-embed-cypher/tests/fixtures/read-tck-execution.txt"),
+            include_str!("../crates/volantis-db-cypher/tests/fixtures/read-tck-execution.txt"),
         ),
         (
             true,
-            include_str!("../crates/zeppelin-embed-cypher/tests/fixtures/write-tck-execution.txt"),
+            include_str!("../crates/volantis-db-cypher/tests/fixtures/write-tck-execution.txt"),
         ),
     ] {
         for scenario in tck::scenarios(fixture) {
@@ -90,8 +90,8 @@ fn ze74_invalid_typed_with_scope_is_atomic() {
         .find(|c| c["id"] == "local/with-scope")
         .unwrap()
         .clone();
-    case["structured"]["expressions"][1]["value"] = zeppelin_embed_bench::harness_json::json!(999);
-    case["error"] = zeppelin_embed_bench::harness_json::json!({"rust":"Scope","c":"ZeErrInvalidArgument","stage":"typed-plan-validation"});
+    case["structured"]["expressions"][1]["value"] = volantis_db_bench::harness_json::json!(999);
+    case["error"] = volantis_db_bench::harness_json::json!({"rust":"Scope","c":"ZeErrInvalidArgument","stage":"typed-plan-validation"});
     for path in ["rust-structured", "c-structured"] {
         graph_profile::run_local(&case, path).unwrap_or_else(|e| panic!("{path}: {e}"));
     }

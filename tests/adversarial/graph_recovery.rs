@@ -2,7 +2,7 @@
 
 use super::coverage::CoverageRegistry;
 use std::collections::BTreeSet;
-use zeppelin_embed_adversarial_oracle::graph_adjacency_store::{
+use volantis_db_adversarial_oracle::graph_adjacency_store::{
     Operation, RelationshipRow, compare_read_view_expansion,
 };
 
@@ -18,7 +18,7 @@ fn compare_state(
 }
 
 pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
-    let report = zeppelin_embed::graph_recovery_test_support::run_actual_probe(seed);
+    let report = volantis_db::graph_recovery_test_support::run_actual_probe(seed);
     let expected = [
         Operation::CreateNode { id: 1 },
         Operation::CreateNode { id: 2 },
@@ -86,10 +86,10 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
 }
 
 use rand::{Rng, seq::SliceRandom};
-use zeppelin_embed::graph_commit_recovery_test_support::{
+use volantis_db::graph_commit_recovery_test_support::{
     BatchObservation, Boundary, Fixture, ProbeStore,
 };
-use zeppelin_embed::property_graph::{EntityId, GraphGeneration, GraphWriteOutcome};
+use volantis_db::property_graph::{EntityId, GraphGeneration, GraphWriteOutcome};
 
 pub const COMMIT_KEYS: &[&str] = &[
     "property-graph.recovery.commit.artifact-create",
@@ -134,7 +134,7 @@ pub fn schedule_for(seed: u64) -> (Fixture, Vec<Boundary>) {
 }
 
 fn oracle_row(
-    row: &zeppelin_embed::property_graph::storage::adjacency::RelationshipRow,
+    row: &volantis_db::property_graph::storage::adjacency::RelationshipRow,
 ) -> RelationshipRow {
     RelationshipRow {
         rel: row.rel.get(),
@@ -147,7 +147,7 @@ fn oracle_row(
 /// One comparator for real and deliberately mutated complete observations.
 /// Expected graph, logical contents and membership come only from fixture input.
 pub fn compare_batch(fixture: &Fixture, actual: &BatchObservation) -> Result<(), String> {
-    use zeppelin_embed_adversarial_oracle::graph_contents::{Contents, Observation, Value, check};
+    use volantis_db_adversarial_oracle::graph_contents::{Contents, Observation, Value, check};
     if actual.store.get() != fixture.store
         || actual.generation.get() != 2
         || actual.sequence != 1
@@ -234,11 +234,11 @@ pub fn compare_batch(fixture: &Fixture, actual: &BatchObservation) -> Result<(),
 fn compare_retry(
     outcome: GraphWriteOutcome,
     admitted_generation: u64,
-    receipts: &[zeppelin_embed::property_graph::staging::ItemReceipt],
+    receipts: &[volantis_db::property_graph::staging::ItemReceipt],
     present: bool,
     expected_admitted_generation: u64,
 ) -> Result<(), String> {
-    use zeppelin_embed_adversarial_oracle::graph_key_lifecycle::{
+    use volantis_db_adversarial_oracle::graph_key_lifecycle::{
         Action, Observation, Record, predict,
     };
     if receipts.len() != 3 {
@@ -305,7 +305,7 @@ pub fn comparator_mutations(fixture: &Fixture, good: &BatchObservation) -> Resul
     }
     mutate!(
         store,
-        zeppelin_embed::property_graph::StoreInstanceId::new(fixture.store ^ 2).unwrap()
+        volantis_db::property_graph::StoreInstanceId::new(fixture.store ^ 2).unwrap()
     );
     mutate!(generation, GraphGeneration::new(3));
     mutate!(sequence, 2);
@@ -333,16 +333,16 @@ pub fn comparator_mutations(fixture: &Fixture, good: &BatchObservation) -> Resul
     for column in 0..4 {
         let mut value = good.clone();
         match column {
-            0 => value.relationship.rel = zeppelin_embed::property_graph::RelId::new(2).unwrap(),
+            0 => value.relationship.rel = volantis_db::property_graph::RelId::new(2).unwrap(),
             1 => {
-                value.relationship.source = zeppelin_embed::property_graph::NodeId::new(2).unwrap()
+                value.relationship.source = volantis_db::property_graph::NodeId::new(2).unwrap()
             }
             2 => {
-                value.relationship.target = zeppelin_embed::property_graph::NodeId::new(1).unwrap()
+                value.relationship.target = volantis_db::property_graph::NodeId::new(1).unwrap()
             }
             _ => {
                 value.relationship.relationship_type =
-                    zeppelin_embed::property_graph::catalog::RelTypeId::new(2).unwrap()
+                    volantis_db::property_graph::catalog::RelTypeId::new(2).unwrap()
             }
         }
         mutations.push(value);
@@ -363,19 +363,19 @@ pub fn run_boundary_pair(
     coverage: &mut CoverageRegistry,
 ) -> Result<
     (
-        zeppelin_embed::graph_commit_recovery_test_support::BoundaryReport,
-        zeppelin_embed::graph_commit_recovery_test_support::BoundaryReport,
+        volantis_db::graph_commit_recovery_test_support::BoundaryReport,
+        volantis_db::graph_commit_recovery_test_support::BoundaryReport,
     ),
     String,
 > {
     let root = tempfile::tempdir().map_err(|e| e.to_string())?;
-    let actual = zeppelin_embed::graph_commit_recovery_test_support::run_boundary(
+    let actual = volantis_db::graph_commit_recovery_test_support::run_boundary(
         &root.path().join("fault"),
         fixture,
         boundary,
         true,
     );
-    let clean = zeppelin_embed::graph_commit_recovery_test_support::run_boundary(
+    let clean = volantis_db::graph_commit_recovery_test_support::run_boundary(
         &root.path().join("control"),
         fixture,
         boundary,
@@ -491,7 +491,7 @@ pub fn probe_commit_boundaries(seed: u64, coverage: &mut CoverageRegistry) -> Re
         }
     }
     coverage.hit("op.GraphApply");
-    for receipt in zeppelin_embed::graph_commit_recovery_test_support::run_reclaim_boundaries() {
+    for receipt in volantis_db::graph_commit_recovery_test_support::run_reclaim_boundaries() {
         if receipt.fires != 1 || receipt.clean_controls != 1 {
             return Err("unmeasured reclaim boundary".into());
         }
@@ -516,7 +516,7 @@ pub const LOSS_KEYS: &[&str] = &[
 pub fn process_child() {
     if let Ok(value) = std::env::var("ZE75_NONCE_SEED") {
         let seed = value.parse().unwrap();
-        zeppelin_embed::graph_commit_recovery_test_support::with_qualification_nonces(
+        volantis_db::graph_commit_recovery_test_support::with_qualification_nonces(
             seed,
             process_child_inner,
         );
@@ -534,7 +534,7 @@ fn process_child_inner() {
     let after_sync = mode == "1";
     let (fixture, _) = schedule_for(seed);
     let vfs = ProcessCrashVfs::new(
-        ScheduledVfs::new(zeppelin_embed::vfs::StdVfs, FaultSchedule::default()),
+        ScheduledVfs::new(volantis_db::vfs::StdVfs, FaultSchedule::default()),
         CrashBoundary::MidWalGroup,
     );
     let vfs = Arc::new(if after_sync {
@@ -596,14 +596,14 @@ pub fn probe_loss_modes(seed: u64, coverage: &mut CoverageRegistry) -> Result<()
 pub fn lifecycle_loss_observations(
     seed: u64,
     coverage: &mut CoverageRegistry,
-) -> Result<Vec<zeppelin_embed_bench::harness_json::Value>, String> {
-    use zeppelin_embed_bench::harness_json::json;
+) -> Result<Vec<volantis_db_bench::harness_json::Value>, String> {
+    use volantis_db_bench::harness_json::json;
     let mut observations = Vec::new();
     use super::fault_vfs::{
         FaultEvent, FaultMode, FaultSchedule, FaultSite, Layer, ScheduledVfs, SimulatedCrashVfs,
     };
     use std::{os::unix::process::ExitStatusExt, sync::Arc};
-    use zeppelin_embed::vfs::StdVfs;
+    use volantis_db::vfs::StdVfs;
     let (fixture, _) = schedule_for(seed);
     let root = tempfile::tempdir().map_err(|e| e.to_string())?;
     for mode in [0, 1, 2] {
@@ -799,7 +799,7 @@ pub fn lifecycle_loss_observations(
             Ok(_) => return Err("committed corruption admitted an older plausible batch".into()),
             Err(error) => error,
         };
-        use zeppelin_embed::property_graph::GraphStoreErrorKind;
+        use volantis_db::property_graph::GraphStoreErrorKind;
         if if missing {
             !matches!(
                 error.kind(),
@@ -830,7 +830,7 @@ fn run_after_boundary_pair(
 ) -> Result<(), String> {
     use super::fault_vfs::{FaultEvent, FaultMode, FaultSchedule, FaultSite, Layer, ScheduledVfs};
     use std::sync::Arc;
-    use zeppelin_embed::vfs::StdVfs;
+    use volantis_db::vfs::StdVfs;
     let root = tempfile::tempdir().map_err(|e| e.to_string())?;
     let checkpoint = matches!(
         boundary,
@@ -961,11 +961,11 @@ fn run_after_boundary_pair(
 }
 
 pub fn retry_comparator_mutations(
-    retry: &zeppelin_embed::property_graph::GraphWriteResult,
+    retry: &volantis_db::property_graph::GraphWriteResult,
     present: bool,
     expected_admitted_generation: u64,
 ) -> Result<usize, String> {
-    use zeppelin_embed::property_graph::{GraphRevision, NodeId, RelId};
+    use volantis_db::property_graph::{GraphRevision, NodeId, RelId};
     let compare = |outcome, generation, receipts: &[_]| {
         compare_retry(
             outcome,

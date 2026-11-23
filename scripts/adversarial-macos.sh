@@ -211,7 +211,7 @@ if overall_summary is not None:
         errors.append("overall: evidence was not produced on macOS")
 
 aggregate = {
-    "schema": "zeppelin-embed-adversarial-macos-aggregate",
+    "schema": "volantis-db-adversarial-macos-aggregate",
     "version": 1,
     "campaigns": campaigns,
     "campaign_count": len(summaries),

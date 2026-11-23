@@ -2,10 +2,10 @@
 //! at this seam; publication/recovery campaigns are added with those components.
 
 use rand::RngCore;
-use zeppelin_embed::property_graph::{
+use volantis_db::property_graph::{
     GraphRevision, GraphVector, NodeId, PropertyData, PropertyValue, RelId, StoreInstanceId,
 };
-use zeppelin_embed_adversarial_oracle::property_graph::{DomainInput, DomainObservation, check};
+use volantis_db_adversarial_oracle::property_graph::{DomainInput, DomainObservation, check};
 
 use super::coverage::CoverageRegistry;
 

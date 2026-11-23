@@ -115,11 +115,11 @@ class ReleaseTests(unittest.TestCase):
 
     def test_omitted_crate_fails(self):
         self.change('coverage', 'crates', {k: v for k, v in self.example_observations('coverage')['crates'].items()
-                                          if k != 'zeppelin-embed-cypher'})
-        self.reject('zeppelin-embed-cypher')
+                                          if k != 'volantis-db-cypher'})
+        self.reject('volantis-db-cypher')
         self.change('coverage', 'crates', self.example_observations('coverage')['crates'])
         crates = self.example_observations('coverage')['crates']
-        crates['zeppelin-embed-cypher']['covered'] = 89
+        crates['volantis-db-cypher']['covered'] = 89
         self.change('coverage', 'crates', crates)
         self.reject('90%')
 
@@ -164,16 +164,16 @@ class ReleaseTests(unittest.TestCase):
         self.reject('graph-cypher')
 
     def test_llvm_reports_keep_each_crate_and_exclusions(self):
-        paths = ['crates/zeppelin-embed/src/lib.rs',
-                 'crates/zeppelin-embed-cypher/src/lib.rs',
-                 'crates/zeppelin-embed-bench/src/bin/excluded.rs']
+        paths = ['crates/volantis-db/src/lib.rs',
+                 'crates/volantis-db-cypher/src/lib.rs',
+                 'crates/volantis-db-bench/src/bin/excluded.rs']
         raw = self.root / 'llvm.json'
         raw.write_text(json.dumps({'data': [{'files': [dict(filename=str(self.g.ROOT / path),
             summary={'lines': dict(count=100, covered=89 if 'cypher' in path else 100)})
             for path in paths]}]}))
         report = self.g.coverage_report([raw])
-        self.assertEqual(report['crates']['zeppelin-embed']['covered'], 100)
-        self.assertEqual(report['crates']['zeppelin-embed-bench']['count'], 0)
+        self.assertEqual(report['crates']['volantis-db']['covered'], 100)
+        self.assertEqual(report['crates']['volantis-db-bench']['count'], 0)
         errors = self.g.check_crate_lines(report)
         self.assertTrue(any('cypher' in e and '90%' in e for e in errors))
         self.assertTrue(any('text' in e and 'unmeasured' in e for e in errors))
@@ -273,7 +273,7 @@ class ReleaseTests(unittest.TestCase):
         fixture = self.root / 'coverage.json'
         fixture.write_text(json.dumps({'data': [{'files': [dict(
             filename=str(self.g.ROOT / directory / 'src/lib.rs'),
-            summary={'lines': dict(count=100, covered=89 if name == 'zeppelin-embed-cypher' else 95)})
+            summary={'lines': dict(count=100, covered=89 if name == 'volantis-db-cypher' else 95)})
             for name, directory in self.g.CRATES.items()]}]}))
         cargo = fake_bin / 'cargo'
         cargo.write_text('#!' + sys.executable + '\nimport pathlib, shutil, sys\n'
@@ -287,7 +287,7 @@ class ReleaseTests(unittest.TestCase):
                    CARGO_TARGET_DIR=str(self.root / 'target'), CARGO_BUILD_TARGET='aarch64-apple-darwin')
         result = subprocess.run(['bash', script], env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn('zeppelin-embed-cypher', result.stderr)
+        self.assertIn('volantis-db-cypher', result.stderr)
         self.assertIn('below 90%', result.stderr)
 
     def test_windows_shipping_archive_rejects_over_budget(self):
@@ -298,7 +298,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(len(commands), 1, 'Windows shipping archive has no linked-section gate')
         command = commands[0]
         self.assertEqual(command[-1],
-            '$GITHUB_WORKSPACE/target/native-archives/x86_64-pc-windows-msvc/zeppelin_embed_ffi.lib')
+            '$GITHUB_WORKSPACE/target/native-archives/x86_64-pc-windows-msvc/volantis_db_ffi.lib')
         source = self.root / 'over-budget.c'
         source.write_text('char ze_size_fixture[12288 * 1024 + 1] = {1};\n')
         obj = self.root / 'over-budget.o'

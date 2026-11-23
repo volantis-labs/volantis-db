@@ -1,8 +1,8 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed::property_graph::storage::artifact::{ArtifactId, BlockKind, PhysicalRef};
-use zeppelin_embed::property_graph::wal::*;
-use zeppelin_embed::property_graph::{GraphGeneration, StoreInstanceId};
+use volantis_db::property_graph::storage::artifact::{ArtifactId, BlockKind, PhysicalRef};
+use volantis_db::property_graph::wal::*;
+use volantis_db::property_graph::{GraphGeneration, StoreInstanceId};
 // Framing fuzz intentionally models successful opaque semantic callbacks. It
 // cannot establish actual catalog/mark/extent validity owned by other modules.
 struct SyntacticOnly;

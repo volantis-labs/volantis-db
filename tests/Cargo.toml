@@ -1,6 +1,6 @@
 [package]
-name = "zeppelin-embed-workspace-tests"
-version = "0.8.0"
+name = "volantis-db-workspace-tests"
+version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
 publish = false
@@ -28,14 +28,14 @@ path = "graph_refinement.rs"
 [features]
 # Opt-in internal graph component campaigns; default artifacts stay unchanged.
 graph-cypher = [
-    "dep:zeppelin-embed-cypher",
-    "zeppelin-embed/graph-cypher",
-    "zeppelin-embed-ffi/graph-cypher",
+    "dep:volantis-db-cypher",
+    "volantis-db/graph-cypher",
+    "volantis-db-ffi/graph-cypher",
 ]
 # Scoped allocation scheduling for PG16 qualification only.
 graph-result-test-support = [
     "graph-cypher",
-    "zeppelin-embed-ffi/graph-bindings-test-support",
+    "volantis-db-ffi/graph-bindings-test-support",
 ]
 
 [dependencies]
@@ -43,12 +43,12 @@ proptest.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 tempfile.workspace = true
-zeppelin-embed-adversarial-oracle = { path = "adversarial-oracle", version = "=0.8.0" }
-zeppelin-embed = { path = "../crates/zeppelin-embed", version = "=0.8.0", features = ["benchmark-kernels", "test-seams"] }
-zeppelin-embed-bench = { path = "../crates/zeppelin-embed-bench", version = "=0.8.0" }
-zeppelin-embed-ffi = { path = "../crates/zeppelin-embed-ffi", version = "=0.8.0", features = ["abi-panic-probe"] }
+volantis-db-adversarial-oracle = { path = "adversarial-oracle", version = "=0.1.0" }
+volantis-db = { path = "../crates/volantis-db", version = "=0.1.0", features = ["benchmark-kernels", "test-seams"] }
+volantis-db-bench = { path = "../crates/volantis-db-bench", version = "=0.1.0" }
+volantis-db-ffi = { path = "../crates/volantis-db-ffi", version = "=0.1.0", features = ["abi-panic-probe"] }
 
-zeppelin-embed-cypher = { path = "../crates/zeppelin-embed-cypher", version = "=0.8.0", optional = true }
+volantis-db-cypher = { path = "../crates/volantis-db-cypher", version = "=0.1.0", optional = true }
 
 [[test]]
 name = "graph_fixture"
@@ -96,4 +96,4 @@ path = "graph_workload_cli.rs"
 required-features = ["graph-cypher"]
 
 [dev-dependencies]
-zeppelin-embed = { path = "../crates/zeppelin-embed", version = "=0.8.0", features = ["test-seams"] }
+volantis-db = { path = "../crates/volantis-db", version = "=0.1.0", features = ["test-seams"] }

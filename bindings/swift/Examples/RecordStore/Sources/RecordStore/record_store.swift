@@ -1,5 +1,5 @@
 import Foundation
-import ZeppelinEmbed
+import VolantisDB
 
 @main
 struct RecordStore {
@@ -25,7 +25,7 @@ struct RecordStore {
             .appendingPathComponent("zeppelin-swift-record-store-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let notes = try await ZeppelinStore.openNamespace(root: root, name: "notes", spec: schema)
+        let notes = try await VolantisStore.openNamespace(root: root, name: "notes", spec: schema)
         let documents = [
             IngestDocument(
                 id: DocumentID(high: 0, low: 101),
@@ -81,7 +81,7 @@ struct RecordStore {
             DocumentID(high: 0, low: 999),
         ])
         guard let found = lookup.documents[0] else {
-            throw ZeppelinError.internalError
+            throw VolantisError.internalError
         }
         print("get 101: \"\(found.text ?? "")\"")
         if lookup.documents[1] == nil {
@@ -137,7 +137,7 @@ struct RecordStore {
 
         // Omitting a vector space creates a plain record store. Vector search
         // on this namespace is rejected with ZE_ERR_NO_VECTOR_SPACE.
-        let inbox = try await ZeppelinStore.openNamespace(
+        let inbox = try await VolantisStore.openNamespace(
             root: root,
             name: "inbox",
             spec: NamespaceSpec(attributes: [], vectorSpace: nil)
@@ -153,7 +153,7 @@ struct RecordStore {
         ])
         let records = try await inbox.scan(limit: 10, order: .timestampAscending)
         guard let record = records.documents.first else {
-            throw ZeppelinError.internalError
+            throw VolantisError.internalError
         }
         print("record-only scan: note \(record.id.low): \"\(record.text ?? "")\"")
         try await inbox.close()

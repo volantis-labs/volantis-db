@@ -94,9 +94,9 @@ const report = JSON.parse(packed.stdout);
 // electron-builder packs production dependencies and treats anything else as
 // extraneous. An earlier attempt side-loaded it and produced a 14 KB app.asar
 // containing no addon at all, which the unpack check below caught.
-const tarball = join(staging, 'zeppelin-embed.tgz');
+const tarball = join(staging, 'volantis-db.tgz');
 renameSync(join(staging, report[0].filename), tarball);
-console.log(`packed ${report[0].filename} -> .staging/zeppelin-embed.tgz`);
+console.log(`packed ${report[0].filename} -> .staging/volantis-db.tgz`);
 
 const electronBinary = join(
   fixtureDirectory,
@@ -190,7 +190,7 @@ if (!devOnly) {
     },
   );
 
-  const packagedExe = join(outputDirectory, 'win-unpacked', 'ZeppelinWindowsFixture.exe');
+  const packagedExe = join(outputDirectory, 'win-unpacked', 'VolantisWindowsFixture.exe');
   if (!existsSync(packagedExe)) {
     throw new Error(`electron-builder produced no executable at ${packagedExe}`);
   }
@@ -204,12 +204,11 @@ if (!devOnly) {
     'resources',
     'app.asar.unpacked',
     'node_modules',
-    '@zepdb',
-    'zeppelin-embed',
+    'volantis-db',
     'prebuilds',
     'win32-x64',
     'electron-44',
-    'zeppelin_embed.node',
+    'volantis_db.node',
   );
   if (!existsSync(unpacked)) {
     throw new Error(
@@ -242,5 +241,5 @@ if (!devOnly) {
   assertPassed('packaged', parsed);
 }
 
-// `.staging/zeppelin-embed.tgz` is referenced by package.json, so it stays.
+// `.staging/volantis-db.tgz` is referenced by package.json, so it stays.
 console.log('ELECTRON QUALIFICATION PASSED');

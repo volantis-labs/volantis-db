@@ -21,11 +21,11 @@ MANIFEST="$ROOT_DIR/Package.swift"
 PIN_MARKER=xcframework-checksum
 case "$SELECTOR" in
     # Owner decision 2026-10-05: legacy arm64 and Intel share 5,632 KB.
-    legacy) SUFFIX=""; NAME=ZeppelinEmbed; SIZE_BUDGET_KB=5632; MACOS_DEPLOYMENT_TARGET=11.0 ;;
+    legacy) SUFFIX=""; NAME=VolantisDB; SIZE_BUDGET_KB=5632; MACOS_DEPLOYMENT_TARGET=11.0 ;;
     graph-cypher)
         # ZE-506 decision 2026-10-19: arm64 graph+text is gated at 28,672 KB.
         # ZE_TEXT_SIZE_BUDGET_KB is a local-only override; CI never sets it.
-        SUFFIX=-graph-cypher; NAME=ZeppelinEmbedGraph; SIZE_BUDGET_KB="${ZE_TEXT_SIZE_BUDGET_KB:-28672}"
+        SUFFIX=-graph-cypher; NAME=VolantisDBGraph; SIZE_BUDGET_KB="${ZE_TEXT_SIZE_BUDGET_KB:-28672}"
         MACOS_DEPLOYMENT_TARGET=14.0; features=(--features graph-cypher,text)
         PIN_MARKER=graph-xcframework-checksum ;;
     *) echo "unknown artifact: $SELECTOR" >&2; exit 2 ;;
@@ -42,9 +42,9 @@ ARTIFACT="$BUILD_DIR/$NAME.xcframework"
 ARCHIVE_ZIP="$BUILD_DIR/$NAME.xcframework.zip"
 SLICE_EVIDENCE="$ROOT_DIR/tasks/evidence/ze-107-$SELECTOR-slices.md"
 SIZE_EVIDENCE="$ROOT_DIR/tasks/evidence/ze-107-$SELECTOR-size.md"
-ALLOWLIST="$ROOT_DIR/crates/zeppelin-embed-ffi/symbols.allowlist"
+ALLOWLIST="$ROOT_DIR/crates/volantis-db-ffi/symbols.allowlist"
 if [ "$SELECTOR" = graph-cypher ]; then
-    ALLOWLIST="$ROOT_DIR/crates/zeppelin-embed-ffi/symbols.graph.allowlist"
+    ALLOWLIST="$ROOT_DIR/crates/volantis-db-ffi/symbols.graph.allowlist"
 fi
 PRIVACY_MANIFEST="$SCRIPT_DIR/PrivacyInfo.xcprivacy"
 
@@ -80,7 +80,7 @@ rm -rf "$WORK_DIR" "$ARTIFACT"
 rm -f "$ARCHIVE_ZIP"
 mkdir -p "$HEADERS_DIR"
 python3 "$ROOT_DIR/scripts/release/core_header.py" \
-    "$ROOT_DIR/crates/zeppelin-embed-ffi/include/zeppelin_embed.h" \
+    "$ROOT_DIR/crates/volantis-db-ffi/include/volantis_db.h" \
     "$HEADERS_DIR" --artifact "$SELECTOR" || exit 1
 
 {
@@ -233,7 +233,7 @@ attempt_slice() {
     local sdk="$3"
     local sdk_path log archive status release_rustflags compiler_runtime
     log="$WORK_DIR/$label.build.log"
-    archive="$CARGO_DIR/$target/release/libzeppelin_embed_ffi.a"
+    archive="$CARGO_DIR/$target/release/libvolantis_db_ffi.a"
     sdk_path="$(xcrun --sdk "$sdk" --show-sdk-path 2>&1)"
     {
         echo "## $label"
@@ -270,7 +270,7 @@ attempt_slice() {
     elif SDKROOT="$sdk_path" MACOSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" \
         RUSTFLAGS="$release_rustflags" \
         CARGO_BUILD_JOBS=3 cargo "+$RUST_NIGHTLY_TOOLCHAIN" build -Z build-std=std,panic_unwind \
-        --locked -p zeppelin-embed-ffi --release --no-default-features --target "$target" \
+        --locked -p volantis-db-ffi --release --no-default-features --target "$target" \
         --target-dir "$CARGO_DIR" ${features[@]+"${features[@]}"} \
         > "$log" 2>&1; then
         status=0
@@ -314,7 +314,7 @@ if [ "$SELECTOR" = graph-cypher ]; then
     framework="$WORK_DIR/$NAME.framework"
     version="$framework/Versions/A"
     mkdir -p "$version/Headers" "$version/Modules" "$version/Resources" || exit 1
-    cp "$release_dir/libzeppelin_embed_ffi.dylib" "$version/$NAME" || exit 1
+    cp "$release_dir/libvolantis_db_ffi.dylib" "$version/$NAME" || exit 1
     python3 "$ROOT_DIR/scripts/release/check-macos-minos.py" "$MACOS_DEPLOYMENT_TARGET" "$version/$NAME" || exit 1
     install_name_tool -id "@rpath/$NAME.framework/Versions/A/$NAME" "$version/$NAME" || exit 1
     minimum_macos="$(vtool -show-build "$version/$NAME" | awk '/minos/ { print $2; exit }')"
@@ -323,7 +323,7 @@ if [ "$SELECTOR" = graph-cypher ]; then
         exit 1
     fi
     python3 "$ROOT_DIR/scripts/release/core_header.py" \
-        "$ROOT_DIR/crates/zeppelin-embed-ffi/include/zeppelin_embed.h" \
+        "$ROOT_DIR/crates/volantis-db-ffi/include/volantis_db.h" \
         "$version/Headers" --artifact graph-cypher --framework || exit 1
     mv "$version/Headers/module.modulemap" "$version/Modules/" || exit 1
     python3 "$ROOT_DIR/scripts/release/stage-metallib.py" "$release_dir" \
@@ -333,9 +333,9 @@ if [ "$SELECTOR" = graph-cypher ]; then
 import plistlib
 import sys
 with open(sys.argv[1], 'wb') as handle:
-    plistlib.dump(dict(CFBundleExecutable='ZeppelinEmbedGraph',
-                      CFBundleIdentifier='com.zepdb.ZeppelinEmbedGraph',
-                      CFBundleName='ZeppelinEmbedGraph', CFBundlePackageType='FMWK',
+    plistlib.dump(dict(CFBundleExecutable='VolantisDBGraph',
+                      CFBundleIdentifier='com.volantislabs.VolantisDBGraph',
+                      CFBundleName='VolantisDBGraph', CFBundlePackageType='FMWK',
                       CFBundleVersion='1', CFBundleShortVersionString='1.0',
                       CFBundleSupportedPlatforms=['MacOSX'], LSMinimumSystemVersion='14.0'), handle)
 FRAMEWORK_PLIST
@@ -346,7 +346,7 @@ FRAMEWORK_PLIST
     codesign --force --sign - "$framework" || exit 1
     xcodebuild -create-xcframework -framework "$framework" -output "$ARTIFACT" || exit 1
 else
-    macos_archive="$WORK_DIR/libzeppelin_embed_ffi-macos.a"
+    macos_archive="$WORK_DIR/libvolantis_db_ffi-macos.a"
     lipo -create "${built_archives[@]}" -output "$macos_archive" || exit 1
     xcodebuild -create-xcframework \
         -library "$macos_archive" \

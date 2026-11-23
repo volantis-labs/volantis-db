@@ -1,6 +1,6 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed::property_graph::catalog::CatalogImage;
+use volantis_db::property_graph::catalog::CatalogImage;
 
 fn exercise(data: &[u8]) {
     if let Ok(image) = CatalogImage::decode(data, 1024 * 1024, &mut || Ok(())) {

@@ -1,5 +1,6 @@
 #[allow(dead_code)]
 mod common;
+use zeppelin_embed as engine;
 use zeppelin_embed::format::frame::FormatCheck;
 use zeppelin_embed::lifecycle::{Store, StoreError};
 use zeppelin_embed::manifest::ManifestError;

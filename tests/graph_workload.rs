@@ -1,4 +1,4 @@
-use zeppelin_embed_bench::{graph_workload::*, harness_json::json};
+use volantis_db_bench::{graph_workload::*, harness_json::json};
 #[test]
 fn ze77_rejects_missing_partial_or_tainted_cells() {
     let manifest = json!({"samples":3,"warmups":1,"repetitions":5});

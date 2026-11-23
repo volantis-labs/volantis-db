@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-import zeppelin_embed as ze
-from zeppelin_embed import _ffi
+import volantis_db as ze
+from volantis_db import _ffi
 
 
 def test_text_entry_points_raise_typed_platform_error(

@@ -1,17 +1,17 @@
-# Zeppelin Embed for Python
+# Volantis DB for Python
 
-Python 3.11+ bindings for the Zeppelin Embed C ABI. Platform wheels include the
+Python 3.11+ bindings for the Volantis DB C ABI. Platform wheels include the
 native library, so a wheel installation does not require a separate Rust build.
 
 ```bash
-python -m pip install zeppelin-embed
+python -m pip install volantis-db
 ```
 
 ```python
 from pathlib import Path
 
 import numpy as np
-import zeppelin_embed as ze
+import volantis_db as ze
 
 vectors = np.asarray([[0.0, 0.5, 1.0, 1.5]], dtype=np.float32)
 with ze.open(Path("example-store")) as store:
@@ -202,7 +202,7 @@ return the same integer type. A UUID can be converted with `UUID(...).int`.
 ```python
 from uuid import UUID
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 parent = UUID("fedcba98-7654-3210-0123-456789abcdef").int
 kind = ze.AttributeType.ID128
@@ -283,8 +283,8 @@ and preserves any batches already published.
 
 ## Native library loading
 
-The loader uses `ZEPPELIN_EMBED_LIBRARY` when it is set. Otherwise, an installed
-wheel loads its bundled library from `zeppelin_embed/.dylibs`. Source-tree use
+The loader uses `VOLANTIS_DB_LIBRARY` when it is set. Otherwise, an installed
+wheel loads its bundled library from `volantis_db/.dylibs`. Source-tree use
 also recognizes the workspace's debug and release Cargo outputs for development.
 An invalid override fails loudly and does not fall back to another library.
 
@@ -296,7 +296,7 @@ or newer on Apple silicon. Other platforms are not part of this PyPI release.
 The Python wheel ships without graph support. The `Store` methods
 `enable_graph()`, `graph_apply()`, `graph_query()`, `cypher()`, `get_nodes()`,
 `get_relationships()`, and `graph_resources()` raise
-`zeppelin_embed.UnsupportedBuild` (`ZE_ERR_GRAPH_UNSUPPORTED_BUILD`).
+`volantis_db.UnsupportedBuild` (`ZE_ERR_GRAPH_UNSUPPORTED_BUILD`).
 
 ## Text API (macOS arm64)
 
@@ -315,12 +315,12 @@ Zero disables caching. After initialization, omitting the limit reuses the
 process setting. A different explicit limit returns `ZE_ERR_MLX_CACHE_LIMIT_CONFLICT`.
 
 ```python
-import zeppelin_embed as ze
+import volantis_db as ze
 
 with ze.open_model("text-store") as store:  # downloads the default model on first use
-    store.ingest_text([7], ["the bronze zeppelin"])
+    store.ingest_text([7], ["the bronze airship"])
     for legs in ("dense", "lexical", "hybrid"):
-        result = store.query_text("bronze zeppelin", k=1, legs=legs, tier="exact")
+        result = store.query_text("bronze airship", k=1, legs=legs, tier="exact")
         print(result.hits, result.diagnostics)
     print(store.health())
     store.maintain(wall_time_ns=10_000_000, bytes=1_000_000)
@@ -332,12 +332,12 @@ To download and verify a model from Hugging Face, call
 manifest_sha256=manifest_sha256, cache_dir=None, offline=False, progress=None)`.
 Omit all three pins (`ze.open_model("text-store")`) to use
 `ze.DEFAULT_MODEL_REF`: `volantis-labs/volantis-db-clean71-arctic-m-v2` at
-`d64b817c4021a3f1b9bded3152d9afdf9ac813e7`. Explicit pins must be supplied together;
+`5833eb696dbc41def2421a7fb97d58f92db94fab`. Explicit pins must be supplied together;
 a partial set is an error.
 The native resolver honors `ZE_MODEL_CACHE`, `ZE_MODEL_OFFLINE`, and
 `ZE_MODEL_ENDPOINT`. The first open downloads and verifies the pinned model;
 subsequent opens reuse the verified cache. `cache_dir` overrides `ZE_MODEL_CACHE`
-and the default `~/Library/Caches/zeppelin-embed/models`.
+and the default `~/Library/Caches/volantis-db/models`.
 `progress(done, total)` runs synchronously with byte counts. Intermediate reports
 require both at least 64 KiB and at least 100 ms since the last report; each
 verified file also reports completion. Initial `(0, 0)` means fetching the
@@ -345,7 +345,7 @@ manifest. Callbacks must not reenter model resolution; callback exceptions
 propagate after resolution.
 `offline=True` (or `ZE_MODEL_OFFLINE=1`) prohibits network access and raises
 `ze.NotFound` on a cache miss. `ze.open_text("text-store", "model.zem")` opens a
-preinstalled bundle. See the [model card](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/d64b817c4021a3f1b9bded3152d9afdf9ac813e7/README.md)
+preinstalled bundle. See the [model card](https://huggingface.co/volantis-labs/volantis-db-clean71-arctic-m-v2/blob/5833eb696dbc41def2421a7fb97d58f92db94fab/README.md)
 and [root text API guide](../../README.md#text-api-macos-apple-silicon) for model
 limits, download size, and measured performance.
 
@@ -370,7 +370,7 @@ calling the chunk query methods require a macOS arm64 text build. Other builds
 raise `ze.TextUnavailable`.
 
 ```python
-import zeppelin_embed as ze
+import volantis_db as ze
 
 model = ze.EmbeddedModelRef(**ze.DEFAULT_MODEL_REF)
 spec = ze.NamespaceSpec(
@@ -421,7 +421,7 @@ results. Querying a regular namespace with either method raises
 ## Development
 
 The package is built from the repository because the wheel build compiles
-`crates/zeppelin-embed-ffi` with the locked Rust 1.93 dependency graph:
+`crates/volantis-db-ffi` with the locked Rust 1.93 dependency graph:
 
 ```bash
 python -m pip wheel --no-deps ./bindings/python -w wheelhouse
@@ -430,13 +430,13 @@ python -m pip wheel --no-deps ./bindings/python -w wheelhouse
 Run all binding checks on macOS arm64, outside a process sandbox (MLX uses Metal):
 
 ```bash
-cargo build --locked -p zeppelin-embed-ffi --features text
-ZEPPELIN_EMBED_LIBRARY="$PWD/target/debug/libzeppelin_embed_ffi.dylib" \
+cargo build --locked -p volantis-db-ffi --features text
+VOLANTIS_DB_LIBRARY="$PWD/target/debug/libvolantis_db_ffi.dylib" \
   python -m pytest bindings/python/tests
 ```
 
 The text tests use the committed synthetic bundle
-`crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem` and a local HTTP server
+`crates/volantis-db-text/tests/fixtures/ze115/gte.zem` and a local HTTP server
 for model download, verified cache reuse, and offline behavior. The built-in default is pinned to the published Hugging Face model. The ignored
 Rust test `real_default_model_downloads_and_answers_queries` verifies a real
 download and dense, lexical and hybrid retrieval outside the sandbox.
@@ -445,7 +445,7 @@ Build and verify the installed wheel in a fresh venv and temporary directory:
 
 ```bash
 python -m pip wheel --no-deps ./bindings/python -w wheelhouse
-python bindings/python/tests/verify_wheel.py wheelhouse/zeppelin_embed-*.whl
+python bindings/python/tests/verify_wheel.py wheelhouse/volantis_db-*.whl
 ```
 
 The verifier clears source-library overrides, copies the synthetic fixture into
@@ -457,7 +457,7 @@ the installed package and its colocated shader library.
 Manually dispatching `python-release.yml` with release tag `v<version>` builds
 and verifies the macOS arm64 wheel, then uploads it with PyPI Trusted
 Publishing. Configure
-the PyPI publisher with owner `zepdb`, repository `zeppelin-embed`, workflow
+the PyPI publisher with owner `volantis-labs`, repository `volantis-db`, workflow
 `python-release.yml`, and environment `pypi`.
 
 ### Prepare lexical queries after open

@@ -12,9 +12,9 @@
 #include <utility>
 #include <vector>
 
-#include "zeppelin_embed.h"
+#include "volantis_db.h"
 #ifdef ZE_GRAPH
-#include "zeppelin_graph_contracts.h"
+#include "volantis_db_graph_contracts.h"
 #endif
 
 namespace {
@@ -36,7 +36,7 @@ bool NapiOk(napi_env env, napi_status status, const char *operation) {
                            : "Node-API call failed";
   std::string message(operation);
   message.append(": ").append(detail);
-  napi_throw_error(env, "ERR_ZEPPELIN_NAPI", message.c_str());
+  napi_throw_error(env, "ERR_VOLANTIS_NAPI", message.c_str());
   return false;
 }
 
@@ -45,12 +45,12 @@ napi_value Guard(napi_env env, Function &&function) {
   try {
     return function();
   } catch (const std::bad_alloc &) {
-    napi_throw_error(env, "ERR_ZEPPELIN_OUT_OF_MEMORY",
+    napi_throw_error(env, "ERR_VOLANTIS_OUT_OF_MEMORY",
                      "the Node addon could not allocate memory");
   } catch (const std::exception &error) {
-    napi_throw_error(env, "ERR_ZEPPELIN_NATIVE", error.what());
+    napi_throw_error(env, "ERR_VOLANTIS_NATIVE", error.what());
   } catch (...) {
-    napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+    napi_throw_error(env, "ERR_VOLANTIS_NATIVE",
                      "an unknown native addon failure occurred");
   }
   return nullptr;
@@ -60,19 +60,19 @@ std::string LastError(ze_handle handle) {
   size_t length = 0;
   if (ze_last_error_message(handle, nullptr, 0, &length) != ZE_OK ||
       length == 0) {
-    return "Zeppelin Embed operation failed";
+    return "Volantis DB operation failed";
   }
   std::vector<char> buffer(length + 1, '\0');
   size_t written = 0;
   if (ze_last_error_message(handle, buffer.data(), buffer.size(), &written) !=
       ZE_OK) {
-    return "Zeppelin Embed operation failed";
+    return "Volantis DB operation failed";
   }
   return std::string(buffer.data(), written);
 }
 
-// Builds the ZeppelinError-shaped value for `status` with `message`.
-bool CreateZeppelinErrorWithMessage(napi_env env, ze_error_code status,
+// Builds the VolantisError-shaped value for `status` with `message`.
+bool CreateVolantisErrorWithMessage(napi_env env, ze_error_code status,
                                     const std::string &message,
                                     napi_value *output) {
   const char *code = ze_error_code_name(status);
@@ -88,7 +88,7 @@ bool CreateZeppelinErrorWithMessage(napi_env env, ze_error_code status,
       !NapiOk(env, napi_create_error(env, nullptr, js_message, &error),
               "create error") ||
       !NapiOk(env,
-              napi_create_string_utf8(env, "ZeppelinError", NAPI_AUTO_LENGTH,
+              napi_create_string_utf8(env, "VolantisError", NAPI_AUTO_LENGTH,
                                       &js_name),
               "create error name") ||
       !NapiOk(env, napi_set_named_property(env, error, "name", js_name),
@@ -107,14 +107,14 @@ bool CreateZeppelinErrorWithMessage(napi_env env, ze_error_code status,
   return true;
 }
 
-bool CreateZeppelinError(napi_env env, ze_handle handle, ze_error_code status,
+bool CreateVolantisError(napi_env env, ze_handle handle, ze_error_code status,
                          napi_value *output) {
-  return CreateZeppelinErrorWithMessage(env, status, LastError(handle), output);
+  return CreateVolantisErrorWithMessage(env, status, LastError(handle), output);
 }
 
-napi_value ThrowZeppelin(napi_env env, ze_handle handle, ze_error_code status) {
+napi_value ThrowVolantis(napi_env env, ze_handle handle, ze_error_code status) {
   napi_value error;
-  if (!CreateZeppelinError(env, handle, status, &error))
+  if (!CreateVolantisError(env, handle, status, &error))
     return nullptr;
   napi_throw(env, error);
   return nullptr;
@@ -370,7 +370,7 @@ void CompleteNative(napi_env env, napi_status status, void *data) {
   std::unique_ptr<NativeWork> work(static_cast<NativeWork *>(data));
   napi_value result = Guard(env, [&]() -> napi_value {
     if (status != napi_ok) {
-      napi_throw_error(env, "ERR_ZEPPELIN_NATIVE", "native work did not run");
+      napi_throw_error(env, "ERR_VOLANTIS_NATIVE", "native work did not run");
       return nullptr;
     }
     return work->finish(work->status, work->message);
@@ -408,7 +408,7 @@ napi_value RunNative(napi_env env, napi_value receiver, ze_handle handle,
   if (!NapiOk(env, napi_create_promise(env, &work->deferred, &promise),
               "create promise") ||
       !NapiOk(env,
-              napi_create_string_utf8(env, "zeppelin.async", NAPI_AUTO_LENGTH,
+              napi_create_string_utf8(env, "volantis.async", NAPI_AUTO_LENGTH,
                                       &name),
               "create work name") ||
       !NapiOk(env, napi_create_reference(env, receiver, 1, &work->receiver),
@@ -433,7 +433,7 @@ napi_value RunNative(napi_env env, napi_value receiver, ze_handle handle,
 napi_value ThrowWorkerError(napi_env env, ze_error_code status,
                             const std::string &message) {
   napi_value error;
-  if (CreateZeppelinErrorWithMessage(env, status, message, &error))
+  if (CreateVolantisErrorWithMessage(env, status, message, &error))
     napi_throw(env, error);
   return nullptr;
 }
@@ -467,15 +467,15 @@ napi_value ThrowWriteFailure(napi_env env, ze_handle handle,
                              const std::string *message = nullptr) {
   if (status != ZE_ERR_REVISION_CONFLICT)
     return message ? ThrowWorkerError(env, status, *message)
-                   : ThrowZeppelin(env, handle, status);
+                   : ThrowVolantis(env, handle, status);
   napi_value error;
   napi_value detail;
   napi_value index;
   napi_value id;
   napi_value expected;
   napi_value current;
-  if (!(message ? CreateZeppelinErrorWithMessage(env, status, *message, &error)
-                : CreateZeppelinError(env, handle, status, &error)) ||
+  if (!(message ? CreateVolantisErrorWithMessage(env, status, *message, &error)
+                : CreateVolantisError(env, handle, status, &error)) ||
       !NapiOk(env, napi_create_object(env, &detail), "create conflict") ||
       !NapiOk(
           env,
@@ -893,7 +893,7 @@ bool CreateAttributeValue(napi_env env, const ZeAttributeValue &native,
     }
     break;
   default:
-    napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+    napi_throw_error(env, "ERR_VOLANTIS_NATIVE",
                      "stored attribute has an unknown type");
     return false;
   }
@@ -1535,7 +1535,7 @@ napi_value ConstructStore(napi_env env, napi_callback_info info) {
       ze_handle handle = 0;
       const ze_error_code status = ze_open_snapshot(source->handle, &handle);
       if (status != ZE_OK)
-        return ThrowZeppelin(env, source->handle, status);
+        return ThrowVolantis(env, source->handle, status);
       return WrapStore(env, receiver, handle);
     }
     std::string path;
@@ -1625,7 +1625,7 @@ napi_value ConstructStore(napi_env env, napi_callback_info info) {
                                                 tokenizer_profile, &handle);
     }
     if (status != ZE_OK)
-      return ThrowZeppelin(env, 0, status);
+      return ThrowVolantis(env, 0, status);
 
     return WrapStore(env, receiver, handle);
   });
@@ -1767,7 +1767,7 @@ napi_value ListNamespaces(napi_env env, napi_callback_info info) {
     result.abi_size = sizeof(result);
     const ze_error_code status = ze_namespace_list(&request, &result);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, 0, status);
+      return ThrowVolantis(env, 0, status);
     ResultOwner<ZeNamespaceListResult, ze_namespace_list_result_free> owner(
         &result);
 
@@ -1792,7 +1792,7 @@ napi_value ListNamespaces(napi_env env, napi_callback_info info) {
     }
     const ze_error_code free_status = owner.FreeNow();
     if (free_status != ZE_OK)
-      return ThrowZeppelin(env, 0, free_status);
+      return ThrowVolantis(env, 0, free_status);
     return names;
   });
 }
@@ -1846,7 +1846,7 @@ bool CreateVerifyFinding(napi_env env, const ZeVerifyFinding &native,
     // rather than drop or relabel the finding.
     const std::string message =
         "verify returned unknown finding kind " + std::to_string(native.kind);
-    napi_throw_error(env, "ERR_ZEPPELIN_NATIVE", message.c_str());
+    napi_throw_error(env, "ERR_VOLANTIS_NATIVE", message.c_str());
     return false;
   }
   napi_value kind;
@@ -1905,7 +1905,7 @@ napi_value VerifyStore(napi_env env, napi_callback_info info) {
     result.abi_size = sizeof(result);
     const ze_error_code status = ze_verify(&request, &result);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, 0, status);
+      return ThrowVolantis(env, 0, status);
     ResultOwner<ZeVerifyResult, ze_verify_result_free> owner(&result);
 
     napi_value report;
@@ -1951,7 +1951,7 @@ napi_value VerifyStore(napi_env env, napi_callback_info info) {
       return nullptr;
     const ze_error_code free_status = owner.FreeNow();
     if (free_status != ZE_OK)
-      return ThrowZeppelin(env, 0, free_status);
+      return ThrowVolantis(env, 0, free_status);
     return report;
   });
 }
@@ -2352,7 +2352,7 @@ napi_value NamespaceOperationCall(napi_env env, napi_callback_info info,
             ? ze_namespace_delete_cascade(&request)
             : ze_namespace_declare_cascade(&request, &declaration);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, 0, status);
+      return ThrowVolantis(env, 0, status);
     if (operation == NamespaceOperation::DeclareCascade) {
       napi_value result;
       if (!NapiOk(env, napi_get_undefined(env, &result), "declaration result"))
@@ -2440,7 +2440,7 @@ napi_value Get(napi_env env, napi_callback_info info) {
     native.abi_size = sizeof(native);
     const ze_error_code status = ze_get(store->handle, &request, &native);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, status);
+      return ThrowVolantis(env, store->handle, status);
     ResultOwner<ZeGetResult, ze_get_result_free> owner(&native);
 
     napi_value result;
@@ -2465,7 +2465,7 @@ napi_value Get(napi_env env, napi_callback_info info) {
     }
     const ze_error_code free_status = owner.FreeNow();
     if (free_status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, free_status);
+      return ThrowVolantis(env, store->handle, free_status);
     return result;
   });
 }
@@ -2796,7 +2796,7 @@ napi_value PartitionMutation(napi_env env, napi_callback_info info,
       status = ze_drop_partition(store->handle, &request, &report);
     }
     if (status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, status);
+      return ThrowVolantis(env, store->handle, status);
     napi_value result;
     if (!NapiOk(env, napi_create_object(env, &result),
                 "create partition report"))
@@ -2867,7 +2867,7 @@ napi_value DeleteWhere(napi_env env, napi_callback_info info) {
     const ze_error_code status =
         ze_delete_where(store->handle, &request, &report);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, status);
+      return ThrowVolantis(env, store->handle, status);
     napi_value result;
     napi_value deleted;
     napi_value generation;
@@ -3181,7 +3181,7 @@ napi_value Scan(napi_env env, napi_callback_info info) {
             return nullptr;
           const ze_error_code free_status = owner.FreeNow();
           if (free_status != ZE_OK)
-            return ThrowZeppelin(env, handle, free_status);
+            return ThrowVolantis(env, handle, free_status);
           return result;
         });
   });
@@ -3281,7 +3281,7 @@ bool CreateCountGroup(napi_env env, const ZeCountGroup &group,
     break;
   }
   default:
-    napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+    napi_throw_error(env, "ERR_VOLANTIS_NATIVE",
                      "grouped count returned an unknown value type");
     return false;
   }
@@ -3306,7 +3306,7 @@ napi_value CountGrouped(napi_env env, NativeStore *store,
   const ze_error_code status =
       ze_count_grouped(store->handle, &request, &native);
   if (status != ZE_OK)
-    return ThrowZeppelin(env, store->handle, status);
+    return ThrowVolantis(env, store->handle, status);
   ResultOwner<ZeCountGroupedResult, ze_count_grouped_result_free> owner(
       &native);
   napi_value result;
@@ -3344,7 +3344,7 @@ napi_value CountGrouped(napi_env env, NativeStore *store,
     return nullptr;
   const ze_error_code free_status = owner.FreeNow();
   if (free_status != ZE_OK)
-    return ThrowZeppelin(env, store->handle, free_status);
+    return ThrowVolantis(env, store->handle, free_status);
   return result;
 }
 
@@ -3367,7 +3367,7 @@ napi_value Schema(napi_env env, napi_callback_info info) {
       column.abi_size = sizeof(column);
       auto status = ze_schema_column(store->handle, index, nullptr, 0, &column);
       if (status != ZE_OK)
-        return ThrowZeppelin(env, store->handle, status);
+        return ThrowVolantis(env, store->handle, status);
       if (index == column.column_count)
         break;
       std::vector<char> name(column.name_len + 1);
@@ -3375,7 +3375,7 @@ napi_value Schema(napi_env env, napi_callback_info info) {
                                 reinterpret_cast<uint8_t *>(name.data()),
                                 name.size(), &column);
       if (status != ZE_OK)
-        return ThrowZeppelin(env, store->handle, status);
+        return ThrowVolantis(env, store->handle, status);
       const char *type = nullptr;
       switch (column.attribute_type) {
       case 1:
@@ -3487,7 +3487,7 @@ napi_value Count(napi_env env, napi_callback_info info) {
     native.abi_size = sizeof(native);
     const ze_error_code status = ze_count(store->handle, &request, &native);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, status);
+      return ThrowVolantis(env, store->handle, status);
     napi_value result;
     napi_value count;
     napi_value generation;
@@ -3617,7 +3617,7 @@ napi_value SearchFiltered(napi_env env, napi_callback_info info) {
     const ze_error_code status =
         ze_search_filtered(store->handle, &request, &native);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, status);
+      return ThrowVolantis(env, store->handle, status);
     ResultOwner<ZeSearchResult, ze_search_result_free> owner(&native);
     napi_value hits;
     if (!NapiOk(env,
@@ -3628,7 +3628,7 @@ napi_value SearchFiltered(napi_env env, napi_callback_info info) {
       const ZeSearchHit &hit = native.hits[index];
       if (hit.has_document == 0) {
         napi_throw_error(
-            env, "ERR_ZEPPELIN_NATIVE",
+            env, "ERR_VOLANTIS_NATIVE",
             "filtered search returned a hit without a document id");
         return nullptr;
       }
@@ -3652,7 +3652,7 @@ napi_value SearchFiltered(napi_env env, napi_callback_info info) {
     }
     const ze_error_code free_status = owner.FreeNow();
     if (free_status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, free_status);
+      return ThrowVolantis(env, store->handle, free_status);
     return hits;
   });
 }
@@ -3691,7 +3691,7 @@ napi_value StoreState(napi_env env, napi_callback_info info) {
     report.abi_size = sizeof(report);
     const ze_error_code status = ze_state(store->handle, &report);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, status);
+      return ThrowVolantis(env, store->handle, status);
 
     const char *state;
     switch (report.state) {
@@ -3732,7 +3732,7 @@ napi_value StoreStats(napi_env env, napi_callback_info info) {
     report.abi_size = sizeof(report);
     const ze_error_code status = ze_stats(store->handle, &report);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, status);
+      return ThrowVolantis(env, store->handle, status);
 
     napi_value result;
     if (!NapiOk(env, napi_create_object(env, &result), "create store stats"))
@@ -3793,7 +3793,7 @@ napi_value CloseStore(napi_env env, napi_callback_info info) {
     if (status == ZE_OK || status == ZE_ERR_POISONED)
       store->handle = 0;
     if (status != ZE_OK)
-      return ThrowZeppelin(env, handle, status);
+      return ThrowVolantis(env, handle, status);
     napi_value undefined;
     if (!NapiOk(env, napi_get_undefined(env, &undefined), "create undefined"))
       return nullptr;
@@ -4008,7 +4008,7 @@ napi_value ReindexTextStore(napi_env env, napi_callback_info info) {
     report.abi_size = sizeof(report);
     const ze_error_code status = ze_reindex_text(store->handle, &report);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, status);
+      return ThrowVolantis(env, store->handle, status);
     napi_value result;
     napi_value generation;
     if (!NapiOk(env, napi_create_object(env, &result), "create seal report") ||
@@ -4036,7 +4036,7 @@ napi_value OpenMigrations(napi_env env, napi_callback_info info) {
     report.abi_size = sizeof(report);
     const ze_error_code status = ze_open_migrations(store->handle, &report);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, status);
+      return ThrowVolantis(env, store->handle, status);
     napi_value result, generation, changes;
     if (!NapiOk(env, napi_create_object(env, &result), "create migrations") ||
         !NapiOk(env,
@@ -4082,7 +4082,7 @@ void ExecuteSnapshot(napi_env, void *data) {
   try {
     work->message = LastError(work->handle);
   } catch (...) {
-    work->message = "Zeppelin Embed operation failed";
+    work->message = "Volantis DB operation failed";
   }
 }
 
@@ -4096,7 +4096,7 @@ void CompleteSnapshot(napi_env env, napi_status status, void *data) {
                                 NAPI_AUTO_LENGTH, &message) == napi_ok)
       napi_create_error(env, nullptr, message, &outcome);
   } else if (work->status != ZE_OK) {
-    if (!CreateZeppelinErrorWithMessage(env, work->status, work->message,
+    if (!CreateVolantisErrorWithMessage(env, work->status, work->message,
                                         &outcome))
       outcome = nullptr;
   } else {
@@ -4152,7 +4152,7 @@ napi_value SnapshotStore(napi_env env, napi_callback_info info) {
     if (!NapiOk(env, napi_create_promise(env, &work->deferred, &promise),
                 "create snapshot promise") ||
         !NapiOk(env,
-                napi_create_string_utf8(env, "zeppelin.snapshot",
+                napi_create_string_utf8(env, "volantis.snapshot",
                                         NAPI_AUTO_LENGTH, &name),
                 "create snapshot work name") ||
         !NapiOk(env, napi_create_reference(env, receiver, 1, &work->receiver),
@@ -4299,7 +4299,7 @@ napi_value Ingest(napi_env env, napi_callback_info info) {
     report.abi_size = sizeof(report);
     const ze_error_code status = ze_ingest(store->handle, &request, &report);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, status);
+      return ThrowVolantis(env, store->handle, status);
 
     napi_value result;
     napi_value sequence;
@@ -4356,7 +4356,7 @@ napi_value Search(napi_env env, napi_callback_info info) {
     result.abi_size = sizeof(result);
     const ze_error_code status = ze_search(store->handle, &request, &result);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, status);
+      return ThrowVolantis(env, store->handle, status);
 
     napi_value hits;
     if (!NapiOk(env,
@@ -4369,7 +4369,7 @@ napi_value Search(napi_env env, napi_callback_info info) {
       const ZeSearchHit &native = result.hits[index];
       if (native.has_document == 0) {
         ze_search_result_free(&result);
-        napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+        napi_throw_error(env, "ERR_VOLANTIS_NATIVE",
                          "search returned a hit without a document id");
         return nullptr;
       }
@@ -4395,7 +4395,7 @@ napi_value Search(napi_env env, napi_callback_info info) {
     }
     const ze_error_code free_status = ze_search_result_free(&result);
     if (free_status != ZE_OK)
-      return ThrowZeppelin(env, store->handle, free_status);
+      return ThrowVolantis(env, store->handle, free_status);
     return hits;
   });
 }
@@ -4414,7 +4414,7 @@ bool AdvanceUtf16(napi_env env, const uint8_t *text, size_t text_len,
                   size_t byte_offset, size_t *byte_cursor,
                   uint32_t *unit_cursor) {
   if (byte_offset < *byte_cursor || byte_offset > text_len) {
-    napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+    napi_throw_error(env, "ERR_VOLANTIS_NATIVE",
                      "query returned a snippet range outside its excerpt");
     return false;
   }
@@ -4581,7 +4581,7 @@ napi_value NeighbourBatch(napi_env env, napi_value receiver, ze_handle handle,
         }
         const ze_error_code free_status = batch->owner.FreeNow();
         if (free_status != ZE_OK)
-          return ThrowZeppelin(env, handle, free_status);
+          return ThrowVolantis(env, handle, free_status);
         return groups;
       });
 }
@@ -4992,7 +4992,7 @@ napi_value Query(napi_env env, napi_callback_info info) {
           if (status != ZE_OK)
             return ThrowWorkerError(env, status, message);
           if (has_snippets && snippets.snippet_count != native.hit_count) {
-            napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+            napi_throw_error(env, "ERR_VOLANTIS_NATIVE",
                              "query snippets are not aligned with its hits");
             return nullptr;
           }
@@ -5006,7 +5006,7 @@ napi_value Query(napi_env env, napi_callback_info info) {
           for (size_t index = 0; index < native.hit_count; ++index) {
             const ZeQueryHit &hit = native.hits[index];
             if (hit.has_document == 0) {
-              napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+              napi_throw_error(env, "ERR_VOLANTIS_NATIVE",
                                "query returned a hit without a document id");
               return nullptr;
             }
@@ -5058,7 +5058,7 @@ napi_value Query(napi_env env, napi_callback_info info) {
               const ze_error_code source_status =
                   ze_query_snippet_source_ranges(&snippets, index, &source);
               if (source_status != ZE_OK)
-                return ThrowZeppelin(env, handle, source_status);
+                return ThrowVolantis(env, handle, source_status);
               if (source.highlight_count !=
                   snippets.snippets[index].highlight_count) {
                 napi_throw_error(env, "ZE_ERR_INTERNAL",
@@ -5078,7 +5078,7 @@ napi_value Query(napi_env env, napi_callback_info info) {
           const char *modes[] = {"vector", "lexical", "hybrid"};
           if (native.mode < 0 || static_cast<size_t>(native.mode) >=
                                      sizeof(modes) / sizeof(modes[0])) {
-            napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+            napi_throw_error(env, "ERR_VOLANTIS_NATIVE",
                              "query returned an unknown execution mode");
             return nullptr;
           }
@@ -5124,7 +5124,7 @@ napi_value Query(napi_env env, napi_callback_info info) {
             if (native.fusion_method < 0 ||
                 static_cast<size_t>(native.fusion_method) >=
                     sizeof(methods) / sizeof(methods[0])) {
-              napi_throw_error(env, "ERR_ZEPPELIN_NATIVE",
+              napi_throw_error(env, "ERR_VOLANTIS_NATIVE",
                                "query returned an unknown fusion method");
               return nullptr;
             }
@@ -5157,11 +5157,11 @@ napi_value Query(napi_env env, napi_callback_info info) {
           if (has_snippets) {
             const ze_error_code snippet_free_status = snippet_owner.FreeNow();
             if (snippet_free_status != ZE_OK)
-              return ThrowZeppelin(env, handle, snippet_free_status);
+              return ThrowVolantis(env, handle, snippet_free_status);
           }
           const ze_error_code free_status = owner.FreeNow();
           if (free_status != ZE_OK)
-            return ThrowZeppelin(env, handle, free_status);
+            return ThrowVolantis(env, handle, free_status);
           return result;
         });
   });
@@ -5182,7 +5182,7 @@ napi_value CreateCancelToken(napi_env env, napi_callback_info info) {
     ze_cancel_token token = 0;
     const ze_error_code status = ze_cancel_token_create(&token);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, 0, status);
+      return ThrowVolantis(env, 0, status);
     napi_value result;
     if (!NapiOk(env, napi_create_bigint_uint64(env, token, &result),
                 "create cancellation token"))
@@ -5223,7 +5223,7 @@ napi_value CancelToken(napi_env env, napi_callback_info info) {
       return nullptr;
     const ze_error_code status = ze_cancel_token_cancel(token);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, 0, status);
+      return ThrowVolantis(env, 0, status);
     napi_value undefined;
     if (!NapiOk(env, napi_get_undefined(env, &undefined), "create undefined"))
       return nullptr;
@@ -5238,7 +5238,7 @@ napi_value FreeCancelToken(napi_env env, napi_callback_info info) {
       return nullptr;
     const ze_error_code status = ze_cancel_token_free(token);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, 0, status);
+      return ThrowVolantis(env, 0, status);
     napi_value undefined;
     if (!NapiOk(env, napi_get_undefined(env, &undefined), "create undefined"))
       return nullptr;

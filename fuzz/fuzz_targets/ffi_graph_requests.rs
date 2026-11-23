@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 use std::mem::size_of;
 use std::sync::OnceLock;
-use zeppelin_embed_ffi::*;
+use volantis_db_ffi::*;
 fn sized<T>() -> T {
     let mut value: T = unsafe { std::mem::zeroed() };
     unsafe {

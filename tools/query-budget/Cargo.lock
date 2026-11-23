@@ -470,8 +470,8 @@ name = "query-budget-api"
 version = "0.1.0"
 dependencies = [
  "serde_json",
- "zeppelin-embed",
- "zeppelin-embed-text",
+ "volantis-db",
+ "volantis-db-text",
 ]
 
 [[package]]
@@ -724,10 +724,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "unicode-segmentation"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
+
+[[package]]
 name = "unicode_categories"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39ec24b3121d976906ece63c9daad25b85969647682eee313cb5779fdd69e14e"
+
+[[package]]
+name = "volantis-db"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "roaring",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "volantis-db-text"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "libc",
+ "mlx-rs",
+ "unicode-normalization-alignments",
+ "unicode-segmentation",
+ "unicode_categories",
+ "volantis-db",
+ "xxhash-rust",
+]
 
 [[package]]
 name = "windows-link"
@@ -749,28 +778,6 @@ name = "xxhash-rust"
 version = "0.8.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aee1b19627c7c60102ab80d3a9cbe18de90bfe03bfa6c3715447681f0e8c8af6"
-
-[[package]]
-name = "zeppelin-embed"
-version = "0.8.0"
-dependencies = [
- "libc",
- "roaring",
- "xxhash-rust",
-]
-
-[[package]]
-name = "zeppelin-embed-text"
-version = "0.8.0"
-dependencies = [
- "cc",
- "libc",
- "mlx-rs",
- "unicode-normalization-alignments",
- "unicode_categories",
- "xxhash-rust",
- "zeppelin-embed",
-]
 
 [[package]]
 name = "zerocopy"

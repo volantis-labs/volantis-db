@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed::quant::{
+use volantis_db::quant::{
     Int8Vec, QuantError, dequantize_bit4, dequantize_int8, dot_int8_query, est_dot_bit4,
     prepare_bit4_query, prepare_int8_query, quantize_bit4, quantize_int8,
 };

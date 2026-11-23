@@ -1,10 +1,10 @@
 [workspace]
 members = [
-    "crates/zeppelin-embed",
-    "crates/zeppelin-embed-cypher",
-    "crates/zeppelin-embed-text",
-    "crates/zeppelin-embed-ffi",
-    "crates/zeppelin-embed-bench",
+    "crates/volantis-db",
+    "crates/volantis-db-cypher",
+    "crates/volantis-db-text",
+    "crates/volantis-db-ffi",
+    "crates/volantis-db-bench",
     "tests/adversarial-oracle",
     "tests",
 ]
@@ -17,7 +17,7 @@ exclude = [
 resolver = "2"
 
 [workspace.package]
-version = "0.8.0"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.93"
 license = "GPL-3.0-only"

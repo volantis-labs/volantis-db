@@ -387,8 +387,8 @@ pub fn campaign_from_replay_metadata(directory: &Path) -> Result<CampaignKind, S
     }
     let bytes = std::fs::read(&metadata_path)
         .map_err(|error| format!("read {}: {error}", metadata_path.display()))?;
-    let metadata: zeppelin_embed_bench::harness_json::Value =
-        zeppelin_embed_bench::harness_json::from_slice(&bytes)
+    let metadata: volantis_db_bench::harness_json::Value =
+        volantis_db_bench::harness_json::from_slice(&bytes)
             .map_err(|error| format!("parse {}: {error}", metadata_path.display()))?;
     if metadata["version"].as_u64() != Some(3) {
         return Err(format!(
@@ -407,7 +407,7 @@ pub fn campaign_from_replay_metadata(directory: &Path) -> Result<CampaignKind, S
 }
 
 fn validate_feature_replay_attestation(
-    metadata: &zeppelin_embed_bench::harness_json::Value,
+    metadata: &volantis_db_bench::harness_json::Value,
     metadata_path: &Path,
     campaign: CampaignKind,
 ) -> Result<(), String> {
@@ -420,7 +420,7 @@ fn validate_feature_replay_attestation(
     };
     if attestation["oracle_contract_version"].as_u64()
         != Some(u64::from(
-            zeppelin_embed_adversarial_oracle::ORACLE_CONTRACT_VERSION,
+            volantis_db_adversarial_oracle::ORACLE_CONTRACT_VERSION,
         ))
     {
         return Err(malformed());
@@ -493,17 +493,17 @@ fn validate_feature_replay_attestation(
 }
 
 fn validate_ingest_retention_episode_attestation(
-    attestation: &zeppelin_embed_bench::harness_json::Value,
+    attestation: &volantis_db_bench::harness_json::Value,
 ) -> Result<(), String> {
     let ingest = &attestation["ingest_retention_oracle_attestation"];
     if ingest["version"].as_u64() != Some(1)
         || ingest["oracle_contract_version"].as_str()
-            != Some(zeppelin_embed_adversarial_oracle::ingest_retention::ORACLE_CONTRACT_VERSION)
+            != Some(volantis_db_adversarial_oracle::ingest_retention::ORACLE_CONTRACT_VERSION)
     {
         return Err("ingest-retention episode oracle contract differs".to_owned());
     }
     let exact_keys = |label: &str,
-                      value: &zeppelin_embed_bench::harness_json::Value,
+                      value: &volantis_db_bench::harness_json::Value,
                       expected: &[&str]|
      -> Result<(), String> {
         let observed = value
@@ -531,22 +531,22 @@ fn validate_ingest_retention_episode_attestation(
     for (invariant, checker, operation) in [
         (
             "I20",
-            zeppelin_embed_adversarial_oracle::ingest_retention::I20_CHECKER_ID,
+            volantis_db_adversarial_oracle::ingest_retention::I20_CHECKER_ID,
             "batch-commit",
         ),
         (
             "I21",
-            zeppelin_embed_adversarial_oracle::ingest_retention::I21_CHECKER_ID,
+            volantis_db_adversarial_oracle::ingest_retention::I21_CHECKER_ID,
             "seal",
         ),
         (
             "I22",
-            zeppelin_embed_adversarial_oracle::ingest_retention::I22_CHECKER_ID,
+            volantis_db_adversarial_oracle::ingest_retention::I22_CHECKER_ID,
             "retention",
         ),
         (
             "I23",
-            zeppelin_embed_adversarial_oracle::ingest_retention::I23_CHECKER_ID,
+            volantis_db_adversarial_oracle::ingest_retention::I23_CHECKER_ID,
             "purge",
         ),
     ] {
@@ -604,12 +604,12 @@ fn validate_ingest_retention_episode_attestation(
 }
 
 fn validate_storage_episode_attestation(
-    attestation: &zeppelin_embed_bench::harness_json::Value,
+    attestation: &volantis_db_bench::harness_json::Value,
     directory: &Path,
 ) -> Result<(), String> {
     let storage = &attestation["storage_oracle_attestation"];
     let exact_keys = |label: &str,
-                      value: &zeppelin_embed_bench::harness_json::Value,
+                      value: &volantis_db_bench::harness_json::Value,
                       expected: &[&str]|
      -> Result<(), String> {
         let observed = value
@@ -649,7 +649,7 @@ fn validate_storage_episode_attestation(
     )?;
     if storage["version"].as_u64() != Some(1)
         || storage["oracle_contract_version"].as_str()
-            != Some(zeppelin_embed_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION)
+            != Some(volantis_db_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION)
     {
         return Err("storage episode oracle contract differs".to_owned());
     }
@@ -665,7 +665,7 @@ fn validate_storage_episode_attestation(
     if storage["fixture_digest"].as_str() != Some(fixture_digest.as_str()) {
         return Err("storage episode fixture digest differs".to_owned());
     }
-    let valid_digest = |value: &zeppelin_embed_bench::harness_json::Value| {
+    let valid_digest = |value: &volantis_db_bench::harness_json::Value| {
         value.as_str().is_some_and(|digest| {
             digest.strip_prefix("fnv1a64:").is_some_and(|hex| {
                 hex.len() == 16 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -678,27 +678,27 @@ fn validate_storage_episode_attestation(
     let expected_invariants = [
         (
             "I15",
-            zeppelin_embed_adversarial_oracle::storage_durability::I15_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I15_CHECKER_ID,
             &["publication"][..],
         ),
         (
             "I16",
-            zeppelin_embed_adversarial_oracle::storage_durability::I16_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I16_CHECKER_ID,
             &["wal-prefix"][..],
         ),
         (
             "I17",
-            zeppelin_embed_adversarial_oracle::storage_durability::I17_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I17_CHECKER_ID,
             &["retry"][..],
         ),
         (
             "I18",
-            zeppelin_embed_adversarial_oracle::storage_durability::I18_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I18_CHECKER_ID,
             &["format-check", "wal-prefix"][..],
         ),
         (
             "I19",
-            zeppelin_embed_adversarial_oracle::storage_durability::I19_CHECKER_ID,
+            volantis_db_adversarial_oracle::storage_durability::I19_CHECKER_ID,
             &["orphan-cleanup"][..],
         ),
     ];
@@ -757,7 +757,7 @@ fn validate_storage_episode_attestation(
             || operation_comparisons != comparisons
             || record["canonical_version"].as_u64()
                 != Some(u64::from(
-                    zeppelin_embed_adversarial_oracle::ORACLE_CONTRACT_VERSION,
+                    volantis_db_adversarial_oracle::ORACLE_CONTRACT_VERSION,
                 ))
             || !valid_digest(&record["input_digest"])
             || !valid_digest(&record["observed_digest"])
@@ -849,19 +849,19 @@ fn validate_storage_episode_attestation(
 }
 
 fn validate_vector_episode_attestation(
-    attestation: &zeppelin_embed_bench::harness_json::Value,
+    attestation: &volantis_db_bench::harness_json::Value,
     directory: &Path,
 ) -> Result<(), String> {
     let vector = &attestation["vector_oracle_attestation"];
     if vector["version"].as_u64() != Some(1)
         || vector["oracle_contract"].as_str()
-            != Some(zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT)
+            != Some(volantis_db_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT)
         || vector["canonical_contract"].as_str()
-            != Some(zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION)
+            != Some(volantis_db_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION)
     {
         return Err("vector episode oracle/canonical contract differs".to_owned());
     }
-    let valid_digest = |value: &zeppelin_embed_bench::harness_json::Value| {
+    let valid_digest = |value: &volantis_db_bench::harness_json::Value| {
         value.as_str().is_some_and(|digest| {
             digest.strip_prefix("fnv1a64:").is_some_and(|hex| {
                 hex.len() == 16 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -880,19 +880,19 @@ fn validate_vector_episode_attestation(
     let expected = [
         (
             "I24",
-            zeppelin_embed_adversarial_oracle::vector_execution::I24_CHECKER_ID,
+            volantis_db_adversarial_oracle::vector_execution::I24_CHECKER_ID,
         ),
         (
             "I25",
-            zeppelin_embed_adversarial_oracle::vector_execution::I25_CHECKER_ID,
+            volantis_db_adversarial_oracle::vector_execution::I25_CHECKER_ID,
         ),
         (
             "I26",
-            zeppelin_embed_adversarial_oracle::vector_execution::I26_CHECKER_ID,
+            volantis_db_adversarial_oracle::vector_execution::I26_CHECKER_ID,
         ),
         (
             "I27",
-            zeppelin_embed_adversarial_oracle::vector_execution::I27_CHECKER_ID,
+            volantis_db_adversarial_oracle::vector_execution::I27_CHECKER_ID,
         ),
     ];
     if invariants.len() != expected.len() {
@@ -909,7 +909,7 @@ fn validate_vector_episode_attestation(
             || record["checker_id"].as_str() != Some(checker_id)
             || record["canonical_version"].as_str()
                 != Some(
-                    zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION,
+                    volantis_db_adversarial_oracle::vector_execution::VECTOR_CANONICAL_VERSION,
                 )
             || !valid_digest(&record["input_digest"])
             || !valid_digest(&record["observed_digest"])
@@ -953,8 +953,8 @@ fn validate_vector_episode_attestation(
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse vector episode control: {error}"))?;
         let generic = &record["generic_fault"];
         if generic.is_null() {
@@ -1005,7 +1005,7 @@ fn validate_vector_episode_attestation(
     let features = vector["backend_inventory"]["features"]
         .as_object()
         .ok_or_else(|| "vector episode backend feature ledger is absent".to_owned())?;
-    let detected = zeppelin_embed::kernels::detected_features();
+    let detected = volantis_db::kernels::detected_features();
     let expected_features = [
         ("neon", detected.neon),
         ("dotprod", detected.dotprod),
@@ -2183,7 +2183,7 @@ impl CampaignSpec {
                 profile_ordinal,
             );
             let case_index =
-                zeppelin_embed_adversarial_oracle::storage_durability::ALL_OMISSION_CASES
+                volantis_db_adversarial_oracle::storage_durability::ALL_OMISSION_CASES
                     .iter()
                     .position(|candidate| *candidate == omission)
                     .expect("storage omission case belongs to the complete catalog");
@@ -2832,7 +2832,7 @@ pub(crate) fn vector_family_required_coverage() -> Vec<String> {
         "neon-dotprod-u4-prefetch",
         "avx2",
     ];
-    let available = zeppelin_embed::kernels::KernelVariant::available()
+    let available = volantis_db::kernels::KernelVariant::available()
         .map(|variant| variant.backend_id().as_str())
         .collect::<Vec<_>>();
     let mut keys = vec![
@@ -2866,7 +2866,7 @@ pub(crate) fn vector_family_required_coverage() -> Vec<String> {
     keys.push("I24.f32.cancellation-heavy-alternating-magnitude".to_owned());
     keys.push(format!(
         "I24.store-selected.{}",
-        zeppelin_embed::kernels::KernelVariant::selected()
+        volantis_db::kernels::KernelVariant::selected()
             .backend_id()
             .as_str()
     ));

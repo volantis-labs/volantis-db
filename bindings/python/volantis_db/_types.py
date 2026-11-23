@@ -1,0 +1,668 @@
+"""Python value types for the Volantis DB ABI."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from enum import IntEnum
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    import numpy as np
+
+    from ._store import Store
+
+
+class AccessMode(IntEnum):
+    READ_WRITE = 0
+    READ_ONLY = 1
+
+
+class DurabilityMode(IntEnum):
+    DERIVED = 0
+    DURABLE = 1
+    ATTACHED = 2
+
+
+class CommitTier(IntEnum):
+    NONE = 0
+    ORDERED = 1
+    DURABLE = 2
+
+
+class Tier(IntEnum):
+    AUTO = 0
+    EXACT = 1
+    SCAN = 2
+    GRAPH = 3
+
+
+class GraphProfile(IntEnum):
+    SIFT_CLASS = 0
+    ANGULAR = 1
+
+
+class StoreState(IntEnum):
+    OPEN = 0
+    CLOSING = 1
+    CLOSED = 2
+
+
+class QueryMode(IntEnum):
+    VECTOR = 0
+    LEXICAL = 1
+    HYBRID = 2
+
+
+class TextLegs(IntEnum):
+    DENSE = 0
+    LEXICAL = 1
+    HYBRID = 2
+
+
+class FusionMethod(IntEnum):
+    CONVEX_COMBINATION = 0
+    RECIPROCAL_RANK = 1
+
+
+class MaintenanceStatus(IntEnum):
+    COMPLETE = 0
+    BUDGET_EXHAUSTED = 1
+
+
+class Normalization(IntEnum):
+    NONE = 0
+    UNIT_L2 = 1
+
+
+class TokenizerProfile(IntEnum):
+    TEXT_DEFAULT = 0
+    CODE = 1
+    VOICE = 2
+
+
+class EmbeddingRuntime(IntEnum):
+    CORE_ML = 1
+    MLX = 2
+    CPU_REFERENCE = 3
+
+
+class ComputeUnits(IntEnum):
+    CPU = 1
+    CPU_AND_GPU = 2
+    CPU_AND_NEURAL_ENGINE = 3
+    ALL = 4
+
+
+class AttributeType(IntEnum):
+    U64 = 1
+    I64 = 2
+    F64 = 3
+    BOOL = 4
+    DICTIONARY_STRING = 5
+    RAW_STRING = 6
+    ID128 = 7
+
+
+@dataclass(frozen=True)
+class AttributeDefinition:
+    attribute_id: int
+    name: str
+    attribute_type: AttributeType
+    nullable: bool = False
+
+
+@dataclass(frozen=True)
+class AttributeValue:
+    attribute_id: int
+    attribute_type: AttributeType
+    value: int | float | bool | str | None
+
+
+@dataclass(frozen=True)
+class VectorSpace:
+    dimensions: int
+    normalization: Normalization = Normalization.NONE
+    epoch: EmbeddingEpoch | None = None
+
+
+@dataclass(frozen=True)
+class EmbeddedModelRef:
+    repo: str
+    revision: str
+    manifest_sha256: str
+
+
+@dataclass(frozen=True)
+class NamespaceSpec:
+    attributes: tuple[AttributeDefinition, ...] = ()
+    vector_space: VectorSpace | None = None
+    tokenizer_profile: TokenizerProfile | str | None = None
+    embedded_model: EmbeddedModelRef | None = None
+
+
+@dataclass(frozen=True)
+class EmbeddedHit:
+    doc_id: int
+    revision: int
+    timestamp: int
+    attributes: tuple[AttributeValue, ...]
+    chunk: int
+    byte_start: int
+    byte_end: int
+    text: str
+    score: float
+
+
+@dataclass(frozen=True)
+class NeighbourSource:
+    doc_id: int | tuple[int, int]
+    chunk: int | None = None
+
+
+@dataclass(frozen=True)
+class ChunkNeighbour:
+    doc_id: int
+    chunk: int
+    score: float
+
+
+@dataclass(frozen=True)
+class StoredDocument:
+    doc_id: int | tuple[int, int]
+    revision: int = 1
+    timestamp: int = 0
+    vector: np.ndarray[Any, Any] | None = None
+    text: str | None = None
+    metadata: bytes | None = None
+    attributes: tuple[AttributeValue, ...] | None = None
+
+
+@dataclass(frozen=True)
+class UpsertDocument(StoredDocument):
+    """A document to write only when its live revision matches the condition."""
+
+    expected_revision: int | None = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class NamespaceMutation:
+    """Ordered operations on one existing namespace in an atomic batch."""
+
+    name: str
+    spec: NamespaceSpec
+    upserts: Sequence[StoredDocument] = ()
+    deletes: Sequence[int | tuple[int, int]] = ()
+    delete_where: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class LiveNamespaceMutation(NamespaceMutation):
+    """A mutation paired with its writable store in this process."""
+
+    store: Store = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class CascadeParticipant:
+    """An existing namespace and its declared spec."""
+
+    name: str
+    spec: NamespaceSpec
+
+
+@dataclass(frozen=True)
+class CascadeDeleteParticipant:
+    """Explicit IDs to delete; the engine discovers their dependants."""
+
+    name: str
+    spec: NamespaceSpec
+    deletes: Sequence[int | tuple[int, int]] = ()
+
+
+@dataclass(frozen=True)
+class CascadeDeclaration:
+    """An id128 reference on a child namespace to a parent namespace."""
+
+    parent_index: int
+    child_index: int
+    attribute_id: int
+
+
+@dataclass(frozen=True)
+class DeleteTarget:
+    """A document id with a live-revision condition."""
+
+    doc_id: int | tuple[int, int]
+    expected_revision: int | None
+
+
+@dataclass(frozen=True)
+class RevisionConflictDetails:
+    index: int
+    doc_id: int
+    expected_revision: int | None
+    current_revision: int | None
+
+
+@dataclass(frozen=True)
+class GetResult:
+    documents: tuple[StoredDocument | None, ...]
+    missing_count: int
+    generation: int
+
+
+@dataclass(frozen=True)
+class AttributeScanOrder:
+    """Order by a declared numeric attribute."""
+
+    attribute_id: int
+    direction: Literal["ascending", "descending"]
+
+
+@dataclass(frozen=True)
+class ScanCursor:
+    _generation: int
+    _segment_id: bytes
+    _next_row: int
+    _phase: int
+    _order: int = 0
+    _order_attribute_id: int = 0
+
+
+@dataclass(frozen=True)
+class ScanPage:
+    documents: tuple[StoredDocument, ...]
+    cursor: ScanCursor | None
+    generation: int
+
+
+@dataclass(frozen=True)
+class CountResult:
+    count: int
+    generation: int
+
+
+@dataclass(frozen=True)
+class CountGroupBy:
+    """Group by a declared integer or string attribute."""
+
+    attribute_id: int
+    limit: int = 1_024
+
+
+@dataclass(frozen=True)
+class CountGroup:
+    value: int | str
+    count: int
+
+
+@dataclass(frozen=True)
+class GroupedCountResult(CountResult):
+    groups: tuple[CountGroup, ...]
+    missing_count: int
+
+
+@dataclass(frozen=True)
+class DeleteWhereReport:
+    deleted: int
+    generation: int
+
+
+class Filter:
+    """Build structured-filter dictionaries for record-store calls."""
+
+    @staticmethod
+    def eq(field: str | int, value: object) -> dict[str, Any]:
+        return {"op": "eq", "field": field, "value": value}
+
+    @staticmethod
+    def not_eq(field: str | int, value: object) -> dict[str, Any]:
+        return {"op": "not_eq", "field": field, "value": value}
+
+    @staticmethod
+    def in_(field: str | int, values: list[object]) -> dict[str, Any]:
+        return {"op": "in", "field": field, "values": values}
+
+    @staticmethod
+    def not_in(field: str | int, values: list[object]) -> dict[str, Any]:
+        return {"op": "not_in", "field": field, "values": values}
+
+    @staticmethod
+    def range_(
+        field: str | int,
+        *,
+        gte: object | None = None,
+        lte: object | None = None,
+        gt: object | None = None,
+        lt: object | None = None,
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {"op": "range", "field": field}
+        for name, value in (("gte", gte), ("lte", lte), ("gt", gt), ("lt", lt)):
+            if value is not None:
+                result[name] = value
+        return result
+
+    @staticmethod
+    def exists(field: str | int) -> dict[str, Any]:
+        return {"op": "exists", "field": field}
+
+    @staticmethod
+    def is_null(field: str | int) -> dict[str, Any]:
+        return {"op": "is_null", "field": field}
+
+    @staticmethod
+    def and_(*filters: dict[str, Any]) -> dict[str, Any]:
+        return {"op": "and", "filters": list(filters)}
+
+    @staticmethod
+    def or_(*filters: dict[str, Any]) -> dict[str, Any]:
+        return {"op": "or", "filters": list(filters)}
+
+    @staticmethod
+    def not_(filter: dict[str, Any]) -> dict[str, Any]:
+        return {"op": "not", "filter": filter}
+
+
+@dataclass(frozen=True)
+class EmbeddingTower:
+    model_id: str
+    model_version: str
+    weights_digest: bytes
+    dims: int
+    normalization: Normalization = Normalization.NONE
+    prompt_prefix: str = ""
+    max_tokens: int = 0
+    runtime: EmbeddingRuntime = EmbeddingRuntime.CPU_REFERENCE
+    compute_units: ComputeUnits = ComputeUnits.CPU
+    os_build: str | None = None
+
+
+@dataclass(frozen=True)
+class EmbeddingEpoch:
+    document: EmbeddingTower
+    query: EmbeddingTower
+    alignment_digest: bytes = b""
+    tokenizer_profile: int = 0
+
+
+@dataclass(frozen=True)
+class EpochIdentity:
+    embedding_epoch: int
+    tokenizer_epoch: int
+
+
+@dataclass(frozen=True)
+class EpochAliasReport:
+    generation: int
+    previous_embedding_epoch: int
+    previous_tokenizer_epoch: int
+    published_embedding_epoch: int
+    published_tokenizer_epoch: int
+    manifest_committed: bool
+
+
+@dataclass(frozen=True)
+class EpochDropReport:
+    generation: int
+    segments_dropped: int
+    bytes_reclaimed: int
+
+
+@dataclass(frozen=True)
+class StateReport:
+    state: StoreState
+
+
+@dataclass(frozen=True)
+class StatsReport:
+    resident_owned_bytes: int
+    mapped_bytes: int
+    mapped_resident_bytes: int
+    segment_bytes: int
+    active_segment_bytes: int
+    active_row_count: int
+    tombstone_count: int
+    tombstone_bytes: int
+    wal_bytes: int
+    cache_bytes: int
+    temporary_bytes: int
+    query_pool_bytes: int
+    open_files: int
+    active_queries: int
+    active_snapshot_leases: int
+    phys_footprint: int | None
+
+
+class VerifyFindingKind(IntEnum):
+    """Stable finding codes from the C ABI."""
+
+    MANIFEST_MISSING = 1
+    MANIFEST_CORRUPT = 2
+    MANIFEST_AHEAD_OF_WAL = 3
+    SEGMENT_MISSING = 4
+    SEGMENT_CORRUPT = 5
+    SEGMENT_MISMATCH = 6
+    SEGMENT_REGION_CORRUPT = 7
+    SEGMENT_INDEX_INVALID = 8
+    WAL_MISSING = 9
+    WAL_HEADER_CORRUPT = 10
+    WAL_RECORD_CORRUPT = 11
+    WAL_RECORD_INVALID = 12
+    UNREADABLE = 13
+    PURGE_INTENT_CORRUPT = 14
+    GRAPH_OBJECT_MISSING = 15
+    GRAPH_OBJECT_CORRUPT = 16
+    GRAPH_INVENTORY_INVALID = 17
+
+
+@dataclass(frozen=True)
+class VerifyFinding:
+    kind: VerifyFindingKind
+    file: str
+    offset: int | None
+    detail: str
+
+
+@dataclass(frozen=True)
+class VerifyReport:
+    ok: bool
+    generation: int
+    segments_checked: int
+    wal_records_checked: int
+    findings: tuple[VerifyFinding, ...]
+
+
+@dataclass(frozen=True)
+class MutationReport:
+    sequence: int
+    generation: int
+
+
+@dataclass(frozen=True)
+class SearchHit:
+    source_kind: int
+    segment_id: bytes
+    local_row: int
+    doc_id: int | None
+    revision: int | None
+    score: float
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    hits: tuple[SearchHit, ...]
+    generation: int
+    dims_touched: int
+    bytes_read: int
+    threads_used: int
+    graph_segments_traversed: int
+    graph_validations: int
+    graph_entry_seed_discoveries: int
+    graph_visited_epoch_clears: int
+    graph_candidates_scored: int
+    graph_candidates_rescored: int
+    graph_segments_pruned_by_bound: int
+
+
+@dataclass(frozen=True)
+class SnippetHighlight:
+    """Half-open UTF-8 byte ranges relative to the excerpt and the source."""
+
+    start: int
+    end: int
+    source_byte_start: int
+    source_byte_end: int
+
+
+@dataclass(frozen=True)
+class Snippet:
+    """A stored-text excerpt, matched ranges, and its source byte bounds."""
+
+    text: str
+    highlights: tuple[SnippetHighlight, ...]
+    truncated_start: bool
+    truncated_end: bool
+    source_byte_start: int
+    source_byte_end: int
+
+
+@dataclass(frozen=True)
+class QueryHit:
+    doc_id: int | None
+    revision: int | None
+    score: float
+    vector_squared_l2: float | None
+    lexical_bm25: float | None
+    snippet: Snippet | None = None
+
+
+@dataclass(frozen=True)
+class TextHit:
+    doc_id: int
+    revision: int
+    chunk: int
+    text: str
+    score: float
+    vector_squared_l2: float | None
+    lexical_bm25: float | None
+
+
+@dataclass(frozen=True)
+class ObservedComputeUnits:
+    """CoreML planned operation placement, not an execution trace."""
+
+    cpu_ops: int
+    gpu_ops: int
+    neural_engine_ops: int
+    other_ops: int
+
+
+@dataclass(frozen=True)
+class TextQueryResult:
+    hits: tuple[TextHit, ...]
+    embedding_epoch: int
+    tokenizer_epoch: int
+    diagnostics: QueryResult | None = None
+    runtime_name: str | None = None
+    backend_gpu: bool | None = None
+    requested_compute_units: ComputeUnits | None = None
+    observed_compute_units: tuple[int, int, int] | None = None
+    sequence_length: int | None = None
+    query_tokens: int = 0
+    embedding_calls: int = 0
+    timings_ns: tuple[int, ...] | None = None
+
+
+class TextHealthStatus(IntEnum):
+    UNCHECKED = 0
+    HEALTHY = 1
+    DEGRADED = 2
+    UNHEALTHY = 3
+
+
+@dataclass(frozen=True)
+class TextHealthReport:
+    generation: int
+    status: TextHealthStatus
+    pending_docs: int
+    graph_coverage: float
+    segment_count: int
+    unresolved_fault_count: int
+    retained_through: int | None
+
+
+@dataclass(frozen=True)
+class TextIngestReport:
+    generation: int
+    documents: int
+    chunks: int
+    tokens: int
+    embed_batches: int
+    seals: int
+    max_in_flight_batches: int
+    all_threads_joined: bool
+    elapsed_ns: int
+
+
+@dataclass(frozen=True)
+class FusionReport:
+    method: FusionMethod
+    effective_alpha: float
+    rounds: int
+
+
+@dataclass(frozen=True)
+class QueryResult:
+    hits: tuple[QueryHit, ...]
+    generation: int
+    mode: QueryMode
+    approximate: bool
+    exact_rescore: bool
+    budget_exhausted: bool
+    fusion: FusionReport | None
+    embedding_epoch: int | None
+    tokenizer_epoch: int | None
+    dims_touched: int
+    bytes_read: int
+    docs_evaluated: int
+    postings_decoded: int
+
+
+@dataclass(frozen=True)
+class GenerationReport:
+    generation: int
+
+
+@dataclass(frozen=True)
+class PartitionReport:
+    generation: int
+    segments_dropped: int
+    bytes_reclaimed: int
+    straddlers_skipped: int
+    is_no_op: bool
+
+
+@dataclass(frozen=True)
+class PurgeTokenReport:
+    token_id: int
+    generation: int
+    unknown_id_count: int
+    is_no_op: bool
+
+
+@dataclass(frozen=True)
+class PurgeReport:
+    generation: int
+    segments_rewritten: int
+    unknown_id_count: int
+    wal_rewritten: bool
+    is_no_op: bool
+
+
+@dataclass(frozen=True)
+class MaintainReport:
+    graphs_built: int
+    bytes_consumed: int
+    checkpoints_resumed: int
+    status: MaintenanceStatus

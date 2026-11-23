@@ -1,7 +1,7 @@
 # Standalone native probe for the Windows durable-publication protocol (W02).
 #
 # Deliberately its own workspace with its own lockfile: the experiment has to
-# compile and run before `zeppelin-embed` itself is portable, so it cannot live
+# compile and run before `volantis-db` itself is portable, so it cannot live
 # in a core integration test. It is std-only and has no dependencies, so it adds
 # nothing to any product dependency graph.
 [workspace]

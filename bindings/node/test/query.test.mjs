@@ -4,7 +4,7 @@
  * The parity test is the important one. It reads the same fixture the Rust
  * and C side generates and the Python and Swift bindings check
  * (`bindings/fixtures/cross_binding_parity_v1.json`, produced by
- * `crates/zeppelin-embed-ffi/tests/parity_fixture.rs`), indexes its corpus
+ * `crates/volantis-db-ffi/tests/parity_fixture.rs`), indexes its corpus
  * through Node, and asserts the ids and the scores to the fixture's declared
  * precision. A ranking surface that merely "returns plausible hits" is not
  * evidence; agreeing digit for digit with the C ABI's own recorded answer is.
@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { CancellationToken, ZeppelinError, openNamespace } = require('..');
+const { CancellationToken, VolantisError, openNamespace } = require('..');
 
 const packageDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fixture = JSON.parse(
@@ -51,7 +51,7 @@ function optionalRounded(value) {
 }
 
 test('query matches the C ABI parity fixture for vector, lexical, and hybrid', () => {
-  assert.equal(fixture.schema, 'zeppelin-embed-cross-binding-parity');
+  assert.equal(fixture.schema, 'volantis-db-cross-binding-parity');
   assert.equal(fixture.version, 1);
 
   const ingest = fixture.operations.find((operation) => operation.kind === 'ingest');
@@ -157,7 +157,7 @@ test('a record-only namespace answers lexical queries and refuses hybrid ones', 
     assert.throws(
       () => store.query({ text: 'harbour', vector: new Float32Array([1, 0]), k: 5 }),
       (error) =>
-        error instanceof ZeppelinError && error.code === 'ZE_ERR_NO_VECTOR_SPACE',
+        error instanceof VolantisError && error.code === 'ZE_ERR_NO_VECTOR_SPACE',
     );
   } finally {
     store.close();
@@ -211,7 +211,7 @@ test('a fired deadline and a cancelled token both stop the query', () => {
     assert.throws(
       () => store.query({ text: 'harbour', k: 5, deadlineNs: 1n }),
       (error) =>
-        error instanceof ZeppelinError &&
+        error instanceof VolantisError &&
         error.code === 'ZE_ERR_TIMEOUT' &&
         error.errorCode === 13,
     );
@@ -229,7 +229,7 @@ test('a fired deadline and a cancelled token both stop the query', () => {
       assert.throws(
         () => store.query({ text: 'harbour', k: 5, cancelToken: cancelled }),
         (error) =>
-          error instanceof ZeppelinError &&
+          error instanceof VolantisError &&
           error.code === 'ZE_ERR_CANCELLED' &&
           error.errorCode === 12,
       );
@@ -250,7 +250,7 @@ test('a fired deadline and a cancelled token both stop the query', () => {
       assert.throws(
         () => store.query({ text: 'harbour', k: 5, cancelToken: both, deadlineNs: 1_000_000n }),
         (error) =>
-          error instanceof ZeppelinError &&
+          error instanceof VolantisError &&
           error.code === 'ZE_ERR_INVALID_ARGUMENT',
       );
     } finally {
@@ -297,7 +297,7 @@ test('a closed cancellation token refuses further use', () => {
   token.close();
   assert.throws(
     () => token.cancel(),
-    (error) => error instanceof ZeppelinError && error.code === 'ZE_ERR_CLOSED',
+    (error) => error instanceof VolantisError && error.code === 'ZE_ERR_CLOSED',
   );
 });
 

@@ -12,7 +12,7 @@
 
 # Byte-exact fixtures additionally opt out of normalisation entirely, so
 # nothing can be rewritten on the way into the index either.
-crates/zeppelin-embed/tests/fixtures/** -text
+crates/volantis-db/tests/fixtures/** -text
 bindings/fixtures/** -text
 
 # Shell scripts must stay LF so they remain executable when a Windows checkout

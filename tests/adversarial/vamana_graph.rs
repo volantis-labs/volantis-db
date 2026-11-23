@@ -6,28 +6,28 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tempfile::tempdir;
-use zeppelin_embed::epoch::{
+use volantis_db::epoch::{
     ComputeUnits, EmbeddingEpoch, EmbeddingRuntime, EmbeddingTower, Normalization, StoreEpoch,
 };
-use zeppelin_embed::fts::tokenizer::TokenizerConfig;
-use zeppelin_embed::graph::block::GraphNodeLayout;
-use zeppelin_embed::ingest::{
+use volantis_db::fts::tokenizer::TokenizerConfig;
+use volantis_db::graph::block::GraphNodeLayout;
+use volantis_db::ingest::{
     DeleteBatch, DocId, DocumentVersion, IngestBatch, IngestDocument, Revision, RowSource,
     SearchOutcome, SearchRequest,
 };
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::{
     CancelToken, GraphSearchOptions, OpenOptions, QueryControl, SearchOptions, SearchTier, Store,
     StoreTestDependencies, SystemMonotonicClock,
 };
-use zeppelin_embed::meta::{
+use volantis_db::meta::{
     Predicate, PredicateValue, RangeBound, RangePredicate, TIMESTAMP_COLUMN,
 };
-use zeppelin_embed::planner::SegmentBranch;
-use zeppelin_embed::tier::{MaintenanceBudget, MaintenanceStatus, TierThresholds};
+use volantis_db::planner::SegmentBranch;
+use volantis_db::tier::{MaintenanceBudget, MaintenanceStatus, TierThresholds};
 
 use super::fault_vfs::{FaultEvent, FaultMode, FaultSchedule, FaultSite, Layer, std_scheduled};
 use super::runner::ControlStore;
-use zeppelin_embed_adversarial_oracle::vamana_graph::{
+use volantis_db_adversarial_oracle::vamana_graph::{
     self as oracle, GraphCandidate, GraphInput, GraphObserved,
 };
 
@@ -268,7 +268,7 @@ fn candidates(outcome: &SearchOutcome) -> Result<Vec<GraphCandidate>, String> {
 }
 
 fn filtered_candidates(
-    outcome: &zeppelin_embed::planner::FilteredSearchOutcome,
+    outcome: &volantis_db::planner::FilteredSearchOutcome,
 ) -> Result<Vec<GraphCandidate>, String> {
     outcome
         .candidates
@@ -610,7 +610,7 @@ fn observe_on_store(
 fn observe(seed: u64) -> Result<(GraphInput, GraphObserved), String> {
     let directory = tempdir().map_err(|error| format!("graph fixture tempdir: {error}"))?;
     let dependencies = StoreTestDependencies::new(
-        Arc::new(zeppelin_embed::vfs::StdVfs),
+        Arc::new(volantis_db::vfs::StdVfs),
         Arc::new(SystemMonotonicClock),
     );
     let mut leg = ControlStore::open(directory.path(), control_open_options(seed), dependencies)?;
@@ -705,7 +705,7 @@ fn build_fault_fixture(seed: u64) -> Result<(tempfile::TempDir, StoreEpoch), Str
 
 fn public_corruption_refused(seed: u64, region: u16) -> Result<(), String> {
     // This fault exercises the product's opt-in query checksum verification.
-    zeppelin_embed::segment::reader::set_query_checksum_verification(true);
+    volantis_db::segment::reader::set_query_checksum_verification(true);
     let (directory, epoch) = build_fault_fixture(seed)?;
     let segment = first_segment_path(directory.path())?;
     let mut bytes = std::fs::read(&segment).map_err(|error| error.to_string())?;
@@ -842,7 +842,7 @@ fn exercise_fault(
 ) -> Result<(), String> {
     match fault {
         GraphFaultKind::CheckpointCorruption => {
-            zeppelin_embed::graph::build::validate_graph_build_checkpoint(&[])
+            volantis_db::graph::build::validate_graph_build_checkpoint(&[])
                 .map_err(|_| "corrupt checkpoint was accepted".to_owned())
                 .err()
                 .map(|_| ())
@@ -947,7 +947,7 @@ fn corruption_refused_on_store(
     region: u16,
 ) -> Result<(), String> {
     // Keep retained campaign replay in the same verifying mode as direct probes.
-    zeppelin_embed::segment::reader::set_query_checksum_verification(true);
+    volantis_db::segment::reader::set_query_checksum_verification(true);
     leg.close()?;
     let segment = first_segment_path(leg.path())?;
     let mut bytes = std::fs::read(&segment).map_err(|error| error.to_string())?;
@@ -1055,7 +1055,7 @@ fn exercise_fault_on_store(
 ) -> Result<(), String> {
     match fault {
         GraphFaultKind::CheckpointCorruption => {
-            zeppelin_embed::graph::build::validate_graph_build_checkpoint(&[])
+            volantis_db::graph::build::validate_graph_build_checkpoint(&[])
                 .map_err(|_| "corrupt checkpoint was accepted".to_owned())
                 .err()
                 .map(|_| ())

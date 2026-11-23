@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed::ingest::wal_payload::{
+use volantis_db::ingest::wal_payload::{
     DELETE_V1, METADATA_EDIT_V1, MutationPayload, UPSERT_V1, decode_mutation, encode_delete,
     encode_metadata_edit, encode_upsert,
 };

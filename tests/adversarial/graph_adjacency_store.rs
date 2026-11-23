@@ -8,9 +8,9 @@ use std::{
     io::{Read, Write},
     path::Path,
 };
-use zeppelin_embed::fts::tokenizer::{TokenizerConfig, TokenizerEpoch};
-use zeppelin_embed::lifecycle::{CancelToken, OpenOptions, QueryControl, Store};
-use zeppelin_embed::property_graph::{
+use volantis_db::fts::tokenizer::{TokenizerConfig, TokenizerEpoch};
+use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl, Store};
+use volantis_db::property_graph::{
     catalog::*,
     resources::{GraphReservation, GraphResources},
     staging::*,
@@ -35,8 +35,8 @@ use zeppelin_embed::property_graph::{
     wal::{ArtifactDescriptor, CommitState, ReferenceList, RequiredRef, WalGraphRoots},
     *,
 };
-use zeppelin_embed_adversarial_oracle::graph_adjacency_store as oracle;
-use zeppelin_embed_adversarial_oracle::storage_durability::xxh3_64;
+use volantis_db_adversarial_oracle::graph_adjacency_store as oracle;
+use volantis_db_adversarial_oracle::storage_durability::xxh3_64;
 
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.adjacency-store.native-history",
@@ -262,7 +262,7 @@ impl Fixture {
         Ok(Self {
             identity: BaseIdentity {
                 generation,
-                fold: zeppelin_embed::property_graph::staging::FoldMark {
+                fold: volantis_db::property_graph::staging::FoldMark {
                     manifest_generation: generation.get(),
                     ..Default::default()
                 },
@@ -392,9 +392,9 @@ impl<S: BlockSource> RecordCatalog<S> for Fixture {
 impl<S: BlockSource> PreparationCatalog<S> for Fixture {
     fn namespace_id(
         &self,
-        name: zeppelin_embed::property_graph::GraphName<'_>,
+        name: volantis_db::property_graph::GraphName<'_>,
         r: &mut TreeResources<'_>,
-    ) -> Result<zeppelin_embed::property_graph::catalog::NamespaceId, TreeError> {
+    ) -> Result<volantis_db::property_graph::catalog::NamespaceId, TreeError> {
         for entry in &self.symbols {
             r.step(1)?;
             if entry.name == name
@@ -593,7 +593,7 @@ fn bootstrap(fixture: &Fixture) -> CommitState<'static> {
         vector: None,
         text: None,
         reclaim: None,
-        high_waters: zeppelin_embed::property_graph::wal::HighWaters {
+        high_waters: volantis_db::property_graph::wal::HighWaters {
             node: fixture.high.node,
             relationship: fixture.high.relationship,
             symbols: [
@@ -624,7 +624,7 @@ fn committed_after(
         generation: roots.generation(),
         sequence,
         graph,
-        high_waters: zeppelin_embed::property_graph::wal::HighWaters {
+        high_waters: volantis_db::property_graph::wal::HighWaters {
             node: high.node,
             relationship: high.relationship,
             symbols: [
@@ -1012,7 +1012,7 @@ fn observe(
         ))
         .map_err(|error| error.to_string())?;
         let reference =
-            zeppelin_embed::property_graph::storage::payload::PayloadRef::decode(entry.value())
+            volantis_db::property_graph::storage::payload::PayloadRef::decode(entry.value())
                 .map_err(|error| error.to_string())?;
         let live = matches!(
             verify_node_state(
@@ -1051,7 +1051,7 @@ fn observe(
         ))
         .map_err(|error| error.to_string())?;
         let reference =
-            zeppelin_embed::property_graph::storage::payload::PayloadRef::decode(entry.value())
+            volantis_db::property_graph::storage::payload::PayloadRef::decode(entry.value())
                 .map_err(|error| error.to_string())?;
         let record = verify_record(
             PayloadSlice::new(
@@ -1137,7 +1137,7 @@ fn observe(
         for id in node_ids {
             let placeholder = NativeAdjacencyRow {
                 relationship_type: RelTypeId::new(1).expect("minimum type"),
-                edge: zeppelin_embed::property_graph::storage::adjacency::Edge {
+                edge: volantis_db::property_graph::storage::adjacency::Edge {
                     rel: RelId::new(1).expect("minimum rel"),
                     neighbor: NodeId::new(1).expect("minimum node"),
                 },
@@ -1216,7 +1216,7 @@ fn observe(
         }
         let placeholder = NativeAdjacencyRow {
             relationship_type: RelTypeId::new(1).expect("minimum type"),
-            edge: zeppelin_embed::property_graph::storage::adjacency::Edge {
+            edge: volantis_db::property_graph::storage::adjacency::Edge {
                 rel: RelId::new(1).expect("minimum rel"),
                 neighbor: NodeId::new(1).expect("minimum node"),
             },

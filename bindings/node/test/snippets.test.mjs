@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { ZeppelinError, openNamespace } = require('..');
+const { VolantisError, openNamespace } = require('..');
 
 function withStore(prefix, spec, documents, body) {
   const root = mkdtempSync(join(tmpdir(), prefix));
@@ -177,7 +177,7 @@ test('snippetBytes is validated at the binding and at the engine', () => {
       // Snippets need the lexical leg; the engine refuses a vector-only query.
       assert.throws(
         () => store.query({ vector: new Float32Array([1, 0]), snippetBytes: 64 }),
-        (error) => error instanceof ZeppelinError && error.code === 'ZE_ERR_INVALID_ARGUMENT',
+        (error) => error instanceof VolantisError && error.code === 'ZE_ERR_INVALID_ARGUMENT',
       );
     },
   );

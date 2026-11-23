@@ -109,7 +109,7 @@ void GRequire(napi_env env, bool condition, const char *message) {
   if (condition)
     return;
   napi_value error;
-  if (!CreateZeppelinErrorWithMessage(env, ZE_ERR_INVALID_ARGUMENT, message,
+  if (!CreateVolantisErrorWithMessage(env, ZE_ERR_INVALID_ARGUMENT, message,
                                       &error))
     throw GraphPending{};
   GSet(env, error, "disposition", GString(env, "NotCommitted"));
@@ -522,8 +522,8 @@ napi_value GResult(napi_env env, ze_handle handle, ze_error_code status,
   if (status != ZE_OK) {
     napi_value error;
     if (!(message
-              ? CreateZeppelinErrorWithMessage(env, status, *message, &error)
-              : CreateZeppelinError(env, handle, status, &error)))
+              ? CreateVolantisErrorWithMessage(env, status, *message, &error)
+              : CreateVolantisError(env, handle, status, &error)))
       throw GraphPending{};
     GMetadata(env, error, r);
     GCheck(env, napi_throw(env, error));
@@ -812,7 +812,7 @@ napi_value GraphSetMaintenancePolicy(napi_env env, napi_callback_info info) {
     policy.reclaim_after_bytes = static_cast<uint64_t>(bytes);
     const auto status = ze_store_set_graph_maintenance_policy(handle, &policy);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, handle, status);
+      return ThrowVolantis(env, handle, status);
     napi_value result;
     GCheck(env, napi_get_undefined(env, &result));
     return result;
@@ -869,7 +869,7 @@ napi_value StoreEnableGraph(napi_env env, napi_callback_info info) {
     auto report = GStruct<ZeGenerationReport>();
     const auto status = ze_store_enable_graph(handle, &report);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, handle, status);
+      return ThrowVolantis(env, handle, status);
     auto result = GObject(env);
     GSet(env, result, "generation", GU64(env, report.generation));
     return result;
@@ -885,7 +885,7 @@ napi_value GraphResources(napi_env env, napi_callback_info info) {
     auto r = GStruct<ZeGraphResources>();
     const auto status = ze_store_graph_resources(handle, &r);
     if (status != ZE_OK)
-      return ThrowZeppelin(env, handle, status);
+      return ThrowVolantis(env, handle, status);
     auto obj = GObject(env);
     GSet(env, obj, "engineBytes", GU64(env, r.engine_bytes));
     GSet(env, obj, "enginePeakBytes", GU64(env, r.engine_peak_bytes));

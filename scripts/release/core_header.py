@@ -116,25 +116,25 @@ def write_artifact_headers(source: Path, destination: Path, artifact: str, frame
         raise ValueError(f"unknown artifact: {artifact}")
     destination.mkdir(parents=True, exist_ok=True)
     if artifact == "graph-cypher":
-        (destination / "zeppelin_embed.h").write_bytes(source.read_bytes())
+        (destination / "volantis_db.h").write_bytes(source.read_bytes())
     else:
-        write_core_header(source, destination / "zeppelin_embed.h")
-    graph = destination / "zeppelin_graph_contracts.h"
+        write_core_header(source, destination / "volantis_db.h")
+    graph = destination / "volantis_db_graph_contracts.h"
     if artifact == "graph-cypher":
-        graph.write_bytes(source.with_name("zeppelin_graph_contracts.h").read_bytes())
-        (destination / "zeppelin_embed_graph.h").write_text(
-            '#include "zeppelin_embed.h"\n#include "zeppelin_graph_contracts.h"\n')
-        module = 'module CZeppelinEmbed {\n    umbrella header "zeppelin_embed_graph.h"\n    link framework "Foundation"\n    link framework "Metal"\n    link framework "CoreML"\n    link framework "Accelerate"\n    link "c++"\n    export *\n}\n'
+        graph.write_bytes(source.with_name("volantis_db_graph_contracts.h").read_bytes())
+        (destination / "volantis_db_graph.h").write_text(
+            '#include "volantis_db.h"\n#include "volantis_db_graph_contracts.h"\n')
+        module = 'module CVolantisDB {\n    umbrella header "volantis_db_graph.h"\n    link framework "Foundation"\n    link framework "Metal"\n    link framework "CoreML"\n    link framework "Accelerate"\n    link "c++"\n    export *\n}\n'
     else:
         if graph.exists():
             raise RuntimeError("legacy staging contains graph declarations")
-        module = 'module CZeppelinEmbed {\n    header "zeppelin_embed.h"\n    export *\n}\n'
+        module = 'module CVolantisDB {\n    header "volantis_db.h"\n    export *\n}\n'
     if framework:
         if artifact != "graph-cypher":
             raise ValueError("only the full arm64 artifact is a framework")
-        module = ('framework module ZeppelinEmbedGraph {\n'
-                  '    umbrella header "zeppelin_embed_graph.h"\n'
-                  '    link framework "ZeppelinEmbedGraph"\n    export *\n}\n')
+        module = ('framework module VolantisDBGraph {\n'
+                  '    umbrella header "volantis_db_graph.h"\n'
+                  '    link framework "VolantisDBGraph"\n    export *\n}\n')
     (destination / "module.modulemap").write_text(module)
 
 

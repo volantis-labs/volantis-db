@@ -7,17 +7,17 @@ use super::fault_vfs::{
 use rand::RngCore;
 use std::sync::Arc;
 use std::time::Duration;
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::{
     CancelToken, Deadline, ManualMonotonicClock, OpenOptions, QueryControl, SnapshotLease, Store,
 };
-use zeppelin_embed::property_graph::query::plan::*;
-use zeppelin_embed::property_graph::query::resources::*;
-use zeppelin_embed::property_graph::query::runtime::*;
-use zeppelin_embed::property_graph::query::{QueryError, QueryValue, QueryView, ValueContext};
-use zeppelin_embed::property_graph::resources::GraphResources;
-use zeppelin_embed::property_graph::{GraphGeneration, StoreInstanceId};
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed_adversarial_oracle::graph_runtime::{self as oracle, Observation};
+use volantis_db::property_graph::query::plan::*;
+use volantis_db::property_graph::query::resources::*;
+use volantis_db::property_graph::query::runtime::*;
+use volantis_db::property_graph::query::{QueryError, QueryValue, QueryView, ValueContext};
+use volantis_db::property_graph::resources::GraphResources;
+use volantis_db::property_graph::{GraphGeneration, StoreInstanceId};
+use volantis_db::vfs::StdVfs;
+use volantis_db_adversarial_oracle::graph_runtime::{self as oracle, Observation};
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.runtime.bags",
     "property-graph.runtime.counters",

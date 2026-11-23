@@ -86,8 +86,8 @@ pub fn verify_recomputed_fault_plan_bytes(
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .map_err(|error| format!("parse faults.jsonl row: {error}"))
         })
@@ -104,7 +104,7 @@ pub fn verify_recomputed_fault_plan_records(
     campaign: CampaignKind,
     seed: u64,
     profile: FaultProfile,
-    records: &[zeppelin_embed_bench::harness_json::Value],
+    records: &[volantis_db_bench::harness_json::Value],
 ) -> Result<FaultPlan, String> {
     let program = Program::generate_for(campaign, seed);
     let schedule = plan_schedule(seed, environment_for_profile(profile, seed), &program);
@@ -180,8 +180,8 @@ pub fn verify_recomputed_fault_plan_records(
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| {
-            zeppelin_embed_bench::harness_json::from_slice::<
-                zeppelin_embed_bench::harness_json::Value,
+            volantis_db_bench::harness_json::from_slice::<
+                volantis_db_bench::harness_json::Value,
             >(line)
             .map_err(|error| format!("parse recomputed faults.jsonl row: {error}"))
         })
@@ -209,16 +209,16 @@ fn fault_plan_bytes(faults: &[FaultEvent], feature_faults: &[FeatureFaultEvent])
 pub const fn oracle_contract(campaign: CampaignKind) -> &'static str {
     match campaign {
         CampaignKind::StorageDurability => {
-            zeppelin_embed_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION
+            volantis_db_adversarial_oracle::storage_durability::ORACLE_CONTRACT_VERSION
         }
         CampaignKind::VectorExecution => {
-            zeppelin_embed_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT
+            volantis_db_adversarial_oracle::vector_execution::VECTOR_ORACLE_CONTRACT
         }
         CampaignKind::MetadataFilterPlanner => "metadata-filter-planner-oracle-v2",
         CampaignKind::Overall => "overall-oracle-v1",
         CampaignKind::PropertyGraph => "graph-lifecycle-v1",
         CampaignKind::IngestRetention => {
-            zeppelin_embed_adversarial_oracle::ingest_retention::ORACLE_CONTRACT_VERSION
+            volantis_db_adversarial_oracle::ingest_retention::ORACLE_CONTRACT_VERSION
         }
         CampaignKind::VamanaGraph => "vamana-graph-oracle-v1",
         CampaignKind::Fts => "fts-oracle-v1",
@@ -241,7 +241,7 @@ pub struct EpisodeAttestation {
     pub expected_feature_fault_receipts: u64,
     pub evidence_digests: BTreeMap<String, String>,
     /// Family-owned strict attestation nested under the campaign-specific key.
-    pub family_oracle_attestation: Option<zeppelin_embed_bench::harness_json::Value>,
+    pub family_oracle_attestation: Option<volantis_db_bench::harness_json::Value>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -413,8 +413,8 @@ impl MergedEvidence {
                 .map(|(name, value)| (format!("family/{name}"), value)),
         );
 
-        let mut index = zeppelin_embed_bench::harness_json::to_vec(
-            &zeppelin_embed_bench::harness_json::json!({
+        let mut index = volantis_db_bench::harness_json::to_vec(
+            &volantis_db_bench::harness_json::json!({
                 "campaign_episode": self.episodes,
                 "seed": seed,
                 "profile": profile.key(),
@@ -465,8 +465,8 @@ impl MergedEvidence {
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
         {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line).map_err(|error| {
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line).map_err(|error| {
                     format!("merged-index.jsonl reopen verification parse: {error}")
                 })?;
             let seed = record["seed"]
@@ -558,8 +558,8 @@ impl MergedEvidence {
             return Err("merged-index.jsonl reopen verification tail differs".to_owned());
         }
         let line = observed.strip_suffix(b"\n").unwrap_or(&observed);
-        let _: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line).map_err(|error| {
+        let _: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line).map_err(|error| {
                 format!("merged-index.jsonl reopen verification parse: {error}")
             })?;
         Ok(())
@@ -576,8 +576,8 @@ fn validate_oracle_identities(
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
     {
-        let record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(line)
+        let record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(line)
                 .map_err(|error| format!("parse oracle evidence row preflight: {error}"))?;
         let Some(checker_id) = record["checker_id"].as_str() else {
             continue;
@@ -628,7 +628,7 @@ impl MergedStream {
         seed: u64,
         profile: FaultProfile,
         source: &[u8],
-    ) -> Result<zeppelin_embed_bench::harness_json::Value, String> {
+    ) -> Result<volantis_db_bench::harness_json::Value, String> {
         let mut appended_bytes = 0_u64;
         let mut appended_records = 0_u64;
         let mut appended_digest_state = FNV_OFFSET_BASIS;
@@ -636,11 +636,11 @@ impl MergedStream {
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
         {
-            let record: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line)
+            let record: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line)
                     .map_err(|error| format!("parse {} evidence row: {error}", self.name))?;
-            let mut envelope = zeppelin_embed_bench::harness_json::to_vec(
-                &zeppelin_embed_bench::harness_json::json!({
+            let mut envelope = volantis_db_bench::harness_json::to_vec(
+                &volantis_db_bench::harness_json::json!({
                     "seed": seed,
                     "profile": profile.key(),
                     "record": record,
@@ -659,7 +659,7 @@ impl MergedStream {
             appended_bytes = appended_bytes.saturating_add(length);
             appended_records = appended_records.saturating_add(1);
         }
-        Ok(zeppelin_embed_bench::harness_json::json!({
+        Ok(volantis_db_bench::harness_json::json!({
             "source_records": source.split(|byte| *byte == b'\n').filter(|line| !line.is_empty()).count(),
             "source_bytes": source.len(),
             "source_digest": evidence_digest(&[source]),
@@ -674,12 +674,12 @@ impl MergedStream {
         seed: u64,
         profile: FaultProfile,
         source: &[u8],
-    ) -> Result<zeppelin_embed_bench::harness_json::Value, String> {
-        let record: zeppelin_embed_bench::harness_json::Value =
-            zeppelin_embed_bench::harness_json::from_slice(source)
+    ) -> Result<volantis_db_bench::harness_json::Value, String> {
+        let record: volantis_db_bench::harness_json::Value =
+            volantis_db_bench::harness_json::from_slice(source)
                 .map_err(|error| format!("parse {} evidence document: {error}", self.name))?;
-        let mut envelope = zeppelin_embed_bench::harness_json::to_vec(
-            &zeppelin_embed_bench::harness_json::json!({
+        let mut envelope = volantis_db_bench::harness_json::to_vec(
+            &volantis_db_bench::harness_json::json!({
                 "seed": seed,
                 "profile": profile.key(),
                 "record": record,
@@ -694,7 +694,7 @@ impl MergedStream {
         let length = envelope.len() as u64;
         self.bytes = self.bytes.saturating_add(length);
         self.records = self.records.saturating_add(1);
-        Ok(zeppelin_embed_bench::harness_json::json!({
+        Ok(volantis_db_bench::harness_json::json!({
             "source_records": 1,
             "source_bytes": source.len(),
             "source_digest": evidence_digest(&[source]),
@@ -714,7 +714,7 @@ impl MergedStream {
         &self,
         seed: u64,
         profile: FaultProfile,
-        episode: &zeppelin_embed_bench::harness_json::Value,
+        episode: &volantis_db_bench::harness_json::Value,
     ) -> Result<(), String> {
         let merged_bytes = episode["merged_bytes"]
             .as_u64()
@@ -765,8 +765,8 @@ impl MergedStream {
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
         {
-            let envelope: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line).map_err(|error| {
+            let envelope: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line).map_err(|error| {
                     format!("{} reopen verification parse: {error}", self.label())
                 })?;
             if envelope["seed"].as_u64() != Some(seed)
@@ -806,8 +806,8 @@ impl MergedStream {
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
         {
-            let _: zeppelin_embed_bench::harness_json::Value =
-                zeppelin_embed_bench::harness_json::from_slice(line).map_err(|error| {
+            let _: volantis_db_bench::harness_json::Value =
+                volantis_db_bench::harness_json::from_slice(line).map_err(|error| {
                     format!("{} reopen verification parse: {error}", self.label())
                 })?;
             records = records.saturating_add(1);
@@ -949,13 +949,13 @@ impl RunArtifacts {
         attestation: Option<&EpisodeAttestation>,
     ) -> Result<Vec<u8>, String> {
         let metadata = if let Some(attestation) = attestation {
-            let mut attestation_json = zeppelin_embed_bench::harness_json::json!({
-                "oracle_contract_version": zeppelin_embed_adversarial_oracle::ORACLE_CONTRACT_VERSION,
+            let mut attestation_json = volantis_db_bench::harness_json::json!({
+                "oracle_contract_version": volantis_db_adversarial_oracle::ORACLE_CONTRACT_VERSION,
                 "oracle_contract": oracle_contract(campaign),
                 "harness_git_revision": harness_git_revision(),
                 "comparison_counts": attestation.comparison_counts,
                 "comparison_outcome_counts": attestation.comparison_outcome_counts.iter().map(|(invariant, counts)| {
-                    (invariant.clone(), zeppelin_embed_bench::harness_json::json!({
+                    (invariant.clone(), volantis_db_bench::harness_json::json!({
                         "equal": counts.equal,
                         "refused": counts.refused,
                     }))
@@ -979,8 +979,8 @@ impl RunArtifacts {
                     .expect("episode attestation is an object")
                     .insert(key.to_owned(), family.clone());
             }
-            zeppelin_embed_bench::harness_json::json!({
-                "schema": "zeppelin-embed-adversarial-episode",
+            volantis_db_bench::harness_json::json!({
+                "schema": "volantis-db-adversarial-episode",
                 "version": 3,
                 "campaign": campaign.key(),
                 "seed": seed,
@@ -990,8 +990,8 @@ impl RunArtifacts {
                 "attestation": attestation_json,
             })
         } else {
-            zeppelin_embed_bench::harness_json::json!({
-                "schema": "zeppelin-embed-adversarial-episode",
+            volantis_db_bench::harness_json::json!({
+                "schema": "volantis-db-adversarial-episode",
                 "version": 3,
                 "campaign": campaign.key(),
                 "seed": seed,
@@ -1000,7 +1000,7 @@ impl RunArtifacts {
                 "reproduction": reproduction,
             })
         };
-        let mut bytes = zeppelin_embed_bench::harness_json::to_vec_pretty(&metadata)
+        let mut bytes = volantis_db_bench::harness_json::to_vec_pretty(&metadata)
             .map_err(|error| format!("serialize episode.json: {error}"))?;
         bytes.push(b'\n');
         fs::write(self.directory.join("episode.json"), &bytes)

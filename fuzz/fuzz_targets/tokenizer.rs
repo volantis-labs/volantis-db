@@ -11,7 +11,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed::fts::tokenizer::{Analyzer, Profile, TokenizerError, Vocabulary};
+use volantis_db::fts::tokenizer::{Analyzer, Profile, TokenizerError, Vocabulary};
 
 /// Tokens a single input byte may produce across every stacking stage.
 ///

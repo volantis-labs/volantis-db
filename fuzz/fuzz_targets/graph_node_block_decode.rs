@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed::graph::block::{
+use volantis_db::graph::block::{
     GraphNodeBlockBuild, GraphNodeBlockInput, decode_node_blocks, encode_node_blocks,
 };
 

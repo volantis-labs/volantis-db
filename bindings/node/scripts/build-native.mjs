@@ -14,7 +14,7 @@ function run(command, args, options = {}) {
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const packageDirectory = resolve(scriptDirectory, '..');
 const repository = resolve(packageDirectory, '..', '..');
-const ffiHeaders = join(repository, 'crates', 'zeppelin-embed-ffi', 'include');
+const ffiHeaders = join(repository, 'crates', 'volantis-db-ffi', 'include');
 const source = join(packageDirectory, 'native', 'addon.cc');
 const exportsFile = join(packageDirectory, 'native', 'exports.txt');
 const packageNative = join(repository, 'scripts', 'release', 'package-native.py');
@@ -28,7 +28,7 @@ const python = process.env.PYTHON || (isDarwin ? 'python3' : 'python');
 // Keep Cargo outputs/rlibs intact; only these distribution copies lose bitcode.
 function distributionArchive(input, target) {
   const output = join(targetDirectory, 'native-archives', target,
-    isDarwin ? 'libzeppelin_embed_ffi.a' : 'zeppelin_embed_ffi.lib');
+    isDarwin ? 'libvolantis_db_ffi.a' : 'volantis_db_ffi.lib');
   run(python, [packageNative, 'archive', input, output]);
   return output;
 }
@@ -74,15 +74,15 @@ if (isDarwin) {
       environment.CARGO_TARGET_DIR,
       slice.rustTarget,
       'release',
-      'libzeppelin_embed_ffi.a',
+      'libvolantis_db_ffi.a',
     );
-    const output = join(packageDirectory, 'prebuilds', slice.directory, 'zeppelin_embed.node');
+    const output = join(packageDirectory, 'prebuilds', slice.directory, 'volantis_db.node');
 
     // `--target` is passed even for the host, so both slices land under
     // `target/macos-<deployment>/<triple>/release` and neither can pick up the other's artifacts
     // from the bare `target/release` directory.
     const built = spawnSync('cargo',
-      ['build', '--locked', '--release', '--target', slice.rustTarget, '-p', 'zeppelin-embed-ffi',
+      ['build', '--locked', '--release', '--target', slice.rustTarget, '-p', 'volantis-db-ffi',
         '--features', slice.clangArch === 'arm64' ? 'graph-cypher,text' : 'graph-cypher',
         '--message-format=json-render-diagnostics'],
       {cwd: repository, env: environment, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 64 * 1024 * 1024});
@@ -142,7 +142,7 @@ if (isDarwin) {
   //
   // The Rust static library is built first and its absolute path handed to
   // node-gyp, which then compiles `addon.cc` with MSVC and links it in. The
-  // addon therefore carries the engine inside it and needs no Zeppelin DLL
+  // addon therefore carries the engine inside it and needs no Volantis DB DLL
   // beside it at run time, which is the same arrangement as the macOS build.
   const target = 'x86_64-pc-windows-msvc';
   run(
@@ -154,7 +154,7 @@ if (isDarwin) {
       '--target',
       target,
       '-p',
-      'zeppelin-embed-ffi',
+      'volantis-db-ffi',
       '--no-default-features',
       '--features',
       'graph-cypher',
@@ -163,8 +163,8 @@ if (isDarwin) {
   );
 
   // The static *implementation* archive. Deliberately not
-  // `zeppelin_embed_ffi.dll.lib`, which is the DLL's import library.
-  const staticLibrary = join(targetDirectory, target, 'release', 'zeppelin_embed_ffi.lib');
+  // `volantis_db_ffi.dll.lib`, which is the DLL's import library.
+  const staticLibrary = join(targetDirectory, target, 'release', 'volantis_db_ffi.lib');
   const archive = distributionArchive(staticLibrary, target);
   const exportsDefinition = join(targetDirectory, 'native-archives', target, 'node.def');
   const exports = readFileSync(exportsFile, 'utf8').trim().split(/\r?\n/).map(name => name.slice(1));
@@ -198,7 +198,7 @@ if (isDarwin) {
 
     // Each node-gyp run overwrites `build/Release`, so every variant is copied
     // to its own staging path before the next rebuild starts.
-    const built = join(gypDirectory, 'build', 'Release', 'zeppelin_embed.node');
+    const built = join(gypDirectory, 'build', 'Release', 'volantis_db.node');
     mkdirSync(dirname(output), { recursive: true });
     copyFileSync(built, output);
     run(python, [packageNative, 'windows-addon', output, output]);
@@ -213,7 +213,7 @@ if (isDarwin) {
         'prebuilds',
         'win32-x64',
         'node-napi8',
-        'zeppelin_embed.node',
+        'volantis_db.node',
       ),
       extraArgs: [`--target=${process.versions.node}`],
     },
@@ -232,7 +232,7 @@ if (isDarwin) {
         'prebuilds',
         'win32-x64',
         `electron-${major}`,
-        'zeppelin_embed.node',
+        'volantis_db.node',
       ),
       extraArgs: [
         `--target=${electronVersion}`,

@@ -2,11 +2,11 @@
 //! No native directory, view, OUT/IN publication or reopen acceptance is claimed.
 use super::coverage::CoverageRegistry;
 use rand::RngCore;
-use zeppelin_embed::property_graph::storage::adjacency::{
+use volantis_db::property_graph::storage::adjacency::{
     self as a, Action, DeltaEntry, Direction, Edge, Error, RangeKey, UpperBound, Work,
 };
-use zeppelin_embed::property_graph::{NodeId, RelId, catalog::RelTypeId};
-use zeppelin_embed_adversarial_oracle::graph_adjacency as oracle;
+use volantis_db::property_graph::{NodeId, RelId, catalog::RelTypeId};
+use volantis_db_adversarial_oracle::graph_adjacency as oracle;
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.adjacency.merge",
     "property-graph.adjacency.full-id",

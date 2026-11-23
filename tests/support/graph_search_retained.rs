@@ -8,20 +8,20 @@
     clippy::result_large_err
 )]
 use super::graph_search::*;
-use zeppelin_embed_adversarial_oracle::graph_fixture as oracle;
+use volantis_db_adversarial_oracle::graph_fixture as oracle;
 pub fn retained(seed: u64) {
     let _ = retained_observation(seed);
 }
-pub fn retained_observation(seed: u64) -> zeppelin_embed_bench::harness_json::Value {
+pub fn retained_observation(seed: u64) -> volantis_db_bench::harness_json::Value {
     use std::sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
         mpsc,
     };
     use std::time::{Duration, Instant};
-    use zeppelin_embed::lifecycle::{Deadline, MonotonicClock, QueryControl};
-    use zeppelin_embed::property_graph::staging::*;
-    use zeppelin_embed::property_graph::*;
+    use volantis_db::lifecycle::{Deadline, MonotonicClock, QueryControl};
+    use volantis_db::property_graph::staging::*;
+    use volantis_db::property_graph::*;
     struct Gate {
         polls: AtomicUsize,
         nth: usize,
@@ -93,7 +93,7 @@ pub fn retained_observation(seed: u64) -> zeppelin_embed_bench::harness_json::Va
         Deadline::after_with_test_clock(Duration::from_secs(60), counter.clone()).unwrap(),
     );
     counter.polls.store(0, Ordering::SeqCst);
-    let r = zeppelin_embed_cypher::execute(
+    let r = volantis_db_cypher::execute(
         c.graph(),
         &ctrl,
         &Default::default(),
@@ -121,7 +121,7 @@ pub fn retained_observation(seed: u64) -> zeppelin_embed_bench::harness_json::Va
     );
     gate.polls.store(0, Ordering::SeqCst);
     let write = |corpus: &Corpus| {
-        let tower = zeppelin_embed::graph_commit_recovery_test_support::document();
+        let tower = volantis_db::graph_commit_recovery_test_support::document();
         let coords = [if seed & 1 == 0 { 0.125 } else { 0.25 }, 0.0];
         let mut labels = [GraphName::new("Eligible").unwrap()];
         let mut props = [GraphProperty::new(
@@ -138,11 +138,11 @@ pub fn retained_observation(seed: u64) -> zeppelin_embed_bench::harness_json::Va
         corpus
             .graph()
             .apply_mixed_for_test(
-                &zeppelin_embed::ingest::IngestBatch::new(vec![
-                    zeppelin_embed::ingest::IngestDocument::new(
-                        zeppelin_embed::ingest::DocumentVersion::new(
-                            zeppelin_embed::ingest::DocId::new(7),
-                            zeppelin_embed::ingest::Revision::new(3),
+                &volantis_db::ingest::IngestBatch::new(vec![
+                    volantis_db::ingest::IngestDocument::new(
+                        volantis_db::ingest::DocumentVersion::new(
+                            volantis_db::ingest::DocId::new(7),
+                            volantis_db::ingest::Revision::new(3),
                         ),
                         coords.to_vec(),
                     )
@@ -186,7 +186,7 @@ pub fn retained_observation(seed: u64) -> zeppelin_embed_bench::harness_json::Va
     let baseline = clean.store.as_ref().unwrap().reserved();
     let result = std::thread::scope(|scope| {
         let task = scope.spawn(|| {
-            zeppelin_embed_cypher::execute(
+            volantis_db_cypher::execute(
                 c.graph(),
                 &ctrl,
                 &Default::default(),
@@ -238,7 +238,7 @@ pub fn retained_observation(seed: u64) -> zeppelin_embed_bench::harness_json::Va
     );
     // Poll ordinals vary across processes; retain them in the measured log.
     // Replay compares admitted generations and primitive rows at the pause.
-    let observation = zeppelin_embed_bench::harness_json::json!({
+    let observation = volantis_db_bench::harness_json::json!({
         "site": "retained-reader", "fires": 1, "controls": 1,
         "old_generation": result.metadata().generation.get(), "new_generation": later.metadata().generation.get(),
         "old_rows": format!("{:?}", observe(&result)), "new_rows": format!("{:?}", observe(&later)),

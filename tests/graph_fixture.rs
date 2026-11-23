@@ -1,7 +1,7 @@
 #[path = "tooling_seed.rs"]
 mod test_support;
 use rand::Rng;
-use zeppelin_embed_bench::graph_fixture::*;
+use volantis_db_bench::graph_fixture::*;
 #[test]
 fn approved_fixture_counts_are_observed_from_every_baseline_and_stress_record() {
     for (scale, nodes, edges, vectors) in [
@@ -240,7 +240,7 @@ fn serialized_fixture_is_reproducible_and_rejects_missing_or_modified_files() {
 }
 #[test]
 fn serialized_generation_expectations_follow_admitted_views_through_maintenance() {
-    use zeppelin_embed_bench::graph_fixture::{
+    use volantis_db_bench::graph_fixture::{
         FixtureState, WordStream, read_manifest, visit_batches, write_fixture,
     };
     let dir = tempfile::tempdir().unwrap();
@@ -282,7 +282,7 @@ fn serialized_generation_expectations_follow_admitted_views_through_maintenance(
 }
 #[test]
 fn pinned_fixture_vocabulary_matches_the_declared_product_analyzer() {
-    use zeppelin_embed::fts::tokenizer::{Analyzer, TokenizerConfig};
+    use volantis_db::fts::tokenizer::{Analyzer, TokenizerConfig};
     let analyzer = Analyzer::new(TokenizerConfig::text_default()).unwrap();
     let words = [
         "amber", "cedar", "cobalt", "delta", "quartz", "velvet", "zephyr",

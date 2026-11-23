@@ -1,4 +1,4 @@
-use zeppelin_embed_adversarial_oracle::graph_catalog::*;
+use volantis_db_adversarial_oracle::graph_catalog::*;
 
 #[test]
 fn primitive_catalog_oracle_rejects_malformed_or_mismatched_observations() {

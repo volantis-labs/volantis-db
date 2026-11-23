@@ -1,5 +1,5 @@
 import Foundation
-import ZeppelinEmbed
+import VolantisDB
 
 @main
 struct FiveVectorsSearch {
@@ -20,7 +20,7 @@ struct FiveVectorsSearch {
             [0.00, 0.05, 0.10, 0.90],
         ]
 
-        try await ZeppelinStore.withStore(at: path) { store in
+        try await VolantisStore.withStore(at: path) { store in
             // Stable IDs identify documents, while revisions order updates.
             let documents = vectors.enumerated().map { index, vector in
                 IngestDocument(
@@ -34,7 +34,7 @@ struct FiveVectorsSearch {
             print("ingested 5 vectors at generation \(mutation.generation)")
 
             // The query vector must use the same dimension and embedding
-            // space. Ask Zeppelin Embed for the nearest three documents.
+            // space. Ask Volantis DB for the nearest three documents.
             let result = try await store.search(
                 vector: [0.88, 0.12, 0.07, 0.02],
                 options: SearchOptions(k: 3)

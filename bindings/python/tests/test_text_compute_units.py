@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 ROOT = Path(__file__).resolve().parents[3]
-FIXTURES = ROOT / "crates/zeppelin-embed-text/tests/fixtures/ze115"
+FIXTURES = ROOT / "crates/volantis-db-text/tests/fixtures/ze115"
 requires_text = pytest.mark.skipif(not ze.TEXT_AVAILABLE, reason="text API unavailable")
 
 
@@ -29,7 +29,7 @@ def test_text_observed_compute_units_loads_tiny_coreml_plan(
     model = tmp_path / "tiny.mlmodelc"
     assert model.is_dir()
     monkeypatch.setenv("ZE_QUERY_COREML", str(model))
-    bundle = ROOT / "crates/zeppelin-embed-ffi/tests/fixtures/compute_units.zem"
+    bundle = ROOT / "crates/volantis-db-ffi/tests/fixtures/compute_units.zem"
     with ze.open_text(tmp_path / "store", bundle) as store:
         counts = store.observed_compute_units()
         assert isinstance(counts, ze.ObservedComputeUnits)

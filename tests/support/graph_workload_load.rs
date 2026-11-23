@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::{Arc, Barrier, Mutex};
 use std::time::Instant;
-use zeppelin_embed_bench::{
+use volantis_db_bench::{
     graph_fixture::{self, FixtureState},
     harness_json::{Value, json},
 };
@@ -13,7 +13,7 @@ pub fn load_requests(directory: &Path, name: &str) -> Result<Vec<Value>, String>
     let mut rows = Vec::new();
     for case in 0..100 {
         let path = directory.join(format!("{case}-{name}.json"));
-        let row: Value = zeppelin_embed_bench::harness_json::from_slice(
+        let row: Value = volantis_db_bench::harness_json::from_slice(
             &std::fs::read(path).map_err(|e| e.to_string())?,
         )
         .map_err(|e| e.to_string())?;
@@ -23,7 +23,7 @@ pub fn load_requests(directory: &Path, name: &str) -> Result<Vec<Value>, String>
     Ok(rows)
 }
 pub fn scheduled_read(
-    store: &zeppelin_embed::lifecycle::Store,
+    store: &volantis_db::lifecycle::Store,
     job: &Value,
     frontend: &str,
     exact: bool,
@@ -116,7 +116,7 @@ pub fn observed_ids(receipts: &Path) -> Result<Ids, String> {
     let mut ids = Ids::new();
     for line in BufReader::new(std::fs::File::open(receipts).map_err(|e| e.to_string())?).lines() {
         let row: Value =
-            zeppelin_embed_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
+            volantis_db_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
         if let Some(rows) = row["receipts"].as_array() {
             for r in rows {
@@ -306,8 +306,8 @@ pub fn detach(store_path: &Path, namespace: &str, key: &str, id: u128) -> Result
 }
 /// One actual process open through first public admission; no OS-cold inference.
 pub fn recover(path: &Path, read_only: bool) -> Result<(), String> {
-    use zeppelin_embed::lifecycle::OpenOptions;
-    use zeppelin_embed::lifecycle::Store;
+    use volantis_db::lifecycle::OpenOptions;
+    use volantis_db::lifecycle::Store;
     let start = Instant::now();
     let store = if read_only {
         Store::open_graph_read_only(path, OpenOptions::new(), Some(tower()))
@@ -334,12 +334,12 @@ pub fn verify(
     samples: &Path,
 ) -> Result<(), String> {
     use std::collections::{BTreeMap, BTreeSet};
-    use zeppelin_embed_adversarial_oracle::graph_fixture as oracle;
+    use volantis_db_adversarial_oracle::graph_fixture as oracle;
     let (snapshot, _) = primitive_snapshot(root, state, receipts)?;
     let mut truth_generation = None;
     for line in BufReader::new(std::fs::File::open(receipts).map_err(|e| e.to_string())?).lines() {
         let row: Value =
-            zeppelin_embed_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
+            volantis_db_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
         if let Some(g) = row["admitted_generation"].as_u64() {
             truth_generation = Some(g);
@@ -350,7 +350,7 @@ pub fn verify(
     let mut cache = BTreeMap::<(String, u64), (Vec<oracle::Row>, Vec<oracle::Row>)>::new();
     for line in BufReader::new(std::fs::File::open(samples).map_err(|e| e.to_string())?).lines() {
         let observed: Value =
-            zeppelin_embed_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
+            volantis_db_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
         if observed["warmup"] == true {
             continue;
@@ -368,7 +368,7 @@ pub fn verify(
             .to_owned();
         let key = (name.clone(), case);
         if !cache.contains_key(&key) {
-            let job: Value = zeppelin_embed_bench::harness_json::from_slice(
+            let job: Value = volantis_db_bench::harness_json::from_slice(
                 &std::fs::read(jobs.join(format!("{case}-{name}.json")))
                     .map_err(|e| e.to_string())?,
             )
@@ -430,7 +430,7 @@ pub fn verify(
         }
         let compared = oracle::compare_scored_rows(&expected, &actual, 1e-6, 1e-6);
         let recall = if searchable {
-            zeppelin_embed_bench::graph_workload::recall_at_k(&truth_ids, &hit_ids, 20)?
+            volantis_db_bench::graph_workload::recall_at_k(&truth_ids, &hit_ids, 20)?
         } else {
             1.0
         };
@@ -464,7 +464,7 @@ pub fn cypher_imports(path: &Path, list: &Path, count: usize) -> Result<(), Stri
                 let counters = observed_counters(&store, &r)?;
                 let generation = r.metadata().generation.get();
                 let receipts = r.pools().receipts.iter().enumerate().map(|(item, r)| {
-                    let (kind, id) = match r.receipt.entity { zeppelin_embed::property_graph::EntityId::Node(n)=>("node",n.get()), zeppelin_embed::property_graph::EntityId::Relationship(e)=>("relationship",e.get()) };
+                    let (kind, id) = match r.receipt.entity { volantis_db::property_graph::EntityId::Node(n)=>("node",n.get()), volantis_db::property_graph::EntityId::Relationship(e)=>("relationship",e.get()) };
                     json!({"item":item,"kind":kind,"id":id.to_string(),"revision":r.receipt.revision.get(),"generation":r.receipt.generation.get()})
                 }).collect::<Vec<_>>();
                 let disposal = Instant::now();
@@ -488,13 +488,13 @@ pub fn cypher_imports(path: &Path, list: &Path, count: usize) -> Result<(), Stri
 /// Apply primitive imported images independently, using actual public receipts
 /// for allocated identity only. Never fetch product state as expected values.
 fn import_truth(
-    snapshot: &mut zeppelin_embed_adversarial_oracle::graph_fixture::Snapshot,
+    snapshot: &mut volantis_db_adversarial_oracle::graph_fixture::Snapshot,
     ids: &mut Ids,
     row: &Value,
     root: &Path,
 ) -> Result<u64, String> {
     use std::collections::BTreeSet;
-    use zeppelin_embed_adversarial_oracle::graph_fixture as oracle;
+    use volantis_db_adversarial_oracle::graph_fixture as oracle;
     let changes = row["input"]["changes"]
         .as_array()
         .ok_or("missing import input journal")?;
@@ -602,12 +602,12 @@ pub fn verify_mixed(
     jobs: &Path,
     samples: &Path,
 ) -> Result<(), String> {
-    use zeppelin_embed_adversarial_oracle::graph_fixture as oracle;
+    use volantis_db_adversarial_oracle::graph_fixture as oracle;
     let (mut snapshot, mut ids) = primitive_snapshot(root, state, receipts)?;
     let mut baseline = None;
     for line in BufReader::new(std::fs::File::open(receipts).map_err(|e| e.to_string())?).lines() {
         let r: Value =
-            zeppelin_embed_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
+            volantis_db_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
         if let Some(g) = r["admitted_generation"].as_u64() {
             baseline = Some(g);
@@ -617,7 +617,7 @@ pub fn verify_mixed(
     let rows = BufReader::new(std::fs::File::open(samples).map_err(|e| e.to_string())?)
         .lines()
         .map(|line| {
-            zeppelin_embed_bench::harness_json::from_str::<Value>(&line.map_err(|e| e.to_string())?)
+            volantis_db_bench::harness_json::from_str::<Value>(&line.map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -665,7 +665,7 @@ pub fn verify_mixed(
         let end = writes.get(next).map(|r| generation(r)).transpose()?;
         let case = read["case"].as_u64().ok_or("case")?;
         let name = read["name"].as_str().ok_or("name")?;
-        let job: Value = zeppelin_embed_bench::harness_json::from_slice(
+        let job: Value = volantis_db_bench::harness_json::from_slice(
             &std::fs::read(jobs.join(format!("{case}-{name}.json"))).map_err(|e| e.to_string())?,
         )
         .map_err(|e| e.to_string())?;
@@ -683,8 +683,8 @@ pub fn verify_mixed(
     Ok(())
 }
 pub fn recovery_series(list: &Path, read_only: bool) -> Result<(), String> {
-    use zeppelin_embed::lifecycle::OpenOptions;
-    use zeppelin_embed::lifecycle::Store;
+    use volantis_db::lifecycle::OpenOptions;
+    use volantis_db::lifecycle::Store;
     let paths = std::fs::read_to_string(list)
         .map_err(|e| e.to_string())?
         .lines()
@@ -721,10 +721,10 @@ pub fn recovery_series(list: &Path, read_only: bool) -> Result<(), String> {
 /// Untimed complete public entity reads for import/retention correctness.
 /// Identity comes from receipts; all expected payload comes from frozen inputs.
 pub fn inspect_entities(path: &Path, requests: &Path) -> Result<(), String> {
-    use zeppelin_embed::property_graph::query::completed::{
+    use volantis_db::property_graph::query::completed::{
         Pools, Span, Value as Cell, ValueIndex,
     };
-    use zeppelin_embed::property_graph::{GraphGetOptions, NodeId, RelId};
+    use volantis_db::property_graph::{GraphGetOptions, NodeId, RelId};
     fn text(p: Pools<'_>, s: Span) -> Result<String, String> {
         let bytes = p
             .bytes
@@ -763,7 +763,7 @@ pub fn inspect_entities(path: &Path, requests: &Path) -> Result<(), String> {
     let store = open(path)?;
     for line in BufReader::new(std::fs::File::open(requests).map_err(|e| e.to_string())?).lines() {
         let request: Value =
-            zeppelin_embed_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
+            volantis_db_bench::harness_json::from_str(&line.map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
         let kind = request["kind"].as_str().ok_or("kind")?;
         let id = request["id"]
@@ -816,7 +816,7 @@ pub fn inspect_entities(path: &Path, requests: &Path) -> Result<(), String> {
 
 /// Frozen baseline payload, independent of the retained store being checked.
 pub fn expected_entities(root: &Path, state: FixtureState, receipts: &Path) -> Result<(), String> {
-    use zeppelin_embed_adversarial_oracle::graph_fixture::{Property, Scalar};
+    use volantis_db_adversarial_oracle::graph_fixture::{Property, Scalar};
     fn scalar(s: &Scalar) -> Value {
         match s {
             Scalar::Bool(v) => json!({"bool":v}),

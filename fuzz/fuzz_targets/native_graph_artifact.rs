@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use xxhash_rust::xxh3::xxh3_64;
-use zeppelin_embed::property_graph::storage::{
+use volantis_db::property_graph::storage::{
     artifact::{self, ContainerKind, MAX_ARTIFACT_BYTES},
     tree::{self, TreeKind},
 };

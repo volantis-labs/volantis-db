@@ -3,13 +3,13 @@
 
 This is a developer tool run by hand, NOT a build script: build scripts and
 host probing are prohibited (root CLAUDE.md). Its output is committed as
-`crates/zeppelin-embed/src/fts/tokenizer/fold_table.rs` and reviewed like any
+`crates/volantis-db/src/fts/tokenizer/fold_table.rs` and reviewed like any
 other source file. Re-run it only to adopt a new Unicode version, which is a
 deliberate tokenizer-epoch bump (task 21 owns migration).
 
 Usage:
     python3 tools/generate-fold-table.py \
-        > crates/zeppelin-embed/src/fts/tokenizer/fold_table.rs
+        > crates/volantis-db/src/fts/tokenizer/fold_table.rs
 
 The fold is Lucene's ICUFoldingFilter shape: NFKC, then Unicode case folding,
 then canonical decomposition with nonspacing marks removed, then recomposed.

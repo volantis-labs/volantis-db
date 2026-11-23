@@ -1,4 +1,4 @@
-"""Add five precomputed vectors to Zeppelin Embed and search them."""
+"""Add five precomputed vectors to Volantis DB and search them."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-import zeppelin_embed as ze
+import volantis_db as ze
 
 DOCUMENTS = (
     (1, [0.90, 0.10, 0.05, 0.00]),

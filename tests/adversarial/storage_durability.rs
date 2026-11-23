@@ -10,25 +10,26 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tempfile::{TempDir, tempdir};
-use zeppelin_embed::ingest::{
+use volantis_db::ingest::{
     DocId, DocumentVersion, IngestBatch, IngestDocument, IngestError, Revision, SearchRequest,
 };
-use zeppelin_embed::lifecycle::durability::{CommitTier, DurabilityMode};
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::durability::{CommitTier, DurabilityMode};
+use volantis_db::lifecycle::{
     CancelToken, ManualMonotonicClock, OpenOptions, QueryControl, QueryError, SearchOptions,
     SearchTier, StorageCleanupReport, StorageFaultController, StorageFaultPlan,
     StorageFaultReceipt, StorageReceiptObserved, StorageReceiptSite, StorageTestFault, Store,
     StoreError, StoreTestDependencies,
 };
-use zeppelin_embed::meta::{ColumnDefinition, ColumnId, ColumnType, PredicateValue, Schema};
-use zeppelin_embed::scan::ScanOptions;
-use zeppelin_embed::segment::layout::RegionKind;
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed_adversarial_oracle::storage_durability as independent;
+use volantis_db::meta::{ColumnDefinition, ColumnId, ColumnType, PredicateValue, Schema};
+use volantis_db::scan::ScanOptions;
+use volantis_db::segment::layout::RegionKind;
+use volantis_db::vfs::StdVfs;
+use volantis_db_adversarial_oracle::storage_durability as independent;
 
 #[allow(dead_code)]
 #[path = "../../scripts/fixtures/common.rs"]
 pub(super) mod release_fixture;
+use volantis_db as engine;
 
 const MANIFEST: &str = "manifest.ze";
 const WAL: &str = "wal.ze";
@@ -1731,7 +1732,7 @@ fn first_segment(path: &Path) -> Result<PathBuf, String> {
         .ok_or_else(|| "sealed storage fixture has no segment".to_owned())
 }
 
-fn segment_id(path: &Path) -> Result<zeppelin_embed::segment::SegmentId, String> {
+fn segment_id(path: &Path) -> Result<volantis_db::segment::SegmentId, String> {
     let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
     let parsed = independent::parse_segment(
         path.file_name()
@@ -1740,7 +1741,7 @@ fn segment_id(path: &Path) -> Result<zeppelin_embed::segment::SegmentId, String>
         &bytes,
     )
     .map_err(|error| error.to_string())?;
-    Ok(zeppelin_embed::segment::SegmentId::from_bytes(
+    Ok(volantis_db::segment::SegmentId::from_bytes(
         parsed.fact.id,
     ))
 }
@@ -1754,7 +1755,7 @@ fn hex_bytes(bytes: &[u8]) -> String {
     output
 }
 
-fn segment_id_from_hex(value: &str) -> Result<zeppelin_embed::segment::SegmentId, String> {
+fn segment_id_from_hex(value: &str) -> Result<volantis_db::segment::SegmentId, String> {
     if value.len() != 32 {
         return Err(format!("segment identity has {} hex bytes", value.len()));
     }
@@ -1771,7 +1772,7 @@ fn segment_id_from_hex(value: &str) -> Result<zeppelin_embed::segment::SegmentId
         )
         .map_err(|error| format!("segment identity byte is invalid: {error}"))?;
     }
-    Ok(zeppelin_embed::segment::SegmentId::from_bytes(bytes))
+    Ok(volantis_db::segment::SegmentId::from_bytes(bytes))
 }
 
 fn take_one(controller: &StorageFaultController) -> Result<StorageFaultReceipt, String> {
@@ -1791,23 +1792,23 @@ fn take_one(controller: &StorageFaultController) -> Result<StorageFaultReceipt, 
 }
 
 fn independent_location(
-    value: zeppelin_embed::wal::replay::CorruptionLocation,
+    value: volantis_db::wal::replay::CorruptionLocation,
 ) -> independent::CorruptionLocation {
     match value {
-        zeppelin_embed::wal::replay::CorruptionLocation::Tail => {
+        volantis_db::wal::replay::CorruptionLocation::Tail => {
             independent::CorruptionLocation::Tail
         }
-        zeppelin_embed::wal::replay::CorruptionLocation::Middle => {
+        volantis_db::wal::replay::CorruptionLocation::Middle => {
             independent::CorruptionLocation::Middle
         }
     }
 }
 
 fn independent_header_failure(
-    value: zeppelin_embed::wal::header::WalHeaderError,
+    value: volantis_db::wal::header::WalHeaderError,
 ) -> Result<independent::WalHeaderFailure, String> {
     use independent::WalHeaderFailure as Fact;
-    use zeppelin_embed::wal::header::WalHeaderError as Product;
+    use volantis_db::wal::header::WalHeaderError as Product;
     match value {
         Product::Missing => Ok(Fact::Missing),
         Product::Truncated { needed, available } => Ok(Fact::Truncated {
@@ -1839,7 +1840,7 @@ fn independent_header_failure(
 }
 
 fn independent_record_failure(
-    value: zeppelin_embed::wal::replay::CorruptionReason,
+    value: volantis_db::wal::replay::CorruptionReason,
 ) -> Result<
     (
         independent::CorruptionLocation,
@@ -1848,8 +1849,8 @@ fn independent_record_failure(
     String,
 > {
     use independent::WalRecordFailure as Fact;
-    use zeppelin_embed::wal::record::RecordError;
-    use zeppelin_embed::wal::replay::CorruptionReason;
+    use volantis_db::wal::record::RecordError;
+    use volantis_db::wal::replay::CorruptionReason;
     match value {
         CorruptionReason::Record { location, error } => {
             let failure = match error {
@@ -2181,13 +2182,13 @@ fn validate_wal_refusal(
     terminator: &independent::WalTerminator,
 ) -> Result<(), String> {
     let public = match error {
-        StoreError::WalRecovery(zeppelin_embed::wal::WalRecoveryError::InvalidHeader(reason)) => {
+        StoreError::WalRecovery(volantis_db::wal::WalRecoveryError::InvalidHeader(reason)) => {
             independent::WalTerminator::InvalidHeader {
                 artifact: WAL.to_owned(),
                 reason: independent_header_failure(*reason)?,
             }
         }
-        StoreError::WalRecovery(zeppelin_embed::wal::WalRecoveryError::CorruptAt {
+        StoreError::WalRecovery(volantis_db::wal::WalRecoveryError::CorruptAt {
             offset,
             reason,
         }) => {
@@ -2793,7 +2794,7 @@ fn observe_retry_from_operation_fixture(
         ),
         (
             Err(IngestError::Store(StoreError::WalWrite(
-                zeppelin_embed::wal::WalWriteError::Failed { kind, detail },
+                volantis_db::wal::WalWriteError::Failed { kind, detail },
             ))),
             Some(StorageReceiptObserved::WalAppend {
                 first_seq,
@@ -2962,9 +2963,9 @@ pub fn observe_retry(
     observe_retry_from_episode(&episode, op_index, fault)
 }
 
-fn format_check(check: zeppelin_embed::format::frame::FormatCheck) -> independent::FormatCheckFact {
+fn format_check(check: volantis_db::format::frame::FormatCheck) -> independent::FormatCheckFact {
     use independent::FormatCheckFact as Fact;
-    use zeppelin_embed::format::frame::FormatCheck as Product;
+    use volantis_db::format::frame::FormatCheck as Product;
     match check {
         Product::Length => Fact::Length,
         Product::Magic => Fact::Magic,
@@ -2997,21 +2998,21 @@ fn repair_segment_file_checksum(bytes: &mut [u8]) -> Result<(), String> {
 }
 
 fn observed_format_error(
-    error: &zeppelin_embed::format::frame::FormatError,
+    error: &volantis_db::format::frame::FormatError,
     selected_case: StorageFaultKind,
     segment_name: &str,
-    segment_id: zeppelin_embed::segment::SegmentId,
+    segment_id: volantis_db::segment::SegmentId,
     mutation: &StorageMutationEvidence,
 ) -> Result<independent::FormatRefusal, String> {
     let check = format_check(error.check());
     let (expected, actual) = match error.values() {
-        zeppelin_embed::format::frame::FormatValues::Family { expected, actual } => {
+        volantis_db::format::frame::FormatValues::Family { expected, actual } => {
             (u64::from(*expected), u64::from(*actual))
         }
-        zeppelin_embed::format::frame::FormatValues::Checksum { expected, actual } => {
+        volantis_db::format::frame::FormatValues::Checksum { expected, actual } => {
             (*expected, *actual)
         }
-        zeppelin_embed::format::frame::FormatValues::None => {
+        volantis_db::format::frame::FormatValues::None => {
             return Err(format!(
                 "public format check {:?} omitted typed value facts",
                 error.check()
@@ -3097,7 +3098,7 @@ fn donor_segment_bytes(
     operation_fixture: &StorageOperationFixture,
     fixture: &independent::StorageFixtureV1,
     pending_index: usize,
-    target: zeppelin_embed::segment::SegmentId,
+    target: volantis_db::segment::SegmentId,
 ) -> Result<(Vec<u8>, [u8; 16]), String> {
     let directory = copy_directory(operation_fixture.path())?;
     let pending = fixture
@@ -3268,7 +3269,7 @@ fn observe_format_case_from_operation_fixture(
     // allowing an unrelated geometry error to stand in for that contract.
     // Enable only: toggling this process-wide setting back off would race
     // other corruption fixtures running in the same test binary.
-    zeppelin_embed::segment::reader::set_query_checksum_verification(true);
+    volantis_db::segment::reader::set_query_checksum_verification(true);
     let (selected_case, same_family_identity) = match case {
         independent::FormatCase::SegmentRegion => (StorageFaultKind::CorruptSegmentRegion, false),
         independent::FormatCase::ManifestWrongFamily => {
@@ -3567,7 +3568,7 @@ fn observe_format_case_from_operation_fixture(
                 ));
             }
             Err(QueryError::Store(StoreError::Segment(
-                zeppelin_embed::segment::SegmentError::Format(error),
+                volantis_db::segment::SegmentError::Format(error),
             ))) => error,
             Err(error) => return Err(format!("wrong corrupt-region query error: {error:?}")),
         };
@@ -3577,15 +3578,15 @@ fn observe_format_case_from_operation_fixture(
         match (selected_case, result) {
             (
                 StorageFaultKind::WrongManifestObject,
-                Err(StoreError::Manifest(zeppelin_embed::manifest::ManifestError::Format(error))),
+                Err(StoreError::Manifest(volantis_db::manifest::ManifestError::Format(error))),
             ) => observed_format_error(&error, selected_case, &segment_name, id, &mutation)?,
             (
                 StorageFaultKind::WrongSegmentObject,
-                Err(StoreError::Segment(zeppelin_embed::segment::SegmentError::Format(error))),
+                Err(StoreError::Segment(volantis_db::segment::SegmentError::Format(error))),
             ) => observed_format_error(&error, selected_case, &segment_name, id, &mutation)?,
             (
                 StorageFaultKind::WrongSegmentObject,
-                Err(StoreError::Segment(zeppelin_embed::segment::SegmentError::WrongObject {
+                Err(StoreError::Segment(volantis_db::segment::SegmentError::WrongObject {
                     artifact,
                     expected,
                     actual,
@@ -4226,7 +4227,7 @@ fn publication_child(
     path: &Path,
     fault: StorageFaultKind,
     op_index: u32,
-    planned_segment: zeppelin_embed::segment::SegmentId,
+    planned_segment: volantis_db::segment::SegmentId,
     child_test_name: &str,
 ) -> Result<ChildAbortEvidence, String> {
     use std::io::Read as _;
@@ -4359,7 +4360,7 @@ fn observe_publication_from_operation_fixture(
     if !old_complete {
         return Err("clean old publication references an invalid segment".to_owned());
     }
-    let planned_segment = zeppelin_embed::segment::SegmentId::from_bytes(
+    let planned_segment = volantis_db::segment::SegmentId::from_bytes(
         independent::planned_publication_segment_id(&fixture)?,
     );
     let clean = copy_directory(base.path())?;
@@ -5727,7 +5728,7 @@ fn namespace_observe_with_options(
     names: &[&str],
     options: &OpenOptions,
 ) -> Result<independent::NamespaceImage, String> {
-    use zeppelin_embed::lifecycle::DocumentFields;
+    use volantis_db::lifecycle::DocumentFields;
     let mut image = independent::NamespaceImage::new();
     // Reopen in the reverse order: siblings must not supply recovery state.
     for &name in names.iter().rev() {
@@ -5736,7 +5737,7 @@ fn namespace_observe_with_options(
         let mut rows = std::collections::BTreeMap::new();
         let mut cursor = None;
         loop {
-            let mut request = zeppelin_embed::lifecycle::DocumentScanRequest::new(
+            let mut request = volantis_db::lifecycle::DocumentScanRequest::new(
                 2,
                 DocumentFields::NONE,
                 QueryControl::Cancel(CancelToken::new()),
@@ -5809,7 +5810,7 @@ fn namespace_run(
     phase: NamespacePhase,
 ) -> Result<independent::NamespaceImage, String> {
     use super::fault_vfs::{FaultEvent, FaultMode, FaultSchedule, FaultSite, Layer, ScheduledVfs};
-    use zeppelin_embed::lifecycle::{
+    use volantis_db::lifecycle::{
         LiveNamespaceMutation, NamespaceMutation, SystemMonotonicClock,
         namespace_batch_live_with_steps, namespace_reclaim,
     };
@@ -6094,7 +6095,7 @@ const CASCADE_STEPS: &[(&str, bool)] = &[
 ];
 
 fn cascade_run(seed: u64, fault: Option<&str>) -> Result<independent::NamespaceImage, String> {
-    use zeppelin_embed::lifecycle::{
+    use volantis_db::lifecycle::{
         CascadeRule, NamespaceMutation, namespace_declare_cascade,
         namespace_delete_cascade_with_steps,
     };
@@ -6376,7 +6377,7 @@ fn namespace_conversion_run(
     site: (&str, &str),
     inject: bool,
 ) -> Result<independent::NamespaceImage, String> {
-    use zeppelin_embed::lifecycle::namespace_relocate_with_steps;
+    use volantis_db::lifecycle::namespace_relocate_with_steps;
     let temp = tempdir().map_err(|e| e.to_string())?;
     let source = temp.path().join("source");
     copy_namespace_tree(
@@ -6418,8 +6419,8 @@ fn namespace_conversion_run(
     }
     let observed = if published {
         if inject && site.0 == "publish" {
-            use zeppelin_embed::lifecycle::{StoreTestDependencies, SystemMonotonicClock};
-            use zeppelin_embed::vfs::{
+            use volantis_db::lifecycle::{StoreTestDependencies, SystemMonotonicClock};
+            use volantis_db::vfs::{
                 SyncKind,
                 crash::{CrashOperation, RecordingVfs},
             };

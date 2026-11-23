@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { ABI_VERSION, Store, ZeppelinError } = require('..');
+const { ABI_VERSION, Store, VolantisError } = require('..');
 
 test('ingests and searches caller-supplied vectors through the C ABI', () => {
   const directory = mkdtempSync(join(tmpdir(), 'zeppelin-node-test-'));
@@ -101,7 +101,7 @@ test('rejects attributes before writing a Store.ingest batch', (t) => {
   assert.deepEqual(store.get([1n, 2n]).documents, [null, null]);
 });
 
-test('surfaces C ABI failures as ZeppelinError instances', () => {
+test('surfaces C ABI failures as VolantisError instances', () => {
   const directory = mkdtempSync(join(tmpdir(), 'zeppelin-node-error-'));
   const store = new Store(join(directory, 'index'));
   try {
@@ -112,7 +112,7 @@ test('surfaces C ABI failures as ZeppelinError instances', () => {
           3,
         ),
       (error) =>
-        error instanceof ZeppelinError &&
+        error instanceof VolantisError &&
         error.code === 'ZE_ERR_DIMENSION_MISMATCH' &&
         error.errorCode === 18,
     );
@@ -130,7 +130,7 @@ test('releases the handle and reports use after close', () => {
     assert.throws(
       () => store.search(new Float32Array([1, 0]), 1),
       (error) =>
-        error instanceof ZeppelinError && error.code === 'ZE_ERR_CLOSED',
+        error instanceof VolantisError && error.code === 'ZE_ERR_CLOSED',
     );
   } finally {
     rmSync(directory, { force: true, recursive: true });
@@ -140,9 +140,9 @@ test('releases the handle and reports use after close', () => {
 // Names are obtained dynamically from ze_error_code_name by the addon.
 // Pin the appended C value and the JavaScript error representation.
 test('graph epoch transition error retains its append-only name and value', () => {
-  const header = readFileSync(new URL('../../../crates/zeppelin-embed-ffi/include/zeppelin_embed.h', import.meta.url), 'utf8');
+  const header = readFileSync(new URL('../../../crates/volantis-db-ffi/include/volantis_db.h', import.meta.url), 'utf8');
   assert.match(header, /ZE_ERR_GRAPH_EPOCH_TRANSITION = 60,/);
-  const error = new ZeppelinError('graph epoch transition refused', 'ZE_ERR_GRAPH_EPOCH_TRANSITION', 60);
+  const error = new VolantisError('graph epoch transition refused', 'ZE_ERR_GRAPH_EPOCH_TRANSITION', 60);
   assert.equal(error.code, 'ZE_ERR_GRAPH_EPOCH_TRANSITION');
   assert.equal(error.errorCode, 60);
 });

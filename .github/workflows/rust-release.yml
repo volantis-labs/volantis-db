@@ -19,7 +19,7 @@ jobs:
 
   publish:
     needs: text-checks
-    name: Publish zeppelin-embed to crates.io
+    name: Publish volantis-db to crates.io
     runs-on: ubuntu-latest
     environment: crates-io
     steps:
@@ -45,14 +45,14 @@ jobs:
               raise SystemExit(f"release tag {actual!r} must be {expected!r}")
           PY
       - name: Verify packaged crate
-        run: cargo publish --dry-run --locked -p zeppelin-embed
+        run: cargo publish --dry-run --locked -p volantis-db
       - name: Publish crate
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --locked -p zeppelin-embed
+        run: cargo publish --locked -p volantis-db
 
   publish-text:
-    name: Publish zeppelin-embed-text to crates.io
+    name: Publish volantis-db-text to crates.io
     needs: [publish, text-checks]
     runs-on: macos-26
     environment: crates-io
@@ -78,12 +78,12 @@ jobs:
           actual = os.environ["RELEASE_TAG"]
           if actual != expected:
               raise SystemExit(f"release tag {actual!r} must be {expected!r}")
-          text = tomllib.loads(pathlib.Path("crates/zeppelin-embed-text/Cargo.toml").read_text())
+          text = tomllib.loads(pathlib.Path("crates/volantis-db-text/Cargo.toml").read_text())
           if text['package']['version'] != {'workspace': True}:
               raise SystemExit("text crate version must inherit the workspace version")
           for section in ('dependencies', 'dev-dependencies'):
-              if text[section]['zeppelin-embed']['version'] != f"={version}":
-                  raise SystemExit(f"{section}: zeppelin-embed must be pinned to ={version}")
+              if text[section]['volantis-db']['version'] != f"={version}":
+                  raise SystemExit(f"{section}: volantis-db must be pinned to ={version}")
           PY
       - name: Install Metal toolchain on Apple silicon
         run: |
@@ -93,7 +93,7 @@ jobs:
         # Allow the preceding core publish time to propagate through the index.
         run: |
           for attempt in 1 2 3 4 5; do
-            if cargo publish --dry-run --locked -p zeppelin-embed-text; then
+            if cargo publish --dry-run --locked -p volantis-db-text; then
               exit 0
             fi
             if [ "$attempt" -eq 5 ]; then
@@ -104,4 +104,4 @@ jobs:
       - name: Publish text crate
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --locked -p zeppelin-embed-text
+        run: cargo publish --locked -p volantis-db-text

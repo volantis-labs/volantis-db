@@ -4,21 +4,21 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use tempfile::tempdir;
-use zeppelin_embed::fts::index::DEFAULT_FIELD;
-use zeppelin_embed::fts::search::TermQuery;
-use zeppelin_embed::fusion::{
+use volantis_db::fts::index::DEFAULT_FIELD;
+use volantis_db::fts::search::TermQuery;
+use volantis_db::fusion::{
     FusionError, FusionLeg, FusionMethod, FusionTermination, HybridQuery, LegFailureKind,
     LexicalCandidate, VectorCandidate, execute_hybrid,
 };
-use zeppelin_embed::ingest::{
+use volantis_db::ingest::{
     DeleteBatch, DocId, DocumentVersion, IngestBatch, IngestDocument, Revision, SearchRequest,
 };
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::{
     CancelToken, HybridLegTestFault, OpenOptions, QueryControl, SearchOptions, SearchTier, Store,
     StoreTestDependencies, SystemMonotonicClock,
 };
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed_adversarial_oracle::hybrid_fusion::{
+use volantis_db::vfs::StdVfs;
+use volantis_db_adversarial_oracle::hybrid_fusion::{
     FusedHitFact, FusionCaseInput, FusionCaseObserved, FusionLegFact, FusionMethodFact,
     FusionReportFact, FusionTerminationFact, HybridInput, HybridObserved, LegFailureFact,
     LegFaultObserved, RankedScore, StorePolicyFact,
@@ -363,7 +363,7 @@ fn lexical_scores(store: &Store, term: &[u8], k: usize) -> Result<Vec<RankedScor
     Ok(scores)
 }
 
-fn report_fact(report: &zeppelin_embed::fusion::FusionReport, version: u16) -> FusionReportFact {
+fn report_fact(report: &volantis_db::fusion::FusionReport, version: u16) -> FusionReportFact {
     FusionReportFact {
         normalization_policy_version: Some(version),
         method: match report.method {
@@ -443,7 +443,7 @@ fn case_input(
         k: query.k,
         alpha_bits: query
             .alpha
-            .unwrap_or(zeppelin_embed::fusion::DEFAULT_ALPHA)
+            .unwrap_or(volantis_db::fusion::DEFAULT_ALPHA)
             .to_bits(),
         max_rounds: query.max_rounds,
         vector: vector.to_vec(),
@@ -767,7 +767,7 @@ pub fn run_hybrid_operation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zeppelin_embed_adversarial_oracle::hybrid_fusion as oracle;
+    use volantis_db_adversarial_oracle::hybrid_fusion as oracle;
 
     #[test]
     fn astra_03_fixed_policy_cross_fill_and_certificate_plants() {

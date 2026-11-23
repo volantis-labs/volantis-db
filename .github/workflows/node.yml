@@ -8,9 +8,9 @@ on:
       - "scripts/size-budget.sh"
       - "Cargo.lock"
       - "Cargo.toml"
-      - "crates/zeppelin-embed/**"
-      - "crates/zeppelin-embed-ffi/**"
-      - "crates/zeppelin-embed-text/**"
+      - "crates/volantis-db/**"
+      - "crates/volantis-db-ffi/**"
+      - "crates/volantis-db-text/**"
       - "bindings/node/**"
       - "bindings/fixtures/required_api_v1.json"
       - "scripts/release/package-native.py"
@@ -23,9 +23,9 @@ on:
       - "scripts/size-budget.sh"
       - "Cargo.lock"
       - "Cargo.toml"
-      - "crates/zeppelin-embed/**"
-      - "crates/zeppelin-embed-ffi/**"
-      - "crates/zeppelin-embed-text/**"
+      - "crates/volantis-db/**"
+      - "crates/volantis-db-ffi/**"
+      - "crates/volantis-db-text/**"
       - "bindings/node/**"
       - "bindings/fixtures/required_api_v1.json"
       - "scripts/release/package-native.py"
@@ -85,30 +85,30 @@ jobs:
         run: |
           set -euo pipefail
           for t in aarch64-apple-darwin x86_64-apple-darwin; do
-            nm -gU "target/native-archives/$t/libzeppelin_embed_ffi.a" | grep ' T _ze_store_graph_apply$'
-            du -k "target/native-archives/$t/libzeppelin_embed_ffi.a"
-            size "target/native-archives/$t/libzeppelin_embed_ffi.a"
+            nm -gU "target/native-archives/$t/libvolantis_db_ffi.a" | grep ' T _ze_store_graph_apply$'
+            du -k "target/native-archives/$t/libvolantis_db_ffi.a"
+            size "target/native-archives/$t/libvolantis_db_ffi.a"
             if [ "$t" = aarch64-apple-darwin ]; then
-              scripts/size-budget.sh --text-graph-archive "target/native-archives/$t/libzeppelin_embed_ffi.a"
+              scripts/size-budget.sh --text-graph-archive "target/native-archives/$t/libvolantis_db_ffi.a"
             else
-              scripts/size-budget.sh --graph-archive "target/native-archives/$t/libzeppelin_embed_ffi.a"
+              scripts/size-budget.sh --graph-archive "target/native-archives/$t/libvolantis_db_ffi.a"
             fi
           done
           python3 scripts/tests/native-packaging.py \
-            --archive target/macos-13.0/aarch64-apple-darwin/release/libzeppelin_embed_ffi.a target/native-archives/aarch64-apple-darwin/libzeppelin_embed_ffi.a \
-            --archive target/macos-11.0/x86_64-apple-darwin/release/libzeppelin_embed_ffi.a target/native-archives/x86_64-apple-darwin/libzeppelin_embed_ffi.a \
-            --addon bindings/node/prebuilds/darwin-arm64/zeppelin_embed.node \
-            --addon bindings/node/prebuilds/darwin-x64/zeppelin_embed.node
+            --archive target/macos-13.0/aarch64-apple-darwin/release/libvolantis_db_ffi.a target/native-archives/aarch64-apple-darwin/libvolantis_db_ffi.a \
+            --archive target/macos-11.0/x86_64-apple-darwin/release/libvolantis_db_ffi.a target/native-archives/x86_64-apple-darwin/libvolantis_db_ffi.a \
+            --addon bindings/node/prebuilds/darwin-arm64/volantis_db.node \
+            --addon bindings/node/prebuilds/darwin-x64/volantis_db.node
       - name: Install the graph header test generator
         if: env.MINIMAL_RELEASE != 'true'
         run: cargo install cbindgen --version 0.29.4 --locked
       - name: Run the graph suites against the x86_64 target
         if: env.MINIMAL_RELEASE != 'true'
         run: |
-          cargo test --locked --target x86_64-apple-darwin -p zeppelin-embed-ffi --features graph-cypher --test ffi_graph_entry --test ffi_graph_contract --test ffi_graph_layout --test ffi_graph_header
-          cargo test --locked --target x86_64-apple-darwin -p zeppelin-embed-cypher
-          cargo test --locked --target x86_64-apple-darwin -p zeppelin-embed --features graph-cypher --test graph_artifact
-          cargo test --locked --target x86_64-apple-darwin -p zeppelin-embed --lib --features graph-cypher lifecycle::lock
+          cargo test --locked --target x86_64-apple-darwin -p volantis-db-ffi --features graph-cypher --test ffi_graph_entry --test ffi_graph_contract --test ffi_graph_layout --test ffi_graph_header
+          cargo test --locked --target x86_64-apple-darwin -p volantis-db-cypher
+          cargo test --locked --target x86_64-apple-darwin -p volantis-db --features graph-cypher --test graph_artifact
+          cargo test --locked --target x86_64-apple-darwin -p volantis-db --lib --features graph-cypher lifecycle::lock
       # The package suite includes the crash-safety suite, which kills a
       # writer at seeded points and verifies the store; its per-round results
       # are kept with full runs; the owner waived this campaign for 0.7.0.
@@ -145,10 +145,10 @@ jobs:
           for slice in darwin-arm64:arm64 darwin-x64:x86_64; do
             directory="${slice%%:*}"
             architecture="${slice##*:}"
-            binary="bindings/node/prebuilds/$directory/zeppelin_embed.node"
+            binary="bindings/node/prebuilds/$directory/volantis_db.node"
             file -b "$binary" | grep -Fqx "Mach-O 64-bit bundle $architecture"
-            if otool -L "$binary" | grep -q 'zeppelin_embed_ffi'; then
-              echo "$binary unexpectedly depends on a separate Zeppelin FFI dylib" >&2
+            if otool -L "$binary" | grep -q 'volantis_db_ffi'; then
+              echo "$binary unexpectedly depends on a separate Volantis DB FFI dylib" >&2
               exit 1
             fi
             echo "$binary: Mach-O 64-bit bundle $architecture, engine linked in"
@@ -189,7 +189,7 @@ jobs:
           consumer=$(mktemp -d)
           cp test/installed-package-smoke.cjs "$consumer/smoke.cjs"
           cp test/installed-package-type-smoke.ts "$consumer/type-smoke.ts"
-          cp "$GITHUB_WORKSPACE/crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem" "$consumer/gte.zem"
+          cp "$GITHUB_WORKSPACE/crates/volantis-db-text/tests/fixtures/ze115/gte.zem" "$consumer/gte.zem"
           cd "$consumer"
           npm init --yes >/dev/null
           npm install "$GITHUB_WORKSPACE/bindings/node/$tarball"
@@ -242,14 +242,14 @@ jobs:
       - name: Verify the FFI archive carries the graph entry points
         shell: cmd
         run: |
-          dumpbin /symbols target\native-archives\x86_64-pc-windows-msvc\zeppelin_embed_ffi.lib | findstr /C:"ze_store_graph_apply"
+          dumpbin /symbols target\native-archives\x86_64-pc-windows-msvc\volantis_db_ffi.lib | findstr /C:"ze_store_graph_apply"
           if errorlevel 1 exit /b 1
-          dumpbin /headers target\native-archives\x86_64-pc-windows-msvc\zeppelin_embed_ffi.lib > "%RUNNER_TEMP%\archive-headers.txt"
+          dumpbin /headers target\native-archives\x86_64-pc-windows-msvc\volantis_db_ffi.lib > "%RUNNER_TEMP%\archive-headers.txt"
           if errorlevel 1 exit /b 1
-          dir target\native-archives\x86_64-pc-windows-msvc\zeppelin_embed_ffi.lib
+          dir target\native-archives\x86_64-pc-windows-msvc\volantis_db_ffi.lib
       - name: Record Windows archive disk usage
         shell: bash
-        run: du -k target/native-archives/x86_64-pc-windows-msvc/zeppelin_embed_ffi.lib
+        run: du -k target/native-archives/x86_64-pc-windows-msvc/volantis_db_ffi.lib
       # Measurement tooling can be repaired without changing an immutable tag.
       - uses: actions/checkout@v6
         with:
@@ -265,16 +265,16 @@ jobs:
           llvm_bin="$(python -c 'from pathlib import Path; import subprocess; print(Path(subprocess.check_output(["rustc", "--print", "target-libdir"], text=True).strip()).parent / "bin")')"
           export PATH="$(cygpath -u "$llvm_bin"):$PATH"
           export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target"
-          bash .release-tooling/scripts/size-budget.sh --graph-archive "$GITHUB_WORKSPACE/target/native-archives/x86_64-pc-windows-msvc/zeppelin_embed_ffi.lib"
+          bash .release-tooling/scripts/size-budget.sh --graph-archive "$GITHUB_WORKSPACE/target/native-archives/x86_64-pc-windows-msvc/volantis_db_ffi.lib"
       - name: Verify Windows packaging contracts
         shell: bash
         run: |
           python scripts/tests/native-packaging.py \
-            --archive target/x86_64-pc-windows-msvc/release/zeppelin_embed_ffi.lib target/native-archives/x86_64-pc-windows-msvc/zeppelin_embed_ffi.lib \
-            --addon bindings/node/prebuilds/win32-x64/node-napi8/zeppelin_embed.node \
-            --addon bindings/node/prebuilds/win32-x64/electron-44/zeppelin_embed.node
+            --archive target/x86_64-pc-windows-msvc/release/volantis_db_ffi.lib target/native-archives/x86_64-pc-windows-msvc/volantis_db_ffi.lib \
+            --addon bindings/node/prebuilds/win32-x64/node-napi8/volantis_db.node \
+            --addon bindings/node/prebuilds/win32-x64/electron-44/volantis_db.node
       - name: Record Windows native static libraries
-        run: cargo rustc --locked --target x86_64-pc-windows-msvc -p zeppelin-embed-ffi --features graph-cypher --crate-type staticlib -- --print native-static-libs
+        run: cargo rustc --locked --target x86_64-pc-windows-msvc -p volantis-db-ffi --features graph-cypher --crate-type staticlib -- --print native-static-libs
       - name: Run the graph suites natively on Windows
         if: env.MINIMAL_RELEASE != 'true'
         # pwsh, not bash: Git's /usr/bin/link shadows the MSVC linker.
@@ -282,17 +282,17 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          cargo test --locked -p zeppelin-embed-ffi --features graph-cypher --test ffi_graph_entry --test ffi_graph_contract --test ffi_graph_layout
-          cargo test --locked -p zeppelin-embed-cypher
-          cargo test --locked -p zeppelin-embed --features graph-cypher --test graph_artifact
-          cargo test --locked -p zeppelin-embed --lib --features graph-cypher lifecycle::lock
-          cargo test --locked -p zeppelin-embed --lib --features graph-cypher sys::windows::entropy_tests
+          cargo test --locked -p volantis-db-ffi --features graph-cypher --test ffi_graph_entry --test ffi_graph_contract --test ffi_graph_layout
+          cargo test --locked -p volantis-db-cypher
+          cargo test --locked -p volantis-db --features graph-cypher --test graph_artifact
+          cargo test --locked -p volantis-db --lib --features graph-cypher lifecycle::lock
+          cargo test --locked -p volantis-db --lib --features graph-cypher sys::windows::entropy_tests
           $nativeGraphTestArgs = @()
           # Owner waived only this slow test for the 0.7.0 release.
           if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.release_tag }}' -eq 'v0.7.0') {
             $nativeGraphTestArgs = @('--', '--skip', 'lifecycle::native_graph::tests::mapping_slots::ze316_count_reclaim_bounds_census_and_work')
           }
-          cargo test --locked -p zeppelin-embed --lib --features graph-cypher lifecycle::native_graph @nativeGraphTestArgs
+          cargo test --locked -p volantis-db --lib --features graph-cypher lifecycle::native_graph @nativeGraphTestArgs
       # On Windows the crash-safety suite's kill is TerminateProcess.
       - run: npm test
         if: env.MINIMAL_RELEASE != 'true'
@@ -312,7 +312,7 @@ jobs:
       # Packs, installs into a consumer created outside the repository, runs
       # the runtime smoke there and type-checks against the installed
       # declarations. A consumer outside the build tree cannot resolve a
-      # Zeppelin DLL out of `target`, so this also proves the addon carries the
+      # Volantis DB DLL out of `target`, so this also proves the addon carries the
       # engine inside it, which is what `otool` checks on the macOS side.
       - run: npm run smoke:install
         working-directory: bindings/node
@@ -428,7 +428,7 @@ jobs:
         run: npm run verify:release -- "${{ steps.pack.outputs.tarball }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: zeppelin-embed-node-package
+          name: volantis-db-node-package
           path: bindings/node/${{ steps.pack.outputs.tarball }}
           if-no-files-found: error
 
@@ -444,7 +444,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: zeppelin-embed-node-package
+          name: volantis-db-node-package
           path: package
       - uses: actions/setup-node@v6
         with:

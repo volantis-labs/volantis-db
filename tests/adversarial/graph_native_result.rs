@@ -2,7 +2,7 @@
 
 use super::coverage::CoverageRegistry;
 use std::collections::BTreeSet;
-use zeppelin_embed::property_graph::query::native_result_test_support::run_actual_probe;
+use volantis_db::property_graph::query::native_result_test_support::run_actual_probe;
 
 const RECEIPTS: [&str; 8] = [
     "copy",

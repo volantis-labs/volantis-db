@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { ZeppelinError, openNamespace } = require('..');
+const { VolantisError, openNamespace } = require('..');
 
 // Page-cache durability keeps the timing gates about the engine, not fsync.
 const FAST = { durability: 'durable', commitTier: 'none' };
@@ -87,7 +87,7 @@ test('seal on a closed store reports ZE_ERR_CLOSED', () => {
     store.close();
     assert.throws(
       () => store.seal(),
-      (error) => error instanceof ZeppelinError && error.code === 'ZE_ERR_CLOSED',
+      (error) => error instanceof VolantisError && error.code === 'ZE_ERR_CLOSED',
     );
   } finally {
     rmSync(root, { force: true, recursive: true });

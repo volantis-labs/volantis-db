@@ -1,4 +1,4 @@
-use zeppelin_embed_adversarial_oracle::graph_profile::*;
+use volantis_db_adversarial_oracle::graph_profile::*;
 #[test]
 fn ze74_detects_declared_semantic_mismatches() {
     let expected = Observation {

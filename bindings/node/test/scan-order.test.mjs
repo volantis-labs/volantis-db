@@ -9,7 +9,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { ZeppelinError, openNamespace } = require('..');
+const { VolantisError, openNamespace } = require('..');
 
 const spec = {
   attributes: [
@@ -56,7 +56,7 @@ function scanAll(store, order, limit) {
 
 function invalid(message) {
   return (error) =>
-    error instanceof ZeppelinError &&
+    error instanceof VolantisError &&
     error.code === 'ZE_ERR_INVALID_ARGUMENT' &&
     error.message.includes(message);
 }
@@ -172,7 +172,7 @@ test('a cursor from a different order is rejected, and writes make it stale', ()
     store.upsert([numbers(3n, 3n, 3n, 3)]);
     assert.throws(
       () => store.scan({ limit: 1, order: byStart, cursor: first.cursor }),
-      (error) => error instanceof ZeppelinError && error.code === 'ZE_ERR_SCAN_STALE',
+      (error) => error instanceof VolantisError && error.code === 'ZE_ERR_SCAN_STALE',
     );
   });
 });

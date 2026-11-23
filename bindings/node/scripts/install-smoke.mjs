@@ -99,8 +99,8 @@ try {
   // install below would succeed and the require would fail confusingly.
   const expectedBinary =
     process.platform === 'win32'
-      ? 'prebuilds/win32-x64/node-napi8/zeppelin_embed.node'
-      : `prebuilds/darwin-${process.arch}/zeppelin_embed.node`;
+      ? 'prebuilds/win32-x64/node-napi8/volantis_db.node'
+      : `prebuilds/darwin-${process.arch}/volantis_db.node`;
   const entries = report[0].files.map((file) => file.path);
   if (!entries.includes(expectedBinary)) {
     throw new Error(
@@ -135,7 +135,7 @@ try {
     join(packageDirectory, 'test', 'installed-package-smoke.cjs'),
     join(consumer, 'smoke.cjs'),
   );
-  copyFileSync(join(packageDirectory, '..', '..', 'crates', 'zeppelin-embed-text', 'tests', 'fixtures', 'ze115', 'gte.zem'), join(consumer, 'gte.zem'));
+  copyFileSync(join(packageDirectory, '..', '..', 'crates', 'volantis-db-text', 'tests', 'fixtures', 'ze115', 'gte.zem'), join(consumer, 'gte.zem'));
   // 4. Compile the TypeScript example against the installed type declarations.
   copyFileSync(
     join(packageDirectory, 'test', 'installed-package-type-smoke.ts'),

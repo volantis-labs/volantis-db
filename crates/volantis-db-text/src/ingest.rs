@@ -1,0 +1,2581 @@
+mod namespace_model;
+pub use namespace_model::NamespaceModel;
+use std::collections::{BTreeMap, VecDeque};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, mpsc};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+use crate::bundle::Bundle;
+use crate::epoch::{document_epoch, embedding_epoch};
+use crate::error::TextError;
+use crate::query::{Legs, QueryBackend, QueryOptions, TextHit, TextQueryOutcome, TextQueryTimings};
+use crate::runtime::mlx::MlxRuntime;
+use crate::runtime::{EmbeddingBatch, ModelRuntime, RuntimeError};
+use crate::tower::{TokenBatch, TowerRole};
+use volantis_db::epoch::{EpochIdentity, Normalization, StoreEpoch};
+use volantis_db::fts::index::DEFAULT_FIELD;
+use volantis_db::fts::search::TermQuery;
+use volantis_db::fts::tokenizer::{Analyzer, TokenizerConfig};
+use volantis_db::fusion::HybridQuery;
+use volantis_db::ingest::{
+    DeleteBatch, DocId, DocumentVersion, ExpectedRevision, IngestAck, IngestBatch, IngestDocument,
+    Revision, SearchRequest,
+};
+use volantis_db::lifecycle::{
+    CancelToken, HybridPreparationError, OpenOptions, QueryControl, SearchOptions, Store,
+    StoreError,
+};
+use volantis_db::tier::{MaintenanceBudget, MaintenanceReport, MaintenanceStatus};
+
+const CALLER_BITS: u32 = 96;
+const DEFAULT_MAINTENANCE_BYTES: u64 = 256 * 1024 * 1024;
+// One core merge batch admits 16 inputs: the previous output plus 15 seals.
+const MERGE_EVERY_SEALS: usize = 15;
+
+const CHUNK_BITS: u32 = 32;
+
+/// One caller-owned text revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TextDocument {
+    /// Caller id occupying at most 96 bits.
+    pub id: u128,
+    /// Monotonic revision.
+    pub revision: u64,
+    /// UTF-8 text to store and embed.
+    pub text: String,
+}
+
+impl TextDocument {
+    /// Constructs one text revision.
+    #[must_use]
+    pub fn new(id: u128, revision: u64, text: impl Into<String>) -> Self {
+        Self {
+            id,
+            revision,
+            text: text.into(),
+        }
+    }
+}
+
+/// Long-document splitting policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChunkPolicy {
+    /// Reject text whose model tokens exceed the tower maximum.
+    None,
+    /// Split into overlapping token-count windows.
+    Tokens {
+        /// Maximum approximate source tokens per chunk.
+        max: usize,
+        /// Repeated tokens between neighboring chunks.
+        overlap: usize,
+    },
+}
+
+/// Ingest pipeline controls.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IngestOptions {
+    /// Documents tokenized per worker job and embedded per MLX call.
+    pub embed_batch_size: usize,
+    /// Core documents per ingest call and periodic seal boundary.
+    pub seal_every: usize,
+    /// Bounded tokenized-batch channel capacity.
+    pub channel_capacity: usize,
+    /// Long-document splitting policy.
+    pub chunk_policy: ChunkPolicy,
+    /// Maintenance wall-time allowance per seal.
+    pub maintenance_wall_time: Duration,
+    /// Maintenance byte allowance per seal.
+    pub maintenance_bytes: u64,
+}
+
+impl Default for IngestOptions {
+    fn default() -> Self {
+        Self {
+            embed_batch_size: 32,
+            seal_every: 4_096,
+            channel_capacity: 2,
+            chunk_policy: ChunkPolicy::Tokens {
+                max: 510,
+                overlap: 32,
+            },
+            maintenance_wall_time: Duration::from_millis(25),
+            maintenance_bytes: DEFAULT_MAINTENANCE_BYTES,
+        }
+    }
+}
+
+/// Cooperative cancellation shared by every ingest stage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[doc(hidden)]
+pub enum TextFaultSite {
+    /// Panic inside the persistent embed worker command boundary.
+    EmbedWorkerPanic,
+    /// Close the tokenized-batch channel before all jobs are delivered.
+    ChannelClosedEarly,
+    /// Close the core store after ingest and before a periodic seal.
+    SealFailureMidStream,
+}
+
+impl TextFaultSite {
+    /// Stable adversarial coverage-registry key.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn coverage_key(self) -> &'static str {
+        match self {
+            Self::EmbedWorkerPanic => "fault.site.embed-worker-panic",
+            Self::ChannelClosedEarly => "fault.site.channel-closed-early",
+            Self::SealFailureMidStream => "fault.site.seal-failure-mid-stream",
+        }
+    }
+
+    const fn bit(self) -> usize {
+        match self {
+            Self::EmbedWorkerPanic => 1,
+            Self::ChannelClosedEarly => 2,
+            Self::SealFailureMidStream => 4,
+        }
+    }
+}
+
+/// Cooperative cancellation, deadline and deterministic fault control for one ingest call.
+#[derive(Clone, Debug)]
+pub struct IngestControl {
+    cancelled: Arc<AtomicBool>,
+    external_control: Option<QueryControl>,
+    fault: Option<TextFaultSite>,
+    fired: Arc<AtomicUsize>,
+}
+
+impl IngestControl {
+    /// Constructs an active control.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+            external_control: None,
+            fault: None,
+            fired: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// Shares a core cancellation token or deadline with the ingest pipeline.
+    #[must_use]
+    pub fn with_query_control(mut self, control: QueryControl) -> Self {
+        self.external_control = Some(control);
+        self
+    }
+
+    fn external_checkpoint(&self) -> Result<(), TextError> {
+        if let Some(control) = &self.external_control {
+            control.checkpoint().map_err(TextError::Query)?;
+        }
+        Ok(())
+    }
+
+    /// Arms one deterministic adversarial pipeline site.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_fault(mut self, site: TextFaultSite) -> Self {
+        self.fault = Some(site);
+        self
+    }
+
+    /// Reports whether the armed site fired.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn fault_fired(&self, site: TextFaultSite) -> bool {
+        self.fired.load(Ordering::Relaxed) & site.bit() != 0
+    }
+
+    /// Requests pipeline cancellation.
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Relaxed) || self.external_checkpoint().is_err()
+    }
+
+    fn fire(&self, site: TextFaultSite) -> bool {
+        if self.fault != Some(site) {
+            return false;
+        }
+        self.fired.fetch_or(site.bit(), Ordering::Relaxed) & site.bit() == 0
+    }
+}
+
+impl Default for IngestControl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Deterministic and measured facts from one completed ingest.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextIngestReport {
+    /// Final acknowledged store generation.
+    pub generation: u64,
+    /// Caller documents consumed.
+    pub documents: usize,
+    /// Core chunk rows written.
+    pub chunks: usize,
+    /// Model tokens evaluated, including special tokens and padding.
+    pub tokens: usize,
+    /// MLX batch calls.
+    pub embed_batches: usize,
+    /// Periodic seal calls.
+    pub seals: usize,
+    /// Largest number of token batches concurrently buffered.
+    pub max_in_flight_batches: usize,
+    /// True only after every per-call worker was joined.
+    pub all_threads_joined: bool,
+    /// End-to-end wall time, for recorded baseline evidence only.
+    pub elapsed: Duration,
+}
+
+/// Options that bind the lexical analyzer and core open policy together.
+#[derive(Clone, Debug)]
+pub struct TextOpenOptions {
+    store: OpenOptions,
+    lexical: TokenizerConfig,
+    mlx_cache_limit_bytes: Option<usize>,
+}
+
+impl TextOpenOptions {
+    /// Creates text options around an existing core policy and analyzer.
+    #[must_use]
+    pub const fn new(store: OpenOptions, lexical: TokenizerConfig) -> Self {
+        Self {
+            store,
+            lexical,
+            mlx_cache_limit_bytes: None,
+        }
+    }
+
+    /// Sets the process-global MLX buffer cache limit in bytes (zero disables caching).
+    /// Later explicit limits must agree with the first setting. At first
+    /// startup this option overrides ZE_MLX_CACHE_LIMIT_BYTES, then
+    /// DEFAULT_MLX_CACHE_LIMIT_BYTES. An invalid environment value is an error.
+    #[must_use]
+    pub const fn with_mlx_cache_limit_bytes(mut self, bytes: usize) -> Self {
+        self.mlx_cache_limit_bytes = Some(bytes);
+        self
+    }
+}
+
+impl Default for TextOpenOptions {
+    fn default() -> Self {
+        Self::new(OpenOptions::default(), TokenizerConfig::text_default())
+    }
+}
+
+/// Store plus one bundle-bound tokenizer and persistent embed thread.
+pub struct TextStore {
+    store: Arc<Store>,
+    bundle: Arc<Bundle>,
+    analyzer: Analyzer,
+    runtime: RuntimeClient,
+    epoch: EpochIdentity,
+    document_epoch: EpochIdentity,
+    versions: Mutex<BTreeMap<DocId, Revision>>,
+    seals_since_merge: AtomicUsize,
+    warm_cancel: CancelToken,
+    warm: Mutex<WarmThread>,
+}
+
+impl TextStore {
+    /// Opens the published default model through the verified model cache.
+    pub fn open_default_model(
+        store_path: impl AsRef<Path>,
+        options: crate::ModelOpenOptions<'_>,
+    ) -> Result<Self, TextError> {
+        Self::open_model(store_path, &crate::ModelRef::default_model(), options)
+    }
+
+    /// Resolves a pinned model into the verified cache, then opens the text store.
+    pub fn open_model(
+        store_path: impl AsRef<Path>,
+        model: &crate::ModelRef,
+        options: crate::ModelOpenOptions<'_>,
+    ) -> Result<Self, TextError> {
+        crate::runtime::mlx_cache::check_explicit(options.text.mlx_cache_limit_bytes)?;
+        let bundle = crate::resolve_model(model, &options).map_err(TextError::ModelResolution)?;
+        Self::open(store_path, bundle, options.text)
+    }
+
+    /// Opens a `.zem` bundle and a store stamped with its two-tower epoch.
+    pub fn open(
+        store_path: impl AsRef<Path>,
+        bundle_path: impl AsRef<Path>,
+        options: TextOpenOptions,
+    ) -> Result<Self, TextError> {
+        crate::runtime::mlx_cache::check_explicit(options.mlx_cache_limit_bytes)?;
+        let bundle_path = bundle_path.as_ref().to_path_buf();
+        let bundle = Arc::new(Bundle::open(&bundle_path)?);
+        let analyzer =
+            Analyzer::new(options.lexical.clone()).map_err(|error| TextError::Pipeline {
+                stage: "lexical analyzer",
+                detail: error.to_string(),
+            })?;
+        let public_epoch = StoreEpoch {
+            embedding: embedding_epoch(&bundle),
+            tokenizer: analyzer.epoch(),
+        };
+        let epoch = public_epoch.identity();
+        let store_epoch = StoreEpoch {
+            embedding: document_epoch(&bundle),
+            tokenizer: analyzer.epoch(),
+        };
+        let document_epoch = store_epoch.identity();
+        let store = Arc::new(
+            Store::open(
+                store_path,
+                options
+                    .store
+                    .with_epoch(store_epoch)
+                    .with_tokenizer(options.lexical),
+            )
+            .map_err(TextError::Store)?,
+        );
+        let reconcile = match store.seal() {
+            Ok(_) => {
+                store.merge_sealed().map_err(TextError::Seal)?;
+                true
+            }
+            // A read-only handle cannot reconcile; the next read-write open does.
+            Err(StoreError::ReadOnly) => false,
+            Err(error) => return Err(TextError::Seal(error)),
+        };
+        let versions = load_versions(&store, reconcile)?;
+        crate::runtime::mlx_cache::configure(options.mlx_cache_limit_bytes)?;
+        let runtime =
+            RuntimeClient::start(Arc::clone(&bundle), discover_query_coreml(&bundle_path))?;
+        let warm_cancel = CancelToken::new();
+        let warm_store = Arc::clone(&store);
+        let warm_dims = bundle.document_tower().embedding.dims as usize;
+        let warm_control = QueryControl::Cancel(warm_cancel.clone());
+        let warm = std::thread::Builder::new()
+            .name("ze-text-warm".to_owned())
+            .spawn(move || {
+                use volantis_db::ingest::StoreLexicalError;
+                use volantis_db::lifecycle::QueryError;
+                match warm_store.warm_lexical(warm_control.clone()) {
+                    Err(StoreLexicalError::Query(
+                        QueryError::Cancelled { .. }
+                        | QueryError::Scan(volantis_db::scan::ScanError::Cancelled { .. }),
+                    )) => return Ok(false),
+                    result => result.map_err(TextError::Lexical)?,
+                }
+                let mut vector = vec![0.0; warm_dims];
+                let first = vector.first_mut().ok_or(TextError::InvalidInput(
+                    "vector warm-up requires a nonzero dimension",
+                ))?;
+                *first = 1.0;
+                match warm_store.search(
+                    SearchRequest::new(&vector),
+                    1,
+                    SearchOptions::new(Default::default()),
+                    warm_control,
+                ) {
+                    Err(
+                        QueryError::Cancelled { .. }
+                        | QueryError::Scan(volantis_db::scan::ScanError::Cancelled { .. }),
+                    ) => Ok(false),
+                    result => result.map(|_| true).map_err(TextError::Query),
+                }
+            })
+            .map_err(|error| TextError::Pipeline {
+                stage: "warm start",
+                detail: error.to_string(),
+            })?;
+        Ok(Self {
+            store,
+            bundle,
+            analyzer,
+            runtime,
+            epoch,
+            document_epoch,
+            versions: Mutex::new(versions),
+            seals_since_merge: AtomicUsize::new(0),
+            warm_cancel,
+            warm: Mutex::new(WarmThread {
+                thread: Some(warm),
+                error: None,
+                #[cfg(test)]
+                vector_warmed: false,
+            }),
+        })
+    }
+
+    /// Returns the immutable bundle-derived store identity.
+    #[must_use]
+    pub const fn epoch(&self) -> EpochIdentity {
+        self.epoch
+    }
+
+    /// Returns the loaded query runtime and its requested compute policy.
+    /// Queries never load the plan. Call `observed_compute_units()` once to
+    /// populate counts carried by subsequent diagnostics queries. This cheap
+    /// snapshot always has `observed_compute_units: None`, even after that call.
+    #[must_use]
+    pub const fn query_backend(&self) -> QueryBackend {
+        self.runtime.query_backend
+    }
+
+    /// Explicitly loads query placement diagnostics and caches successful results.
+    /// Queries never load the plan; call this once to populate counts carried by
+    /// subsequent diagnostics queries. Queries never wait for an in-progress load.
+    /// Returns `None` for MLX or macOS before 14.4. Failures are retried on the
+    /// next explicit call and never affect any query.
+    pub fn observed_compute_units(&self) -> Result<Option<crate::ObservedComputeUnits>, TextError> {
+        #[cfg(target_os = "macos")]
+        if let Some(plan) = &self.runtime.compute_plan {
+            return plan.observed_compute_units().map_err(TextError::Runtime);
+        }
+        Ok(None)
+    }
+
+    /// Waits for open-time warm-up to finish.
+    #[doc(hidden)]
+    pub fn wait_for_warm(&self) -> Result<(), TextError> {
+        let warm = self.join_warm()?;
+        match &warm.error {
+            Some(error) => Err(TextError::Pipeline {
+                stage: "warm",
+                detail: error.to_string(),
+            }),
+            None => Ok(()),
+        }
+    }
+
+    fn join_warm(&self) -> Result<MutexGuard<'_, WarmThread>, TextError> {
+        let mut warm = self.warm.lock().map_err(|_| TextError::Pipeline {
+            stage: "warm join",
+            detail: "join mutex poisoned".to_owned(),
+        })?;
+        if let Some(thread) = warm.thread.take() {
+            warm.error = match thread.join() {
+                Ok(Ok(_vector_warmed)) => {
+                    #[cfg(test)]
+                    {
+                        warm.vector_warmed = _vector_warmed;
+                    }
+                    None
+                }
+                Ok(Err(error)) => Some(error),
+                Err(_) => Some(TextError::Pipeline {
+                    stage: "warm join",
+                    detail: "thread panicked".to_owned(),
+                }),
+            };
+        }
+        Ok(warm)
+    }
+
+    /// Returns successful document-tower loads for this store session.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn document_tower_loads(&self) -> usize {
+        self.runtime.document_loads.load(Ordering::Relaxed)
+    }
+
+    /// Returns current store health without changing engine behavior.
+    pub fn health(&self) -> Result<volantis_db::diag::Health, TextError> {
+        self.store.health().map_err(TextError::Store)
+    }
+
+    /// Runs due tier transitions within a host-supplied work budget.
+    pub fn maintain(&self, budget: MaintenanceBudget) -> Result<MaintenanceReport, TextError> {
+        let report = self.store.maintain(budget);
+        if let MaintenanceStatus::Failed(error) = &report.status {
+            return Err(TextError::Pipeline {
+                stage: "maintenance",
+                detail: error.to_string(),
+            });
+        }
+        Ok(report)
+    }
+
+    /// Repeats bounded maintenance slices until every due transition completes.
+    ///
+    /// Each core call observes the supplied wall and byte limits. A slice that
+    /// exhausts its budget without consuming any work fails loudly instead of
+    /// spinning forever.
+    pub fn maintain_to_completion(
+        &self,
+        budget: MaintenanceBudget,
+    ) -> Result<MaintenanceReport, TextError> {
+        if budget.wall_time.is_zero() {
+            return Err(TextError::InvalidInput(
+                "maintenance-to-completion wall time must be nonzero",
+            ));
+        }
+        if budget.bytes == 0 {
+            return Err(TextError::InvalidInput(
+                "maintenance-to-completion byte budget must be nonzero",
+            ));
+        }
+        let mut aggregate = empty_maintenance_report();
+        loop {
+            let mut slice = self.maintain(budget)?;
+            let complete = matches!(slice.status, MaintenanceStatus::Complete);
+            let progressed = slice.bytes_consumed != 0
+                || slice.graphs_built != 0
+                || slice.consolidations != 0
+                || slice.passes_applied != 0;
+            merge_maintenance_reports(&mut aggregate, &mut slice)?;
+            if complete {
+                aggregate.status = MaintenanceStatus::Complete;
+                return Ok(aggregate);
+            }
+            if !progressed {
+                return Err(TextError::Pipeline {
+                    stage: "maintenance to completion",
+                    detail: "a budget-exhausted slice made no progress".to_owned(),
+                });
+            }
+        }
+    }
+
+    /// Runs bounded parallel tokenization, one MLX embed stream, caller-thread
+    /// writes, periodic seals, and budgeted maintenance.
+    /// Clears the process-global MLX buffer cache before returning, including on error.
+    pub fn ingest_text(
+        &self,
+        documents: &[TextDocument],
+        options: IngestOptions,
+    ) -> Result<TextIngestReport, TextError> {
+        self.ingest_text_controlled(documents, options, IngestControl::new())
+    }
+
+    /// Serialized correctness control used to compare the pipelined path and
+    /// to record the commit-1 end-to-end baseline.
+    #[doc(hidden)]
+    pub fn ingest_text_serialized(
+        &self,
+        documents: &[TextDocument],
+        options: IngestOptions,
+    ) -> Result<TextIngestReport, TextError> {
+        let started = Instant::now();
+        let result = self.ingest_text_serialized_inner(documents, options);
+        crate::runtime::mlx_cache::clear()?;
+        result.map(|mut report| {
+            report.elapsed = started.elapsed();
+            report
+        })
+    }
+
+    fn ingest_text_serialized_inner(
+        &self,
+        documents: &[TextDocument],
+        options: IngestOptions,
+    ) -> Result<TextIngestReport, TextError> {
+        validate_ingest_options(documents, options)?;
+        self.merge_due_segments()?;
+        let started = Instant::now();
+        let previous_versions = self.capture_versions(documents)?;
+        let jobs = build_jobs(
+            documents,
+            options,
+            self.bundle.document_tower().embedding.max_tokens,
+        )?;
+        let mut core_batch = Vec::with_capacity(options.seal_every);
+        let mut chunks = 0_usize;
+        let mut tokens = 0_usize;
+        let mut embed_batches = 0_usize;
+        let mut seals = 0_usize;
+        for job in jobs {
+            let tokenized = tokenize_job(
+                self.bundle.tokenizer(TowerRole::Document),
+                job,
+                self.bundle.document_tower().embedding.max_tokens as usize,
+            )?;
+            let TokenizedJob {
+                ordinal: _,
+                chunks: job_chunks,
+                tokens: job_tokens,
+                token_count,
+            } = tokenized;
+            let mut embedded = self.runtime.embed(TowerRole::Document, job_tokens, false)?;
+            normalize_batch(&mut embedded, &self.bundle.document_tower().embedding)?;
+            append_embedded(&job_chunks, embedded, &mut core_batch, &mut chunks)?;
+            tokens = tokens.saturating_add(token_count);
+            embed_batches = embed_batches.saturating_add(1);
+            if core_batch.len() >= options.seal_every {
+                self.store
+                    .ingest(
+                        IngestBatch::new(std::mem::take(&mut core_batch))
+                            .with_epoch(self.document_epoch),
+                    )
+                    .map_err(TextError::Ingest)?;
+                self.store.seal().map_err(TextError::Seal)?;
+                seals = seals.saturating_add(1);
+            }
+        }
+        if !core_batch.is_empty() {
+            self.store
+                .ingest(IngestBatch::new(core_batch).with_epoch(self.document_epoch))
+                .map_err(TextError::Ingest)?;
+            self.store.seal().map_err(TextError::Seal)?;
+            seals = seals.saturating_add(1);
+        }
+        self.seals_since_merge.fetch_add(seals, Ordering::Relaxed);
+        self.record_versions(documents, options.chunk_policy, &previous_versions)?;
+        self.finish_ingest_maintenance(options)?;
+        let generation = self.store.health().map_err(TextError::Store)?.generation;
+        Ok(TextIngestReport {
+            generation,
+            documents: documents.len(),
+            chunks,
+            tokens,
+            embed_batches,
+            seals,
+            max_in_flight_batches: 0,
+            all_threads_joined: true,
+            elapsed: started.elapsed(),
+        })
+    }
+
+    /// Runs ingest with an explicit cooperative cancellation token.
+    pub fn ingest_text_controlled(
+        &self,
+        documents: &[TextDocument],
+        options: IngestOptions,
+        control: IngestControl,
+    ) -> Result<TextIngestReport, TextError> {
+        let started = Instant::now();
+        let result = self.ingest_text_controlled_inner(documents, options, control);
+        crate::runtime::mlx_cache::clear()?;
+        result.map(|mut report| {
+            report.elapsed = started.elapsed();
+            report
+        })
+    }
+
+    fn ingest_text_controlled_inner(
+        &self,
+        documents: &[TextDocument],
+        options: IngestOptions,
+        control: IngestControl,
+    ) -> Result<TextIngestReport, TextError> {
+        validate_ingest_options(documents, options)?;
+        self.merge_due_segments()?;
+        control.external_checkpoint()?;
+        let started = Instant::now();
+        let previous_versions = self.capture_versions(documents)?;
+        let jobs = build_jobs(
+            documents,
+            options,
+            self.bundle.document_tower().embedding.max_tokens,
+        )?;
+        let job_count = jobs.len();
+        let worker_count = volantis_db::scan::physical_thread_capacity()
+            .map_err(|error| TextError::Pipeline {
+                stage: "tokenizer capacity",
+                detail: error.to_string(),
+            })?
+            .saturating_sub(2)
+            .clamp(1, 4)
+            .min(jobs.len().max(1));
+        let queue = Arc::new(Mutex::new(VecDeque::from(jobs)));
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let peak_in_flight = Arc::new(AtomicUsize::new(0));
+        let (sender, receiver) = mpsc::sync_channel(options.channel_capacity);
+        let mut workers = Vec::with_capacity(worker_count);
+        for worker in 0..worker_count {
+            let queue = Arc::clone(&queue);
+            let sender = sender.clone();
+            let tokenizer = self.bundle.tokenizer(TowerRole::Document).clone();
+            let control = control.clone();
+            let in_flight = Arc::clone(&in_flight);
+            let peak = Arc::clone(&peak_in_flight);
+            let max_tokens = self.bundle.document_tower().embedding.max_tokens as usize;
+            let handle = std::thread::Builder::new()
+                .name(format!("ze-text-tok-{worker}"))
+                .spawn(move || {
+                    loop {
+                        if control.is_cancelled() {
+                            break;
+                        }
+                        let job = match queue.lock() {
+                            Ok(mut queue) => queue.pop_front(),
+                            Err(_) => {
+                                let _ = sender.send(Err(TextError::Pipeline {
+                                    stage: "tokenizer queue",
+                                    detail: "mutex poisoned".to_owned(),
+                                }));
+                                break;
+                            }
+                        };
+                        let Some(job) = job else { break };
+                        if control.fire(TextFaultSite::ChannelClosedEarly) {
+                            break;
+                        }
+                        let result = tokenize_job(&tokenizer, job, max_tokens);
+                        let Some(current) =
+                            acquire_buffer_slot(&in_flight, options.channel_capacity, &control)
+                        else {
+                            break;
+                        };
+                        peak.fetch_max(current, Ordering::Relaxed);
+                        if sender.send(result).is_err() {
+                            in_flight.fetch_sub(1, Ordering::Relaxed);
+                            break;
+                        }
+                    }
+                })
+                .map_err(|error| TextError::Pipeline {
+                    stage: "tokenizer start",
+                    detail: error.to_string(),
+                })?;
+            workers.push(handle);
+        }
+        drop(sender);
+        let (maintenance_tx, maintenance_rx) = mpsc::sync_channel::<()>(1);
+        let maintenance_store = Arc::clone(&self.store);
+        let maintenance = std::thread::Builder::new()
+            .name("ze-text-maintain".to_owned())
+            .spawn(move || {
+                while maintenance_rx.recv().is_ok() {
+                    let _ = maintenance_store.maintain(MaintenanceBudget {
+                        wall_time: options.maintenance_wall_time,
+                        bytes: options.maintenance_bytes,
+                    });
+                }
+            })
+            .map_err(|error| TextError::Pipeline {
+                stage: "maintenance start",
+                detail: error.to_string(),
+            })?;
+        let mut pending = BTreeMap::new();
+        let mut expected = 0_usize;
+        let mut core_batch = Vec::with_capacity(options.seal_every);
+        let mut chunks = 0_usize;
+        let mut tokens = 0_usize;
+        let mut embed_batches = 0_usize;
+        let mut seals = 0_usize;
+        let mut first_error = None;
+        while let Ok(result) = receiver.recv() {
+            in_flight.fetch_sub(1, Ordering::Relaxed);
+            if let Err(error) = control.external_checkpoint() {
+                first_error = Some(error);
+                control.cancel();
+                break;
+            }
+            match result {
+                Ok(job) => {
+                    pending.insert(job.ordinal, job);
+                    while let Some(job) = pending.remove(&expected) {
+                        let TokenizedJob {
+                            ordinal: _,
+                            chunks: job_chunks,
+                            tokens: job_tokens,
+                            token_count,
+                        } = job;
+                        let inject_panic = control.fire(TextFaultSite::EmbedWorkerPanic);
+                        match self
+                            .runtime
+                            .embed(TowerRole::Document, job_tokens, inject_panic)
+                        {
+                            Ok(mut embedded) => {
+                                if let Err(error) = control.external_checkpoint() {
+                                    first_error = Some(error);
+                                    control.cancel();
+                                    break;
+                                }
+                                if let Err(error) = normalize_batch(
+                                    &mut embedded,
+                                    &self.bundle.document_tower().embedding,
+                                ) {
+                                    first_error = Some(error);
+                                    control.cancel();
+                                    break;
+                                }
+                                tokens = tokens.saturating_add(token_count);
+                                embed_batches = embed_batches.saturating_add(1);
+                                if let Err(error) = append_embedded(
+                                    &job_chunks,
+                                    embedded,
+                                    &mut core_batch,
+                                    &mut chunks,
+                                ) {
+                                    first_error = Some(error);
+                                    control.cancel();
+                                    break;
+                                }
+                                while core_batch.len() >= options.seal_every {
+                                    let tail = core_batch.split_off(options.seal_every);
+                                    let write = std::mem::replace(&mut core_batch, tail);
+                                    match self.store.ingest(
+                                        IngestBatch::new(write).with_epoch(self.document_epoch),
+                                    ) {
+                                        Ok(_) => {}
+                                        Err(error) => {
+                                            first_error = Some(TextError::Ingest(error));
+                                            control.cancel();
+                                            break;
+                                        }
+                                    }
+                                    if control.fire(TextFaultSite::SealFailureMidStream)
+                                        && let Err(error) = self.store.close()
+                                    {
+                                        first_error = Some(TextError::Store(error));
+                                        control.cancel();
+                                        break;
+                                    }
+                                    match self.store.seal() {
+                                        Ok(_) => {}
+                                        Err(error) => {
+                                            first_error = Some(TextError::Seal(error));
+                                            control.cancel();
+                                            break;
+                                        }
+                                    }
+                                    seals = seals.saturating_add(1);
+                                    let _ = maintenance_tx.try_send(());
+                                }
+                            }
+                            Err(error) => {
+                                first_error = Some(error);
+                                control.cancel();
+                            }
+                        }
+                        expected = expected.saturating_add(1);
+                        if first_error.is_some() {
+                            break;
+                        }
+                    }
+                }
+                Err(error) => {
+                    first_error = Some(error);
+                    control.cancel();
+                }
+            }
+        }
+        let mut all_threads_joined = true;
+        for worker in workers {
+            if worker.join().is_err() {
+                all_threads_joined = false;
+                if first_error.is_none() {
+                    first_error = Some(TextError::Pipeline {
+                        stage: "tokenizer worker",
+                        detail: "thread panicked".to_owned(),
+                    });
+                }
+            }
+        }
+        if first_error.is_none() {
+            first_error = control.external_checkpoint().err();
+        }
+        if first_error.is_none() && expected != job_count {
+            first_error = Some(TextError::Pipeline {
+                stage: "tokenizer channel",
+                detail: format!("channel closed after {expected} of {job_count} token batches"),
+            });
+        }
+        if first_error.is_none() && !core_batch.is_empty() {
+            self.store
+                .ingest(IngestBatch::new(core_batch).with_epoch(self.document_epoch))
+                .map_err(TextError::Ingest)?;
+            if control.fire(TextFaultSite::SealFailureMidStream) {
+                self.store.close().map_err(TextError::Store)?;
+            }
+            self.store.seal().map_err(TextError::Seal)?;
+            seals = seals.saturating_add(1);
+            let _ = maintenance_tx.try_send(());
+        }
+        drop(maintenance_tx);
+        if maintenance.join().is_err() {
+            all_threads_joined = false;
+            if first_error.is_none() {
+                first_error = Some(TextError::Pipeline {
+                    stage: "maintenance worker",
+                    detail: "thread panicked".to_owned(),
+                });
+            }
+        }
+        if let Some(error) = first_error {
+            return Err(error);
+        }
+        self.seals_since_merge.fetch_add(seals, Ordering::Relaxed);
+        self.record_versions(documents, options.chunk_policy, &previous_versions)?;
+        self.finish_ingest_maintenance(options)?;
+        let generation = self.store.health().map_err(TextError::Store)?.generation;
+        Ok(TextIngestReport {
+            generation,
+            documents: documents.len(),
+            chunks,
+            tokens,
+            embed_batches,
+            seals,
+            max_in_flight_batches: peak_in_flight.load(Ordering::Relaxed),
+            all_threads_joined,
+            elapsed: started.elapsed(),
+        })
+    }
+
+    fn merge_due_segments(&self) -> Result<(), TextError> {
+        if self.seals_since_merge.load(Ordering::Relaxed) >= MERGE_EVERY_SEALS {
+            self.store
+                .merge_sealed()
+                .map_err(|error| TextError::Pipeline {
+                    stage: "segment merge",
+                    detail: error.to_string(),
+                })?;
+            self.seals_since_merge.store(0, Ordering::Relaxed);
+        }
+        Ok(())
+    }
+
+    fn finish_ingest_maintenance(&self, options: IngestOptions) -> Result<(), TextError> {
+        if options.maintenance_wall_time.is_zero() || options.maintenance_bytes == 0 {
+            return Ok(());
+        }
+        self.maintain_to_completion(MaintenanceBudget {
+            wall_time: options.maintenance_wall_time,
+            bytes: options.maintenance_bytes,
+        })?;
+        Ok(())
+    }
+
+    fn capture_versions(
+        &self,
+        documents: &[TextDocument],
+    ) -> Result<BTreeMap<DocId, Revision>, TextError> {
+        let versions = self.versions.lock().map_err(|_| TextError::Pipeline {
+            stage: "version registry",
+            detail: "mutex poisoned".to_owned(),
+        })?;
+        let mut captured = BTreeMap::new();
+        for document in documents {
+            // Visit only this caller's old chunks, never the whole registry.
+            captured.extend(
+                versions
+                    .range(
+                        encode_chunk_id(document.id, 0)?..=encode_chunk_id(document.id, u32::MAX)?,
+                    )
+                    .map(|(&id, &revision)| (id, revision)),
+            );
+        }
+        Ok(captured)
+    }
+
+    fn record_versions(
+        &self,
+        documents: &[TextDocument],
+        chunk_policy: ChunkPolicy,
+        previous_versions: &BTreeMap<DocId, Revision>,
+    ) -> Result<(), TextError> {
+        let mut versions = self.versions.lock().map_err(|_| TextError::Pipeline {
+            stage: "version registry",
+            detail: "mutex poisoned".to_owned(),
+        })?;
+        let mut stale = BTreeMap::new();
+        let mut replacements = BTreeMap::new();
+        for document in documents {
+            let chunk_count = chunks_for_text(document, chunk_policy)?.len();
+            stale.extend(
+                previous_versions
+                    .range(
+                        encode_chunk_id(document.id, 0)?..=encode_chunk_id(document.id, u32::MAX)?,
+                    )
+                    .filter_map(|(&id, &revision)| {
+                        ((id.get() & u128::from(u32::MAX)) >= chunk_count as u128
+                            && revision < Revision::new(document.revision)
+                            && versions.get(&id) == Some(&revision))
+                        .then_some((id, revision))
+                    }),
+            );
+            for chunk in 0..chunk_count {
+                let id = encode_chunk_id(
+                    document.id,
+                    u32::try_from(chunk)
+                        .map_err(|_| TextError::InvalidInput("chunk count exceeds u32"))?,
+                )?;
+                replacements.insert(id, Revision::new(document.revision));
+            }
+        }
+        // Readers may see stale chunks between the upsert and delete commits;
+        // multi-batch revisions are already not atomic.
+        versions.extend(replacements);
+        delete_stale_versions(&self.store, &mut versions, stale)?;
+        Ok(())
+    }
+
+    /// Tombstones every stored chunk belonging to each caller document id.
+    pub fn delete_text(&self, caller_ids: &[u128]) -> Result<IngestAck, TextError> {
+        if caller_ids.is_empty() {
+            return Err(TextError::InvalidInput("delete caller id batch is empty"));
+        }
+        let mut versions = self.versions.lock().map_err(|_| TextError::Pipeline {
+            stage: "version registry",
+            detail: "mutex poisoned".to_owned(),
+        })?;
+        let mut chunk_ids = Vec::new();
+        for caller_id in caller_ids {
+            if caller_id >> CALLER_BITS != 0 {
+                return Err(TextError::InvalidInput(
+                    "caller document id exceeds 96 bits",
+                ));
+            }
+            let encoded_caller = caller_id << CHUNK_BITS;
+            let before = chunk_ids.len();
+            chunk_ids.extend(
+                versions
+                    .keys()
+                    .copied()
+                    .filter(|id| id.get() >> CHUNK_BITS == *caller_id),
+            );
+            if chunk_ids.len() == before {
+                chunk_ids.push(DocId::new(encoded_caller));
+            }
+        }
+        chunk_ids.sort_unstable_by_key(|id| id.get());
+        chunk_ids.dedup();
+        let ack = self
+            .store
+            .delete(DeleteBatch::new(chunk_ids.clone()))
+            .map_err(TextError::Ingest)?;
+        for id in chunk_ids {
+            versions.remove(&id);
+        }
+        Ok(ack)
+    }
+
+    /// Embeds and executes one dense, lexical, or hybrid text query.
+    pub fn query_text(&self, text: &str, options: QueryOptions) -> Result<Vec<TextHit>, TextError> {
+        self.query_text_controlled(text, options, QueryControl::Cancel(CancelToken::new()))
+    }
+
+    /// Executes a text query using one caller-owned cancellation or deadline.
+    pub fn query_text_controlled(
+        &self,
+        text: &str,
+        options: QueryOptions,
+        control: QueryControl,
+    ) -> Result<Vec<TextHit>, TextError> {
+        self.query_text_inner(text, options, control)
+            .map(|outcome| outcome.hits)
+    }
+
+    /// Executes the same text query with core work and optional outer timing.
+    /// Queries never load the plan or return plan errors. Call
+    /// `observed_compute_units()` once to populate counts carried by subsequent
+    /// dense/hybrid diagnostics queries. Reading cached counts never waits.
+    /// Stage timing is enabled by the core `query-timing` feature. This does
+    /// not change the query's tier, score policy, snapshot or embedding epoch.
+    pub fn query_text_with_diagnostics(
+        &self,
+        text: &str,
+        options: QueryOptions,
+    ) -> Result<TextQueryOutcome, TextError> {
+        self.query_text_with_diagnostics_controlled(
+            text,
+            options,
+            QueryControl::Cancel(CancelToken::new()),
+        )
+    }
+
+    /// Executes a diagnostic text query with one control across tokenization,
+    /// embedding admission, retrieval and owned-text materialization.
+    /// Placement counts come only from the cache populated by an explicit
+    /// `observed_compute_units()` call; this never loads or waits for a plan.
+    pub fn query_text_with_diagnostics_controlled(
+        &self,
+        text: &str,
+        options: QueryOptions,
+        control: QueryControl,
+    ) -> Result<TextQueryOutcome, TextError> {
+        self.query_text_inner(text, options, control)
+    }
+
+    fn query_text_inner(
+        &self,
+        text: &str,
+        options: QueryOptions,
+        control: QueryControl,
+    ) -> Result<TextQueryOutcome, TextError> {
+        let started = stage_start();
+        control.checkpoint().map_err(TextError::Query)?;
+        let mut timings = TextQueryTimings::default();
+        if options.k == 0 {
+            timings.end_to_end = stage_elapsed(started);
+            return Ok(TextQueryOutcome {
+                hits: Vec::new(),
+                diagnostics: None,
+                backend: None,
+                timings: volantis_db::diag::QUERY_TIMING_ENABLED.then_some(timings),
+                query_tokens: 0,
+                embedding_calls: 0,
+            });
+        }
+        let mut query_tokens = 0;
+        let result = (|| match options.legs {
+            Legs::Lexical => {
+                let query = self.analyzed_query(text, &mut timings);
+                self.lexical_hits(&query, options.k, &mut timings, &control)
+            }
+            Legs::Dense => {
+                let (embedded, tokens) = self.query_vector(text, &mut timings, &control)?;
+                query_tokens = tokens;
+                self.dense_hits(embedded.values(), options, &mut timings, &control)
+            }
+            Legs::Hybrid => {
+                let query = self.analyzed_query(text, &mut timings);
+                let mut embedded = None;
+                let mut embedding_timings = TextQueryTimings::default();
+                let slot = &mut embedded;
+                let tokens = &mut query_tokens;
+                let preparation_timings = &mut embedding_timings;
+                let preparation_control = &control;
+                let result = self.hybrid_hits(
+                    move || {
+                        let (batch, count) =
+                            self.query_vector(text, preparation_timings, preparation_control)?;
+                        *tokens = count;
+                        Ok(SearchRequest::new(slot.insert(batch).values()))
+                    },
+                    &query,
+                    options,
+                    &mut timings,
+                    &control,
+                );
+                timings.tokenization = embedding_timings.tokenization;
+                timings.embedding_queue = embedding_timings.embedding_queue;
+                timings.embedding_evaluation = embedding_timings.embedding_evaluation;
+                timings.embedding_normalization = embedding_timings.embedding_normalization;
+                result
+            }
+        })();
+        let (hits, diagnostics) = result?;
+        let backend = if options.legs != Legs::Lexical {
+            let backend = self.query_backend();
+            #[cfg(target_os = "macos")]
+            let backend = QueryBackend {
+                observed_compute_units: self
+                    .runtime
+                    .compute_plan
+                    .as_ref()
+                    .and_then(|plan| plan.cached_observed_compute_units()),
+                ..backend
+            };
+            Some(backend)
+        } else {
+            None
+        };
+        control.checkpoint().map_err(TextError::Query)?;
+        timings.end_to_end = stage_elapsed(started);
+        Ok(TextQueryOutcome {
+            hits,
+            diagnostics: Some(diagnostics),
+            timings: volantis_db::diag::QUERY_TIMING_ENABLED.then_some(timings),
+            backend,
+            query_tokens,
+            embedding_calls: usize::from(options.legs != Legs::Lexical),
+        })
+    }
+
+    fn analyzed_query(&self, text: &str, timings: &mut TextQueryTimings) -> TermQuery {
+        let started = stage_start();
+        let terms = self
+            .analyzer
+            .analyze(text)
+            .into_iter()
+            .map(|token| token.term.into_bytes())
+            .collect();
+        let query = TermQuery::flat(terms, &[DEFAULT_FIELD]);
+        timings.lexical_analysis = stage_elapsed(started);
+        query
+    }
+
+    fn query_vector(
+        &self,
+        text: &str,
+        timings: &mut TextQueryTimings,
+        control: &QueryControl,
+    ) -> Result<(EmbeddingBatch, usize), TextError> {
+        control.checkpoint().map_err(TextError::Query)?;
+        let started = stage_start();
+        let token_result = self.bundle.tokenize_query(text);
+        control.checkpoint().map_err(TextError::Query)?;
+        let tokens = token_result?;
+        timings.tokenization = stage_elapsed(started);
+        let count = tokens
+            .attention_mask
+            .iter()
+            .filter(|mask| **mask != 0.0)
+            .count();
+        let evaluated = self.runtime.embed_with_timing_controlled(
+            TowerRole::Query,
+            tokens,
+            false,
+            Some(control.clone()),
+        )?;
+        timings.embedding_queue = evaluated.queue_wait;
+        timings.embedding_evaluation = evaluated.evaluation;
+        let mut embedded = evaluated.batch;
+        let started = stage_start();
+        normalize_batch(&mut embedded, &self.bundle.query_tower().embedding)?;
+        timings.embedding_normalization = stage_elapsed(started);
+        control.checkpoint().map_err(TextError::Query)?;
+        Ok((embedded, count))
+    }
+
+    /// Closes runtime resources and the underlying store.
+    pub fn close(&self) -> Result<(), TextError> {
+        self.warm_cancel.cancel();
+        let warm = self
+            .join_warm()
+            .and_then(|mut warm| warm.error.take().map_or(Ok(()), Err));
+        let runtime = self.runtime.close();
+        let store = self.store.close().map_err(TextError::Store);
+        warm.and(runtime).and(store)
+    }
+
+    fn dense_hits(
+        &self,
+        vector: &[f32],
+        options: QueryOptions,
+        timings: &mut TextQueryTimings,
+        control: &QueryControl,
+    ) -> Result<(Vec<TextHit>, volantis_db::diag::QueryDiagnostics), TextError> {
+        let retrieval_started = stage_start();
+        let (outcome, hits) = self
+            .store
+            .search_with_text(
+                SearchRequest::new(vector),
+                options.k,
+                Self::search_options(options),
+                control.clone(),
+                |outcome, materializer| {
+                    timings.retrieval = stage_elapsed(retrieval_started);
+                    let started = stage_start();
+                    let hits = outcome
+                        .candidates
+                        .iter()
+                        .enumerate()
+                        .map(|(rank, candidate)| {
+                            control.checkpoint().map_err(TextError::Query)?;
+                            let row = materializer
+                                .text(rank)
+                                .map_err(|error| TextError::Materialization(Box::new(error)))?;
+                            let squared_l2 = -f64::from(candidate.score());
+                            self.make_hit(row, -squared_l2, Some(squared_l2), None)
+                        })
+                        .collect::<Result<Vec<_>, TextError>>();
+                    timings.materialization = stage_elapsed(started);
+                    hits
+                },
+            )
+            .map_err(TextError::Query)?;
+        Ok((hits?, outcome.diagnostics))
+    }
+
+    fn lexical_hits(
+        &self,
+        query: &TermQuery,
+        k: usize,
+        timings: &mut TextQueryTimings,
+        control: &QueryControl,
+    ) -> Result<(Vec<TextHit>, volantis_db::diag::QueryDiagnostics), TextError> {
+        let retrieval_started = stage_start();
+        let (outcome, hits) = self
+            .store
+            .search_lexical_with_text(query, k, control.clone(), |outcome, materializer| {
+                timings.retrieval = stage_elapsed(retrieval_started);
+                let started = stage_start();
+                let hits = outcome
+                    .candidates
+                    .iter()
+                    .enumerate()
+                    .map(|(rank, candidate)| {
+                        control.checkpoint().map_err(TextError::Query)?;
+                        let row = materializer
+                            .text(rank)
+                            .map_err(|error| TextError::Materialization(Box::new(error)))?;
+                        self.make_hit(row, candidate.score, None, Some(candidate.score))
+                    })
+                    .collect::<Result<Vec<_>, TextError>>();
+                timings.materialization = stage_elapsed(started);
+                hits
+            })
+            .map_err(TextError::Lexical)?;
+        Ok((hits?, outcome.diagnostics))
+    }
+
+    fn hybrid_hits<'vector>(
+        &self,
+        prepare_vector: impl FnOnce() -> Result<SearchRequest<'vector>, TextError>,
+        query: &TermQuery,
+        options: QueryOptions,
+        timings: &mut TextQueryTimings,
+        control: &QueryControl,
+    ) -> Result<(Vec<TextHit>, volantis_db::diag::QueryDiagnostics), TextError> {
+        let retrieval_started = stage_start();
+        let (outcome, hits) = self
+            .store
+            .search_hybrid_with_text_deferred(
+                prepare_vector,
+                query,
+                &HybridQuery::new(options.k)
+                    .with_alpha(self.bundle.hybrid_alpha())
+                    .with_epoch(self.document_epoch),
+                Self::search_options(options),
+                control.clone(),
+                |outcome, materializer| {
+                    timings.retrieval = stage_elapsed(retrieval_started);
+                    let started = stage_start();
+                    let hits = outcome
+                        .hits
+                        .iter()
+                        .enumerate()
+                        .map(|(rank, hit)| {
+                            control.checkpoint().map_err(TextError::Query)?;
+                            let row = materializer
+                                .text(rank)
+                                .map_err(|error| TextError::Materialization(Box::new(error)))?;
+                            self.make_hit(
+                                row,
+                                hit.fused_score,
+                                hit.vector_squared_l2,
+                                hit.lexical_bm25,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, TextError>>();
+                    timings.materialization = stage_elapsed(started);
+                    hits
+                },
+            )
+            .map_err(|error| match error {
+                HybridPreparationError::Preparation(error) => error,
+                HybridPreparationError::Search(error) => TextError::Hybrid(error),
+            })?;
+        Ok((hits?, outcome.diagnostics))
+    }
+
+    /// Applies an explicit tier only when the caller asked for one.
+    ///
+    /// An unset tier must stay unset: dense and hybrid retrieval select exact
+    /// scoring without a published graph and permit graph traversal otherwise.
+    fn search_options(options: QueryOptions) -> SearchOptions {
+        if let Some(config) = options.scan_rescore {
+            return SearchOptions::default().with_scan_rescore(config);
+        }
+        match options.tier {
+            Some(tier) => SearchOptions::default().with_tier(tier),
+            None => SearchOptions::default(),
+        }
+    }
+
+    fn make_hit(
+        &self,
+        row: volantis_db::lifecycle::MaterializedRow,
+        score: f64,
+        vector_squared_l2: Option<f64>,
+        lexical_bm25: Option<f64>,
+    ) -> Result<TextHit, TextError> {
+        let version = row.document;
+        let encoded = version.doc_id().get();
+        let doc_id = encoded >> CHUNK_BITS;
+        let chunk = u32::try_from(encoded & u128::from(u32::MAX))
+            .map_err(|_| TextError::InvalidInput("chunk id exceeds u32"))?;
+        let text = row.text;
+        Ok(TextHit {
+            doc_id,
+            revision: version.revision().get(),
+            chunk,
+            text,
+            score,
+            vector_squared_l2,
+            lexical_bm25,
+            epoch: self.epoch,
+        })
+    }
+}
+
+fn empty_maintenance_report() -> MaintenanceReport {
+    MaintenanceReport::default()
+}
+
+fn merge_maintenance_reports(
+    aggregate: &mut MaintenanceReport,
+    slice: &mut MaintenanceReport,
+) -> Result<(), TextError> {
+    aggregate
+        .merge_property_graph_progress(slice)
+        .map_err(|error| TextError::Pipeline {
+            stage: "maintenance to completion",
+            detail: error.to_string(),
+        })?;
+    aggregate.graphs_built = checked_maintenance_sum(aggregate.graphs_built, slice.graphs_built)?;
+    aggregate.bytes_consumed =
+        checked_maintenance_sum(aggregate.bytes_consumed, slice.bytes_consumed)?;
+    aggregate.checkpoints_resumed =
+        checked_maintenance_sum(aggregate.checkpoints_resumed, slice.checkpoints_resumed)?;
+    aggregate.consolidations =
+        checked_maintenance_sum(aggregate.consolidations, slice.consolidations)?;
+    aggregate.passes_applied =
+        checked_maintenance_sum(aggregate.passes_applied, slice.passes_applied)?;
+    aggregate.pass_counters.renumber = checked_maintenance_sum(
+        aggregate.pass_counters.renumber,
+        slice.pass_counters.renumber,
+    )?;
+    aggregate.pass_counters.alpha_reprune = checked_maintenance_sum(
+        aggregate.pass_counters.alpha_reprune,
+        slice.pass_counters.alpha_reprune,
+    )?;
+    aggregate.pass_counters.seed_refit = checked_maintenance_sum(
+        aggregate.pass_counters.seed_refit,
+        slice.pass_counters.seed_refit,
+    )?;
+    aggregate.pass_counters.neighbor_reorder = checked_maintenance_sum(
+        aggregate.pass_counters.neighbor_reorder,
+        slice.pass_counters.neighbor_reorder,
+    )?;
+    aggregate.pass_counters.connectivity_repair = checked_maintenance_sum(
+        aggregate.pass_counters.connectivity_repair,
+        slice.pass_counters.connectivity_repair,
+    )?;
+    aggregate
+        .promotion_deferrals
+        .append(&mut slice.promotion_deferrals);
+    aggregate.graph_profiles.append(&mut slice.graph_profiles);
+    aggregate
+        .consolidation_deferrals
+        .append(&mut slice.consolidation_deferrals);
+    if slice.consolidation_generation.is_some() {
+        aggregate.consolidation_generation = slice.consolidation_generation;
+    }
+    if slice.refinement_generation.is_some() {
+        aggregate.refinement_generation = slice.refinement_generation;
+    }
+    Ok(())
+}
+
+fn checked_maintenance_sum(left: u64, right: u64) -> Result<u64, TextError> {
+    left.checked_add(right).ok_or_else(|| TextError::Pipeline {
+        stage: "maintenance to completion",
+        detail: "maintenance report counter overflowed u64".to_owned(),
+    })
+}
+
+fn validate_ingest_options(
+    documents: &[TextDocument],
+    options: IngestOptions,
+) -> Result<(), TextError> {
+    if documents.is_empty() {
+        return Err(TextError::InvalidInput("document batch is empty"));
+    }
+    if options.embed_batch_size == 0 || options.seal_every == 0 || options.channel_capacity == 0 {
+        return Err(TextError::InvalidInput(
+            "pipeline capacities must be non-zero",
+        ));
+    }
+    if let ChunkPolicy::Tokens { max, overlap } = options.chunk_policy
+        && (max == 0 || overlap >= max)
+    {
+        return Err(TextError::InvalidInput(
+            "chunk overlap must be smaller than max",
+        ));
+    }
+    for document in documents {
+        if document.id >> CALLER_BITS != 0 {
+            return Err(TextError::InvalidInput(
+                "caller document id exceeds 96 bits",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn acquire_buffer_slot(
+    in_flight: &AtomicUsize,
+    capacity: usize,
+    control: &IngestControl,
+) -> Option<usize> {
+    loop {
+        if control.is_cancelled() {
+            return None;
+        }
+        let current = in_flight.load(Ordering::Relaxed);
+        if current < capacity
+            && in_flight
+                .compare_exchange_weak(
+                    current,
+                    current.saturating_add(1),
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+        {
+            return Some(current.saturating_add(1));
+        }
+        std::thread::yield_now();
+    }
+}
+
+#[derive(Clone)]
+struct ChunkRow {
+    id: u128,
+    revision: u64,
+    chunk: u32,
+    text: String,
+}
+
+struct TokenJob {
+    ordinal: usize,
+    chunks: Vec<ChunkRow>,
+}
+
+struct TokenizedJob {
+    ordinal: usize,
+    chunks: Vec<ChunkRow>,
+    tokens: TokenBatch,
+    token_count: usize,
+}
+
+fn build_jobs(
+    documents: &[TextDocument],
+    options: IngestOptions,
+    tower_max: u32,
+) -> Result<Vec<TokenJob>, TextError> {
+    let mut rows = Vec::new();
+    for document in documents {
+        for (chunk, text) in chunks_for_text(document, options.chunk_policy)?
+            .into_iter()
+            .enumerate()
+        {
+            let chunk = u32::try_from(chunk)
+                .map_err(|_| TextError::InvalidInput("chunk count exceeds u32"))?;
+            rows.push(ChunkRow {
+                id: document.id,
+                revision: document.revision,
+                chunk,
+                text,
+            });
+        }
+    }
+    let max = tower_max as usize;
+    if matches!(options.chunk_policy, ChunkPolicy::None)
+        && rows
+            .iter()
+            .any(|row| row.text.split_whitespace().count().saturating_add(2) > max)
+    {
+        return Err(TextError::InvalidInput("document exceeds tower max_tokens"));
+    }
+    Ok(rows
+        .chunks(options.embed_batch_size)
+        .enumerate()
+        .map(|(ordinal, chunks)| TokenJob {
+            ordinal,
+            chunks: chunks.to_vec(),
+        })
+        .collect())
+}
+
+fn chunks_for_text(document: &TextDocument, policy: ChunkPolicy) -> Result<Vec<String>, TextError> {
+    let ChunkPolicy::Tokens { max, overlap } = policy else {
+        return Ok(vec![document.text.clone()]);
+    };
+    let words = document.text.split_whitespace().collect::<Vec<_>>();
+    if words.len() <= max {
+        return Ok(vec![document.text.clone()]);
+    }
+    let mut chunks = Vec::new();
+    let mut start = 0_usize;
+    while start < words.len() {
+        let end = start.saturating_add(max).min(words.len());
+        let chunk = words
+            .get(start..end)
+            .ok_or(TextError::InvalidInput("chunk range is invalid"))?
+            .join(" ");
+        chunks.push(chunk);
+        if end == words.len() {
+            break;
+        }
+        start = end.saturating_sub(overlap);
+    }
+    Ok(chunks)
+}
+
+fn tokenize_job(
+    tokenizer: &crate::tokenizer::ModelTokenizer,
+    job: TokenJob,
+    max_tokens: usize,
+) -> Result<TokenizedJob, TextError> {
+    let texts = job
+        .chunks
+        .iter()
+        .map(|chunk| chunk.text.clone())
+        .collect::<Vec<_>>();
+    let tokens = tokenizer.encode_batch(&texts, max_tokens)?;
+    let token_count = tokens.token_ids.len();
+    Ok(TokenizedJob {
+        ordinal: job.ordinal,
+        chunks: job.chunks,
+        tokens,
+        token_count,
+    })
+}
+
+fn append_embedded(
+    job_chunks: &[ChunkRow],
+    embedded: EmbeddingBatch,
+    output: &mut Vec<IngestDocument>,
+    chunks: &mut usize,
+) -> Result<(), TextError> {
+    if embedded.rows() != job_chunks.len() {
+        return Err(TextError::DimsMismatch {
+            declared: u32::try_from(job_chunks.len()).unwrap_or(u32::MAX),
+            actual: embedded.rows(),
+        });
+    }
+    let dims = embedded.dims();
+    let values = embedded.into_values();
+    for (row, chunk) in job_chunks.iter().enumerate() {
+        let start = row
+            .checked_mul(dims)
+            .ok_or(TextError::InvalidInput("embedding row offset overflow"))?;
+        let end = start
+            .checked_add(dims)
+            .ok_or(TextError::InvalidInput("embedding row end overflow"))?;
+        let vector = values
+            .get(start..end)
+            .ok_or(TextError::InvalidInput("embedding row is truncated"))?
+            .to_vec();
+        output.push(
+            IngestDocument::new(
+                DocumentVersion::new(
+                    encode_chunk_id(chunk.id, chunk.chunk)?,
+                    Revision::new(chunk.revision),
+                ),
+                vector,
+            )
+            .with_text(chunk.text.clone()),
+        );
+        *chunks = chunks.saturating_add(1);
+    }
+    Ok(())
+}
+
+fn normalize_batch(
+    batch: &mut EmbeddingBatch,
+    tower: &volantis_db::epoch::EmbeddingTower,
+) -> Result<(), TextError> {
+    if batch.dims() != tower.dims as usize {
+        return Err(TextError::DimsMismatch {
+            declared: tower.dims,
+            actual: batch.dims(),
+        });
+    }
+    let dims = batch.dims();
+    for row in batch.values_mut().chunks_exact_mut(dims) {
+        if tower.normalization == Normalization::L2 {
+            let squared_norm = row.iter().try_fold(0.0_f64, |sum, value| {
+                value
+                    .is_finite()
+                    .then_some(sum + f64::from(*value) * f64::from(*value))
+            });
+            let norm = squared_norm.filter(|value| *value > 0.0).map(f64::sqrt);
+            let Some(norm) = norm else {
+                return Err(TextError::NonUnitVector);
+            };
+            for value in row {
+                *value = (f64::from(*value) / norm) as f32;
+            }
+        }
+    }
+    for row in batch.values().chunks_exact(dims) {
+        let norm = row
+            .iter()
+            .map(|value| f64::from(*value) * f64::from(*value))
+            .sum::<f64>();
+        if tower.normalization == Normalization::L2 && (norm - 1.0).abs() > 1.0e-5 {
+            return Err(TextError::NonUnitVector);
+        }
+    }
+    Ok(())
+}
+
+fn encode_chunk_id(id: u128, chunk: u32) -> Result<DocId, TextError> {
+    if id >> CALLER_BITS != 0 {
+        return Err(TextError::InvalidInput(
+            "caller document id exceeds 96 bits",
+        ));
+    }
+    Ok(DocId::new((id << CHUNK_BITS) | u128::from(chunk)))
+}
+
+/// Finds the compiled CoreML query tower that belongs to a bundle.
+///
+/// The Apple Neural Engine is the default query backend, so a compiled
+/// `<bundle stem>.mlmodelc` sitting beside the `.zem` is used without
+/// asking. `MLModel` refuses a raw `.mlpackage`, so only a compiled
+/// directory counts. `ZE_QUERY_COREML` overrides the path; the fixed sequence
+/// length comes from the compiled model's input description.
+/// `ZE_QUERY_COREML=off` forces MLX.
+fn discover_query_coreml(bundle_path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let model = match std::env::var("ZE_QUERY_COREML") {
+        Ok(value) if value == "off" => return None,
+        Ok(value) => std::path::PathBuf::from(value),
+        Err(_) => bundle_path.with_extension("mlmodelc"),
+    };
+    model.is_dir().then_some(model)
+}
+
+fn load_versions(store: &Store, reconcile: bool) -> Result<BTreeMap<DocId, Revision>, TextError> {
+    let snapshot = store.snapshot().map_err(TextError::Store)?;
+    let mut versions = BTreeMap::new();
+    for segment in snapshot.segments() {
+        let alive = segment.alive().map_err(|error| {
+            TextError::Store(volantis_db::lifecycle::StoreError::Segment(error))
+        })?;
+        for row in alive.iter_alive() {
+            let version = segment.document_version(row as usize).map_err(|error| {
+                TextError::Store(volantis_db::lifecycle::StoreError::Segment(error))
+            })?;
+            if let Some(version) = version {
+                versions.insert(version.doc_id(), version.revision());
+            }
+        }
+    }
+    if !reconcile {
+        return Ok(versions);
+    }
+    let mut highest = BTreeMap::new();
+    for (&id, &revision) in &versions {
+        highest
+            .entry(id.get() >> CHUNK_BITS)
+            .and_modify(|current: &mut Revision| *current = (*current).max(revision))
+            .or_insert(revision);
+    }
+    let stale = versions
+        .iter()
+        .filter_map(|(&id, &revision)| {
+            highest
+                .get(&(id.get() >> CHUNK_BITS))
+                .is_some_and(|&current| revision < current)
+                .then_some((id, revision))
+        })
+        .collect();
+    delete_stale_versions(store, &mut versions, stale)?;
+    Ok(versions)
+}
+
+fn delete_stale_versions(
+    store: &Store,
+    versions: &mut BTreeMap<DocId, Revision>,
+    stale: BTreeMap<DocId, Revision>,
+) -> Result<(), TextError> {
+    if !stale.is_empty() {
+        store
+            .delete(DeleteBatch::conditional(
+                stale
+                    .iter()
+                    .map(|(&id, &revision)| (id, Some(ExpectedRevision::Exactly(revision))))
+                    .collect(),
+            ))
+            .map_err(TextError::Ingest)?;
+        for id in stale.keys() {
+            versions.remove(id);
+        }
+    }
+    Ok(())
+}
+
+fn stage_start() -> Option<Instant> {
+    volantis_db::diag::QUERY_TIMING_ENABLED.then(Instant::now)
+}
+
+fn stage_elapsed(started: Option<Instant>) -> Duration {
+    started.map_or(Duration::ZERO, |started| started.elapsed())
+}
+
+struct WarmThread {
+    thread: Option<JoinHandle<Result<bool, TextError>>>,
+    #[cfg(test)]
+    vector_warmed: bool,
+    // Retain failures after wait_for_warm so close still returns the typed error.
+    error: Option<TextError>,
+}
+
+impl Drop for TextStore {
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
+struct RuntimeEmbedding {
+    batch: EmbeddingBatch,
+    queue_wait: Duration,
+    evaluation: Duration,
+}
+
+enum RuntimeCommand {
+    Embed {
+        role: TowerRole,
+        tokens: TokenBatch,
+        inject_panic: bool,
+        queued: Option<Instant>,
+        control: Option<QueryControl>,
+        reply: mpsc::SyncSender<Result<RuntimeEmbedding, TextError>>,
+    },
+    Close,
+}
+
+// Keep the command loop independent of native model construction so deterministic
+// barriers can exercise the same queue ownership and panic boundaries in tests.
+fn run_embedding_commands(
+    receiver: mpsc::Receiver<RuntimeCommand>,
+    closed: &AtomicBool,
+    mut embed: impl FnMut(
+        TowerRole,
+        &TokenBatch,
+        Option<&QueryControl>,
+    ) -> Result<EmbeddingBatch, TextError>,
+) {
+    while let Ok(command) = receiver.recv() {
+        match command {
+            RuntimeCommand::Embed {
+                role,
+                tokens,
+                inject_panic,
+                queued,
+                control,
+                reply,
+            } => {
+                let queue_wait = stage_elapsed(queued);
+                let evaluation_started = stage_start();
+                let result = check_runtime_control(closed, control.as_ref()).and_then(|()| {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        if inject_panic {
+                            std::panic::resume_unwind(Box::new("injected embed panic"));
+                        }
+                        embed(role, &tokens, control.as_ref())
+                    }))
+                    .unwrap_or_else(|_| Err(embedding_error(RuntimeError::WorkerPanicked)))
+                });
+                let evaluation = stage_elapsed(evaluation_started);
+                // A foreign evaluation may finish after the caller stopped.
+                // Its owned output must never become a successful reply.
+                let result = check_runtime_control(closed, control.as_ref())
+                    .and(result)
+                    .map(|batch| RuntimeEmbedding {
+                        batch,
+                        queue_wait,
+                        evaluation,
+                    });
+                let _ = reply.send(result);
+            }
+            RuntimeCommand::Close => break,
+        }
+    }
+}
+
+const QUERY_WAIT_POLL: Duration = Duration::from_millis(1);
+
+fn embedding_error(error: RuntimeError) -> TextError {
+    match error {
+        RuntimeError::WorkerPanicked => TextError::Pipeline {
+            stage: "embed worker",
+            detail: error.to_string(),
+        },
+        other => TextError::Runtime(other),
+    }
+}
+
+fn check_runtime_control(
+    closed: &AtomicBool,
+    control: Option<&QueryControl>,
+) -> Result<(), TextError> {
+    if let Some(control) = control {
+        if closed.load(Ordering::Acquire) {
+            return Err(TextError::Query(
+                volantis_db::lifecycle::QueryError::ReadCancelled { partial: false },
+            ));
+        }
+        control.checkpoint().map_err(TextError::Query)?;
+    }
+    Ok(())
+}
+
+/// Which backend evaluates the query tower.
+///
+/// CoreML on the Apple Neural Engine is the default when a compiled
+/// model sits beside the bundle: at batch one the tower is bound by
+/// Metal dispatch count, so CoreML is far faster and far steadier while
+/// returning the same vectors. MLX is used when no compiled model is
+/// present.
+enum QueryRuntime {
+    Mlx(Box<MlxRuntime>),
+    #[cfg(target_os = "macos")]
+    CoreMl(Box<crate::runtime::coreml::CoreMlRuntime>),
+}
+
+impl QueryRuntime {
+    fn backend(&self) -> QueryBackend {
+        match self {
+            Self::Mlx(runtime) => mlx_backend(runtime),
+            #[cfg(target_os = "macos")]
+            Self::CoreMl(runtime) => QueryBackend {
+                runtime: runtime.identity(),
+                requested_compute_units: runtime.requested_compute_units(),
+                observed_compute_units: None,
+                sequence_length: Some(runtime.sequence()),
+            },
+        }
+    }
+
+    fn embed_controlled(
+        &mut self,
+        tokens: &TokenBatch,
+        checkpoint: &mut impl FnMut() -> Result<(), TextError>,
+    ) -> Result<EmbeddingBatch, TextError> {
+        match self {
+            Self::Mlx(runtime) => runtime.embed_batch_controlled(tokens, checkpoint),
+            #[cfg(target_os = "macos")]
+            Self::CoreMl(runtime) => {
+                checkpoint()?;
+                let padded = crate::runtime::coreml::pad_query(tokens, runtime.sequence())?;
+                checkpoint()?;
+                let result = runtime.embed_batch(&padded);
+                checkpoint()?;
+                result.map_err(embedding_error)
+            }
+        }
+    }
+}
+
+enum DocumentTower {
+    Unloaded,
+    Loaded(Box<MlxRuntime>),
+}
+
+enum RuntimeSet {
+    Symmetric(Box<MlxRuntime>),
+    Pair {
+        document: DocumentTower,
+        query: QueryRuntime,
+    },
+}
+
+impl RuntimeSet {
+    fn query_backend(&self) -> QueryBackend {
+        match self {
+            Self::Symmetric(runtime) => mlx_backend(runtime),
+            Self::Pair { query, .. } => query.backend(),
+        }
+    }
+
+    fn load_document(
+        &mut self,
+        bundle: &Arc<Bundle>,
+        document_loads: &AtomicUsize,
+    ) -> Result<(), TextError> {
+        if let Self::Pair { document, .. } = self
+            && matches!(document, DocumentTower::Unloaded)
+        {
+            bundle.verify_tower(TowerRole::Document)?;
+            let runtime = MlxRuntime::load(Arc::clone(bundle), TowerRole::Document)?;
+            *document = DocumentTower::Loaded(Box::new(runtime));
+            document_loads.fetch_add(1, Ordering::Relaxed);
+        }
+        Ok(())
+    }
+
+    fn embed_controlled(
+        &mut self,
+        role: TowerRole,
+        tokens: &TokenBatch,
+        closed: &AtomicBool,
+        control: Option<&QueryControl>,
+    ) -> Result<EmbeddingBatch, TextError> {
+        let mut checkpoint = || check_runtime_control(closed, control);
+        match self {
+            Self::Symmetric(runtime) => runtime.embed_batch_controlled(tokens, &mut checkpoint),
+            Self::Pair { document, query } => match role {
+                TowerRole::Document => match document {
+                    DocumentTower::Loaded(runtime) => {
+                        runtime.embed_batch_controlled(tokens, &mut checkpoint)
+                    }
+                    DocumentTower::Unloaded => Err(TextError::Pipeline {
+                        stage: "document load",
+                        detail: "document tower was not loaded".to_owned(),
+                    }),
+                },
+                TowerRole::Query => query.embed_controlled(tokens, &mut checkpoint),
+            },
+        }
+    }
+}
+
+fn mlx_backend(runtime: &MlxRuntime) -> QueryBackend {
+    let identity = runtime.identity();
+    QueryBackend {
+        runtime: identity,
+        requested_compute_units: if identity.gpu {
+            volantis_db::epoch::ComputeUnits::CpuAndGpu
+        } else {
+            volantis_db::epoch::ComputeUnits::Cpu
+        },
+        observed_compute_units: None,
+        sequence_length: None,
+    }
+}
+
+struct RuntimeClient {
+    document_loads: Arc<AtomicUsize>,
+    query_backend: QueryBackend,
+    #[cfg(target_os = "macos")]
+    compute_plan: Option<crate::runtime::coreml::CoreMlComputePlan>,
+    sender: mpsc::SyncSender<RuntimeCommand>,
+    thread: Mutex<Option<JoinHandle<()>>>,
+    closed: Arc<AtomicBool>,
+}
+
+impl RuntimeClient {
+    fn start(
+        bundle: Arc<Bundle>,
+        query_coreml: Option<std::path::PathBuf>,
+    ) -> Result<Self, TextError> {
+        #[cfg(target_os = "macos")]
+        let coreml_policy = crate::runtime::coreml::ComputeUnits::CpuAndNeuralEngine;
+        #[cfg(target_os = "macos")]
+        let compute_plan = query_coreml
+            .as_ref()
+            .map(|path| crate::runtime::coreml::CoreMlComputePlan::new(path, coreml_policy));
+        let (sender, receiver) = mpsc::sync_channel::<RuntimeCommand>(2);
+        let (init_sender, init_receiver) = mpsc::sync_channel(0);
+        let closed = Arc::new(AtomicBool::new(false));
+        let worker_closed = Arc::clone(&closed);
+        let document_loads = Arc::new(AtomicUsize::new(0));
+        let worker_loads = Arc::clone(&document_loads);
+        let thread = std::thread::Builder::new()
+            .name("ze-text-embed".to_owned())
+            .spawn(move || {
+                let runtimes = (|| -> Result<RuntimeSet, TextError> {
+                    if bundle.is_symmetric() && query_coreml.is_none() {
+                        let document = MlxRuntime::load(Arc::clone(&bundle), TowerRole::Document)?;
+                        worker_loads.fetch_add(1, Ordering::Relaxed);
+                        return Ok(RuntimeSet::Symmetric(Box::new(document)));
+                    }
+                    let dims = bundle.query_tower().embedding.dims as usize;
+                    let query = match query_coreml {
+                        // A present but unloadable artifact is a hard error.
+                        #[cfg(target_os = "macos")]
+                        Some(path) => crate::runtime::coreml::CoreMlRuntime::load(
+                            &path, dims, coreml_policy,
+                        ).and_then(|runtime| {
+                            let max_tokens = bundle.query_tower().embedding.max_tokens;
+                            if runtime.sequence() < max_tokens as usize {
+                                return Err(RuntimeError::Shape(format!(
+                                    "CoreML query sequence length {} is below bundle query max_tokens {max_tokens}",
+                                    runtime.sequence()
+                                )));
+                            }
+                            Ok(QueryRuntime::CoreMl(Box::new(runtime)))
+                        })?,
+                        #[cfg(not(target_os = "macos"))]
+                        Some(_) => return Err(TextError::Runtime(RuntimeError::Mlx(
+                            "CoreML is available on macOS only".to_owned(),
+                        ))),
+                        None => MlxRuntime::load(Arc::clone(&bundle), TowerRole::Query)
+                            .map(Box::new).map(QueryRuntime::Mlx)?,
+                    };
+                    Ok(RuntimeSet::Pair { document: DocumentTower::Unloaded, query })
+                })();
+                let mut runtimes = match runtimes {
+                    Ok(runtimes) => {
+                        let _ = init_sender.send(Ok(runtimes.query_backend()));
+                        runtimes
+                    }
+                    Err(error) => {
+                        let _ = init_sender.send(Err(error));
+                        return;
+                    }
+                };
+                run_embedding_commands(receiver, &worker_closed, |role, tokens, control| {
+                    if role == TowerRole::Document {
+                        runtimes.load_document(&bundle, &worker_loads)?;
+                    }
+                    runtimes.embed_controlled(role, tokens, &worker_closed, control)
+                });
+            })
+            .map_err(|error| TextError::Pipeline {
+                stage: "embed start",
+                detail: error.to_string(),
+            })?;
+        let query_backend = init_receiver.recv().map_err(|_| TextError::Pipeline {
+            stage: "embed initialization",
+            detail: "thread closed before reporting initialization".to_owned(),
+        })??;
+        Ok(Self {
+            document_loads,
+            query_backend,
+            #[cfg(target_os = "macos")]
+            compute_plan,
+            sender,
+            thread: Mutex::new(Some(thread)),
+            closed,
+        })
+    }
+
+    fn embed(
+        &self,
+        role: TowerRole,
+        tokens: TokenBatch,
+        inject_panic: bool,
+    ) -> Result<EmbeddingBatch, TextError> {
+        self.embed_with_timing(role, tokens, inject_panic)
+            .map(|result| result.batch)
+    }
+
+    fn embed_with_timing(
+        &self,
+        role: TowerRole,
+        tokens: TokenBatch,
+        inject_panic: bool,
+    ) -> Result<RuntimeEmbedding, TextError> {
+        self.embed_with_timing_controlled(role, tokens, inject_panic, None)
+    }
+
+    fn embed_with_timing_controlled(
+        &self,
+        role: TowerRole,
+        tokens: TokenBatch,
+        inject_panic: bool,
+        control: Option<QueryControl>,
+    ) -> Result<RuntimeEmbedding, TextError> {
+        if self.closed.load(Ordering::Acquire) {
+            return Err(TextError::Pipeline {
+                stage: "embed submit",
+                detail: "runtime is closed".to_owned(),
+            });
+        }
+        check_runtime_control(&self.closed, control.as_ref())?;
+        let (reply, receive) = mpsc::sync_channel(0);
+        let command = RuntimeCommand::Embed {
+            role,
+            tokens,
+            inject_panic,
+            queued: stage_start(),
+            control: control.clone(),
+            reply,
+        };
+        let disconnected = |stage| TextError::Pipeline {
+            stage,
+            detail: "runtime channel closed early".to_owned(),
+        };
+        if control.is_none() {
+            // Document ingestion retains its existing blocking queue policy.
+            self.sender
+                .send(command)
+                .map_err(|_| disconnected("embed submit"))?;
+            return receive.recv().map_err(|_| disconnected("embed receive"))?;
+        }
+        let mut pending = command;
+        loop {
+            check_runtime_control(&self.closed, control.as_ref())?;
+            match self.sender.try_send(pending) {
+                Ok(()) => break,
+                Err(mpsc::TrySendError::Full(command)) => {
+                    #[cfg(all(test, feature = "test-support"))]
+                    query_control_tests::QUEUE_FULL_PROBES.with(|value| value.set(value.get() + 1));
+                    pending = command;
+                    std::thread::park_timeout(QUERY_WAIT_POLL);
+                }
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    check_runtime_control(&self.closed, control.as_ref())?;
+                    return Err(disconnected("embed submit"));
+                }
+            }
+        }
+        loop {
+            check_runtime_control(&self.closed, control.as_ref())?;
+            match receive.recv_timeout(QUERY_WAIT_POLL) {
+                Ok(result) => {
+                    check_runtime_control(&self.closed, control.as_ref())?;
+                    return result;
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    check_runtime_control(&self.closed, control.as_ref())?;
+                    return Err(disconnected("embed receive"));
+                }
+            }
+        }
+    }
+
+    fn close(&self) -> Result<(), TextError> {
+        if self.closed.swap(true, Ordering::AcqRel) {
+            return Ok(());
+        }
+        let _ = self.sender.send(RuntimeCommand::Close);
+        let thread = self
+            .thread
+            .lock()
+            .map_err(|_| TextError::Pipeline {
+                stage: "embed close",
+                detail: "join mutex poisoned".to_owned(),
+            })?
+            .take();
+        if let Some(thread) = thread {
+            thread.join().map_err(|_| TextError::Pipeline {
+                stage: "embed close",
+                detail: "thread panicked".to_owned(),
+            })?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for RuntimeClient {
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::*;
+    use volantis_db::epoch::{ComputeUnits, EmbeddingRuntime, EmbeddingTower};
+
+    fn tower(dims: u32, normalization: Normalization) -> EmbeddingTower {
+        EmbeddingTower {
+            model_id: "test".to_owned(),
+            model_version: "v1".to_owned(),
+            weights_digest: vec![1],
+            dims,
+            normalization,
+            prompt_prefix: String::new(),
+            max_tokens: 8,
+            runtime: EmbeddingRuntime::Mlx,
+            compute_units: ComputeUnits::CpuAndGpu,
+            os_build: None,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn coreml_backend_reports_runtime_requested_policy() {
+        use crate::runtime::coreml::{ComputeUnits as Policy, CoreMlRuntime};
+        let root = tempfile::tempdir().expect("CoreML fixture directory");
+        let source = root.path().join("tiny.mlmodel");
+        std::fs::write(
+            &source,
+            include_bytes!("../tests/fixtures/ze115/tiny.mlmodel"),
+        )
+        .expect("write model");
+        let output = std::process::Command::new("xcrun")
+            .args(["coremlcompiler", "compile"])
+            .arg(&source)
+            .arg(root.path())
+            .output()
+            .expect("compile model");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        for (policy, expected) in [
+            (Policy::Cpu, ComputeUnits::Cpu),
+            (Policy::CpuAndGpu, ComputeUnits::CpuAndGpu),
+            (Policy::CpuAndNeuralEngine, ComputeUnits::CpuAndNeuralEngine),
+            (Policy::All, ComputeUnits::All),
+        ] {
+            let runtime = CoreMlRuntime::load(&root.path().join("tiny.mlmodelc"), 2, policy)
+                .expect("load model under requested policy");
+            let runtime = QueryRuntime::CoreMl(Box::new(runtime));
+            assert_eq!(runtime.backend().requested_compute_units, expected);
+        }
+    }
+
+    #[test]
+    fn rebuilding_versions_removes_stale_chunks_after_wal_replay() {
+        let directory = tempfile::tempdir().expect("store directory");
+        let store = Store::open(directory.path(), OpenOptions::default()).expect("open store");
+        let current = encode_chunk_id(41, 0).expect("current id");
+        let stale = encode_chunk_id(41, 1).expect("stale id");
+        let unrelated = encode_chunk_id(42, 0).expect("unrelated id");
+        let row = |id, revision| {
+            IngestDocument::new(
+                DocumentVersion::new(id, Revision::new(revision)),
+                vec![1.0, 0.0],
+            )
+        };
+        store
+            .ingest(IngestBatch::new(vec![
+                row(current, 1),
+                row(stale, 1),
+                row(unrelated, 7),
+            ]))
+            .expect("old revision and unrelated document");
+        store.seal().expect("seal old rows");
+        store
+            .ingest(IngestBatch::new(vec![row(current, 2)]))
+            .expect("unsealed replacement");
+        store.close().expect("close without stale cleanup");
+        drop(store);
+        let reopened = Store::open(directory.path(), OpenOptions::default()).expect("replay WAL");
+        reopened.seal().expect("publish replayed rows");
+        let versions = load_versions(&reopened, true).expect("rebuild and reconcile registry");
+        assert_eq!(
+            versions,
+            BTreeMap::from([(current, Revision::new(2)), (unrelated, Revision::new(7))])
+        );
+        assert!(
+            reopened
+                .get_documents(
+                    &[stale],
+                    volantis_db::lifecycle::DocumentFields::default()
+                )
+                .expect("read removed stale chunk")
+                .iter()
+                .all(Option::is_none)
+        );
+    }
+
+    #[test]
+    fn ingest_options_chunking_and_caller_id_boundaries_fail_loudly() {
+        let document = TextDocument::new(7, 1, "one two three four five");
+        assert!(validate_ingest_options(&[], IngestOptions::default()).is_err());
+        assert!(
+            validate_ingest_options(
+                std::slice::from_ref(&document),
+                IngestOptions {
+                    embed_batch_size: 0,
+                    ..Default::default()
+                },
+            )
+            .is_err()
+        );
+        assert!(
+            validate_ingest_options(
+                std::slice::from_ref(&document),
+                IngestOptions {
+                    chunk_policy: ChunkPolicy::Tokens { max: 2, overlap: 2 },
+                    ..Default::default()
+                },
+            )
+            .is_err()
+        );
+        assert!(
+            validate_ingest_options(
+                &[TextDocument::new(1_u128 << CALLER_BITS, 1, "too large")],
+                IngestOptions::default(),
+            )
+            .is_err()
+        );
+        let chunks = chunks_for_text(&document, ChunkPolicy::Tokens { max: 3, overlap: 1 })
+            .expect("overlap chunks");
+        assert_eq!(chunks, ["one two three", "three four five"]);
+        assert_eq!(
+            chunks_for_text(&document, ChunkPolicy::None).expect("no chunks"),
+            std::slice::from_ref(&document.text)
+        );
+        assert!(
+            build_jobs(
+                std::slice::from_ref(&document),
+                IngestOptions {
+                    chunk_policy: ChunkPolicy::None,
+                    ..Default::default()
+                },
+                3,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            encode_chunk_id(7, 3).expect("chunk id").get(),
+            (7_u128 << 32) | 3
+        );
+        assert!(encode_chunk_id(1_u128 << CALLER_BITS, 0).is_err());
+    }
+
+    #[test]
+    fn vector_normalization_checks_dimensions_finiteness_and_unit_norm() {
+        let mut batch = EmbeddingBatch::new(vec![3.0, 4.0], 1, 2).expect("batch");
+        normalize_batch(&mut batch, &tower(2, Normalization::L2)).expect("normalize");
+        assert_eq!(batch.values(), [0.6, 0.8]);
+        let mut unchanged = EmbeddingBatch::new(vec![3.0, 4.0], 1, 2).expect("batch");
+        normalize_batch(&mut unchanged, &tower(2, Normalization::None)).expect("no normalize");
+        assert_eq!(unchanged.values(), [3.0, 4.0]);
+        assert!(normalize_batch(&mut unchanged, &tower(3, Normalization::None)).is_err());
+        let mut zero = EmbeddingBatch::new(vec![0.0, 0.0], 1, 2).expect("zero batch");
+        assert!(normalize_batch(&mut zero, &tower(2, Normalization::L2)).is_err());
+        let mut nan = EmbeddingBatch::new(vec![f32::NAN, 1.0], 1, 2).expect("nan batch");
+        assert!(normalize_batch(&mut nan, &tower(2, Normalization::L2)).is_err());
+    }
+
+    #[test]
+    fn external_cancel_token_stops_ingest_control_after_construction() {
+        let token = CancelToken::new();
+        let control = IngestControl::new().with_query_control(QueryControl::Cancel(token.clone()));
+        assert_eq!(
+            acquire_buffer_slot(&AtomicUsize::new(0), 1, &control),
+            Some(1)
+        );
+        token.cancel();
+        assert_eq!(acquire_buffer_slot(&AtomicUsize::new(0), 1, &control), None);
+        assert!(control.external_checkpoint().is_err());
+    }
+
+    #[test]
+    fn cancellation_prevents_acquiring_an_in_flight_slot() {
+        let control = IngestControl::new();
+        control.cancel();
+        assert_eq!(acquire_buffer_slot(&AtomicUsize::new(0), 1, &control), None);
+        assert!(!IngestControl::default().fault_fired(TextFaultSite::EmbedWorkerPanic));
+    }
+}
+
+#[cfg(all(test, feature = "test-support"))]
+#[path = "query_control_tests.rs"]
+mod query_control_tests;
+
+#[cfg(all(test, feature = "test-support"))]
+#[path = "query_overlap_tests.rs"]
+mod query_overlap_tests;
+
+#[cfg(test)]
+#[path = "../tests/common/mod.rs"]
+#[allow(clippy::expect_used, clippy::indexing_slicing)]
+mod lazy_document_fixtures;
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod lazy_document_tests {
+    use super::*;
+
+    fn assert_lazy_bits(bundle: Arc<Bundle>) {
+        let tokens = bundle
+            .tokenize_document_chunks(&["bronze zeppelin".to_owned()])
+            .expect("tokens");
+        let runtime = RuntimeClient::start(Arc::clone(&bundle), None).expect("worker");
+        assert_eq!(
+            runtime.document_loads.load(Ordering::Relaxed),
+            0,
+            "no document load at open"
+        );
+        let mut direct =
+            MlxRuntime::load(Arc::clone(&bundle), TowerRole::Document).expect("direct document");
+        let bits = |batch: &EmbeddingBatch| {
+            batch
+                .values()
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>()
+        };
+        let expected = bits(&direct.embed_batch(&tokens).expect("direct bits"));
+        for _ in 0..2 {
+            let actual = runtime
+                .embed(TowerRole::Document, tokens.clone(), false)
+                .expect("lazy bits");
+            assert_eq!(bits(&actual), expected);
+            assert_eq!(runtime.document_loads.load(Ordering::Relaxed), 1);
+        }
+        runtime.close().expect("join worker");
+    }
+
+    #[test]
+    fn lazy_document_tower_loads_once_with_bit_identical_embeddings() {
+        let root = tempfile::tempdir().expect("fixture");
+        let path = root.path().join("pair.zem");
+        lazy_document_fixtures::write_fixture_bundle(
+            &path,
+            &[
+                lazy_document_fixtures::FixtureTower::document("document"),
+                lazy_document_fixtures::FixtureTower::query("query"),
+            ],
+            b"pair",
+        );
+        assert_lazy_bits(Arc::new(Bundle::open(path).expect("bundle")));
+    }
+
+    #[test]
+    fn open_warms_vector_and_close_cancels_and_joins() {
+        let root = tempfile::tempdir().expect("fixture");
+        let model = root.path().join("pair.zem");
+        lazy_document_fixtures::write_fixture_bundle(
+            &model,
+            &[
+                lazy_document_fixtures::FixtureTower::document("document"),
+                lazy_document_fixtures::FixtureTower::query("query"),
+            ],
+            b"pair",
+        );
+        let path = root.path().join("store");
+        let writer = TextStore::open(&path, &model, Default::default()).expect("writer");
+        writer
+            .ingest_text_serialized(
+                &[
+                    TextDocument::new(1, 1, "bronze"),
+                    TextDocument::new(2, 1, "bronze zeppelin"),
+                ],
+                Default::default(),
+            )
+            .expect("seed");
+        let query_bits = |store: &TextStore| {
+            [Legs::Dense, Legs::Hybrid]
+                .into_iter()
+                .map(|legs| {
+                    store
+                        .query_text("bronze", QueryOptions::new(10).with_legs(legs))
+                        .expect("query")
+                        .into_iter()
+                        .map(|hit| (hit.doc_id, hit.score.to_bits()))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        };
+        let expected = query_bits(&writer);
+        writer.close().expect("close writer");
+        drop(writer);
+        let store = TextStore::open(&path, &model, Default::default()).expect("reopen");
+        let generation = store.health().expect("health").generation;
+        store.wait_for_warm().expect("join warm");
+        {
+            let warm = store.warm.lock().expect("warm state");
+            assert!(
+                warm.vector_warmed,
+                "one vector search must complete during warm-up"
+            );
+            assert!(warm.thread.is_none());
+        }
+        assert_eq!(store.document_tower_loads(), 0);
+        assert_eq!(store.health().expect("health").generation, generation);
+        assert_eq!(
+            query_bits(&store),
+            expected,
+            "warm search must preserve ids and score bits"
+        );
+        store.close().expect("close warmed store");
+        assert!(
+            QueryControl::Cancel(store.warm_cancel.clone())
+                .checkpoint()
+                .is_err()
+        );
+        assert!(store.warm.lock().expect("warm state").thread.is_none());
+        drop(store);
+        let store = TextStore::open(&path, &model, Default::default()).expect("immediate close");
+        store.close().expect("cancel and join warm worker");
+        assert!(
+            QueryControl::Cancel(store.warm_cancel.clone())
+                .checkpoint()
+                .is_err()
+        );
+        assert!(store.warm.lock().expect("joined by close").thread.is_none());
+        assert_eq!(store.document_tower_loads(), 0);
+    }
+
+    #[test]
+    #[ignore = "requires ZE_TEXT_BUNDLE and native Metal"]
+    fn real_bundle_lazy_document_tower_matches_eager_bits() {
+        let path = std::env::var_os("ZE_TEXT_BUNDLE").expect("set ZE_TEXT_BUNDLE");
+        let bundle = Arc::new(Bundle::open(path).expect("real bundle"));
+        assert!(!bundle.is_symmetric(), "release pair required");
+        assert_lazy_bits(bundle);
+    }
+}

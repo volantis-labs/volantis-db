@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed::kernels::KernelVariant;
+use volantis_db::kernels::KernelVariant;
 
 fn fuzz_byte(payload: &[u8], index: usize) -> u8 {
     payload

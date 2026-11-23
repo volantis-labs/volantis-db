@@ -1,15 +1,15 @@
 //! Catalog probes exercise private reconstruction/admission, not store recovery.
 use super::coverage::CoverageRegistry;
 use rand::RngCore;
-use zeppelin_embed::epoch::{ComputeUnits, EmbeddingRuntime, EmbeddingTower, Normalization};
-use zeppelin_embed::fts::tokenizer::TokenizerConfig;
-use zeppelin_embed::property_graph::catalog::{
+use volantis_db::epoch::{ComputeUnits, EmbeddingRuntime, EmbeddingTower, Normalization};
+use volantis_db::fts::tokenizer::TokenizerConfig;
+use volantis_db::property_graph::catalog::{
     CatalogDeclaration, CatalogError, CatalogImage, GraphInterpretation, OnDelete,
     RelationshipRule, RelationshipRules, Symbol, SymbolCatalog, SymbolEntry, SymbolHighWaters,
     SymbolKind,
 };
-use zeppelin_embed::property_graph::{GraphName, StoreInstanceId};
-use zeppelin_embed_adversarial_oracle::graph_catalog::{
+use volantis_db::property_graph::{GraphName, StoreInstanceId};
+use volantis_db_adversarial_oracle::graph_catalog::{
     self as oracle, Dictionary, Interpretation,
 };
 

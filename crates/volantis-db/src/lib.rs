@@ -1,0 +1,781 @@
+//! Embedded hybrid-search engine primitives.
+//!
+//! # Durability
+//!
+//! [`lifecycle::durability::DurabilityMode`] defaults to `Derived`. The default
+//! issues no synchronization primitive at any commit tier; under it,
+//! [`lifecycle::durability::CommitTier`] is ignored entirely. An application
+//! crash or process kill does not lose acknowledged writes because the
+//! operating-system page cache retains them and writes them out afterward. A
+//! power cut or kernel panic can lose recently acknowledged writes. Recovery
+//! truncates the log at the first record whose checksum fails, leaving a
+//! structurally valid store with a missing recent tail rather than silently
+//! wrong data.
+//!
+//! `Derived` asserts that another store is authoritative and this store can be
+//! rebuilt from it. If this store is the only copy of the data, select
+//! [`lifecycle::durability::DurabilityMode::Durable`] explicitly.
+
+#![deny(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::unwrap_used,
+    unsafe_op_in_unsafe_fn
+)]
+#![warn(missing_docs)]
+
+#[cfg(all(
+    feature = "graph-cypher",
+    not(any(
+        target_os = "macos",
+        all(target_os = "windows", target_arch = "x86_64")
+    ))
+))]
+compile_error!("graph-cypher supports macOS (arm64, x86_64) and Windows x64 only");
+
+#[cfg(feature = "allocation-audit")]
+mod allocation_audit;
+
+#[cfg(any(test, feature = "test-seams"))]
+#[doc(hidden)]
+pub mod adversarial_test_support;
+
+/// Fixed keyed fixture for integration tests of the Cypher writer seam.
+#[cfg(all(feature = "graph-cypher", feature = "test-seams"))]
+#[doc(hidden)]
+pub mod graph_structured_write_test_support {
+    use crate::lifecycle::{CancelToken, QueryControl, Store};
+    use crate::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
+    use crate::property_graph::{
+        ApplicationKey, CanonicalContents, EntityId, EntityKind, GraphGeneration, GraphName,
+        GraphProperty, GraphRevision, NodeId, PropertyData, PropertyValue,
+    };
+
+    /// Cancels the supplied write token at graph text index preparation on this thread.
+    pub fn cancel_node_text_preparation(token: CancelToken) {
+        crate::lifecycle::native_graph::node_text::cancel_next_build(token);
+    }
+
+    /// Creates one application-keyed `:A {v: 1}` through the real writer.
+    pub fn create_keyed_node(store: &Store) -> Result<(NodeId, GraphGeneration), String> {
+        let mut labels = [GraphName::new("A").map_err(|e| format!("label: {e:?}"))?];
+        let mut properties = [GraphProperty::new(
+            GraphName::new("v").map_err(|e| format!("property name: {e:?}"))?,
+            PropertyValue::new(PropertyData::I64(1))
+                .map_err(|e| format!("property value: {e:?}"))?,
+        )];
+        let image = CanonicalContents::node(&mut labels, &mut properties, None, None)
+            .map_err(|e| format!("node image: {e:?}"))?;
+        let receipts = store
+            .apply_native_graph(
+                &[StructuredWrite {
+                    key: ApplicationKey::new(EntityKind::Node, "app", "ze214")
+                        .map_err(|e| format!("application key: {e:?}"))?,
+                    revision: GraphRevision::new(1).map_err(|e| format!("revision: {e:?}"))?,
+                    operation: StructuredOperation::Create,
+                    image: Some(WriteImage::Node(&image)),
+                }],
+                &QueryControl::Cancel(CancelToken::new()),
+            )
+            .map_err(|e| format!("structured create: {e:?}"))?;
+        if receipts.len() != 1 {
+            return Err("structured create did not return exactly one receipt".to_owned());
+        }
+        let receipt = receipts
+            .first()
+            .ok_or_else(|| "structured create returned no receipt".to_owned())?;
+        match receipt.entity {
+            EntityId::Node(node) => Ok((node, receipt.generation)),
+            EntityId::Relationship(_) => {
+                Err("structured create returned a relationship".to_owned())
+            }
+        }
+    }
+}
+
+#[cfg(all(feature = "graph-cypher", feature = "test-seams"))]
+#[doc(hidden)]
+pub mod graph_read_view_test_support {
+    /// One completed production boundary, emitted only after its exact direct
+    /// assertion and any paired clean control returned successfully.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct PathReceipt {
+        /// Registry key owned by the completed boundary.
+        pub key: &'static str,
+        /// Actual scheduled failures observed at that boundary.
+        pub fires: u64,
+        /// Same-seed clean executions observed after or beside the failure.
+        pub clean_controls: u64,
+    }
+
+    /// Primitive actual relationship observation for the independent ZE-129
+    /// oracle crate; this type contains no expected answer or comparator.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct ObservedRelationship {
+        pub rel: u128,
+        pub source: u128,
+        pub target: u128,
+        pub relationship_type: u64,
+    }
+
+    /// Exact receipts and actual rows from one controlled probe execution.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct ActualProbeReport {
+        pub receipts: Vec<PathReceipt>,
+        pub relationships: Vec<ObservedRelationship>,
+    }
+    /// Confirms that the controlled fixture boundary is linked only into a
+    /// test-support build. Behavioral acceptance remains on the internal scoped
+    /// adapter so no installer or read capability becomes a shipping API.
+    pub fn controlled_boundary_is_available() -> bool {
+        std::mem::size_of::<crate::lifecycle::native_graph::NativeReadLease>() > 0
+            && std::mem::size_of::<crate::property_graph::storage::GraphReadView<'_, '_, '_, '_>>()
+                > 0
+    }
+
+    /// Runs the real controlled native adapter, fault, lifetime and release paths.
+    /// Panics are retained as test failures; the shipping graph feature has no
+    /// installer or fixture surface because this module requires test-support.
+    pub fn run_actual_probe(seed: u64) -> ActualProbeReport {
+        crate::lifecycle::native_graph::tests::run_adversarial_probe(seed)
+    }
+}
+
+#[cfg(all(feature = "graph-cypher", feature = "test-seams"))]
+#[doc(hidden)]
+pub mod graph_publication_test_support {
+    /// Runs only the directed production coordinator paths and returns observed receipts.
+    pub fn run_actual_probe(seed: u64) -> crate::graph_read_view_test_support::ActualProbeReport {
+        crate::lifecycle::native_graph::tests::publication::run_actual_probe(seed)
+    }
+}
+
+#[cfg(all(feature = "graph-cypher", feature = "test-seams"))]
+#[doc(hidden)]
+pub mod graph_identity_test_support {
+    use crate::graph_read_view_test_support::PathReceipt;
+
+    /// One observed adjacency row, bound to the node the question named.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct ObservedAdjacency {
+        /// Node the expansion was bound to.
+        pub bound_node: u128,
+        /// Exact relationship type identity.
+        pub relationship_type: u64,
+        /// Exact relationship identity.
+        pub rel: u128,
+        /// Other endpoint of that row.
+        pub neighbor: u128,
+    }
+
+    /// Exact outcome of one keyed request. It holds no expected answer.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct ObservedOutcome {
+        /// Key ordinal the request named.
+        pub key: u32,
+        /// Primitive rejection name, absent when the request was admitted.
+        pub rejection: Option<&'static str>,
+        /// Installed or replayed identity; zero on a rejection.
+        pub entity: u128,
+        /// Installed or replayed revision; zero on a rejection.
+        pub revision: u64,
+        /// Original generation for a replay, changed generation otherwise.
+        pub generation: u64,
+        /// Exact replay classification.
+        pub replayed: bool,
+    }
+
+    /// Complete visible rows of one watched expansion after one batch.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct ObservedWatch {
+        /// Batch index this answer follows.
+        pub batch: usize,
+        /// Published generation the reader observed.
+        pub generation: u64,
+        /// Key ordinal whose current incarnation was bound.
+        pub key: u32,
+        /// Whether the expansion was outgoing.
+        pub outgoing: bool,
+        /// Complete rows, in the order the engine returned them.
+        pub rows: Vec<ObservedAdjacency>,
+    }
+
+    /// Actual state observed from one real keyed identity script.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct IdentityState {
+        /// Ordered receipts and rejections of the script.
+        pub outcomes: Vec<ObservedOutcome>,
+        /// Watched expansions after every batch.
+        pub watched: Vec<ObservedWatch>,
+        /// Generation held by a reader admitted before the deletion.
+        pub retained_generation: u64,
+        /// Rows that retained reader still observes after the deletion,
+        /// the recreation and a real reclamation cycle.
+        pub retained_rows: Vec<ObservedAdjacency>,
+        /// Generation observed by a reader admitted after those changes.
+        pub fresh_generation: u64,
+        /// Rows that newly admitted reader observes.
+        pub fresh_rows: Vec<ObservedAdjacency>,
+    }
+
+    /// Receipts emitted only after each directed identity body completes.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct IdentityProbeReport {
+        /// Completed path receipts with actual fired and clean counts.
+        pub receipts: Vec<PathReceipt>,
+        /// Actual state observed from one real script.
+        pub state: IdentityState,
+    }
+
+    /// Runs the directed production identity paths used by ZE-36 acceptance.
+    pub fn run_actual_probe(seed: u64) -> IdentityProbeReport {
+        crate::lifecycle::native_graph::tests::run_identity_probe(seed)
+    }
+}
+
+#[cfg(all(feature = "graph-cypher", feature = "test-seams"))]
+#[doc(hidden)]
+pub mod graph_reclaim_test_support {
+    use crate::graph_read_view_test_support::{ObservedRelationship, PathReceipt};
+
+    /// Actual state observed after one real reclaim cycle and a reopen. It
+    /// holds no expected answer and no comparator.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct ReclaimState {
+        /// First created node identity.
+        pub first_node: u128,
+        /// Second created node identity.
+        pub second_node: u128,
+        /// OUT rows of the first node after the cycle and the reopen.
+        pub relationships: Vec<ObservedRelationship>,
+        /// Generation replayed for the original installing request.
+        pub replay_generation: u64,
+        /// Whether that request was classified as an exact replay.
+        pub replayed: bool,
+        /// Bytes physically unlinked by the cycle.
+        pub removed_bytes: u64,
+        /// Summed on-disk lengths of the files the cycle unlinked.
+        pub unlinked_file_bytes: u64,
+    }
+
+    /// Receipts emitted only after each directed reclamation body completes.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct ReclaimProbeReport {
+        /// Completed path receipts with actual fired and clean counts.
+        pub receipts: Vec<PathReceipt>,
+        /// Actual state after a real cycle.
+        pub state: ReclaimState,
+        /// Actual post-sweep key visibility and original install replay generation.
+        pub detach_sweep: (bool, u64),
+        /// Host byte limit, observed charge, successful steps and byte refusal.
+        pub host_budget: (u64, u64, u64, bool),
+    }
+
+    /// Narrow measured reader-race observations and serialized controls.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct RaceProbeReport {
+        /// Old generation, canonical bytes, and root/WAL unlink results.
+        pub observation: (u64, Vec<u8>, bool, bool),
+        /// Identical seed with serialized scheduling.
+        pub control: (u64, Vec<u8>, bool, bool),
+    }
+
+    /// Runs only ZE-176's same-coordinator reader races.
+    pub fn run_ze176_race_probe(seed: u64) -> RaceProbeReport {
+        crate::lifecycle::native_graph::tests::run_ze176_race_probe(seed)
+    }
+
+    /// Runs the directed production consolidation and reclamation paths used
+    /// by ZE-46 acceptance.
+    pub fn run_actual_probe(seed: u64) -> ReclaimProbeReport {
+        crate::lifecycle::native_graph::tests::run_reclaim_probe(seed)
+    }
+}
+
+#[cfg(all(feature = "graph-cypher", feature = "test-seams"))]
+#[doc(hidden)]
+pub mod graph_storage_fault_test_support {
+    use crate::graph_read_view_test_support::{ObservedRelationship, PathReceipt};
+    use crate::lifecycle::{OpenOptions, Store};
+    use crate::vfs::Vfs;
+    use std::path::Path;
+    use std::sync::Arc;
+
+    /// One keyed node observed in actual directory order. It holds no expected
+    /// answer and no comparator.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct ObservedKeyedNode {
+        /// Application-key bytes exactly as the fixture supplied them.
+        pub key: Vec<u8>,
+        /// Node identity the store resolved for that key.
+        pub node: u128,
+        /// Installed revision of that node record.
+        pub revision: u64,
+    }
+
+    /// Seeded per-class fault selection. The adversarial family owns the
+    /// schedule; this crate only executes the schedule it is handed.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct StorageFaultSchedule {
+        /// Byte position, modulo the damaged region, of the class-1 bit flip.
+        pub artifact_ref_offset: u64,
+        /// Upper bound on the keyed nodes class 2 commits while it discovers
+        /// which chunk splits the node directory.
+        pub split_keys: u32,
+        /// Which pre-split key class 2 resolves first through the old root.
+        pub split_probe: u32,
+        /// How many class-2 artifact creates succeed before the fault fires.
+        pub split_skip: u32,
+        /// Which class-3 adjacency append fails after the OUT append succeeds.
+        pub out_in_append: u32,
+        /// Selects the class-4 root-replacement variant order.
+        pub root_variant: u8,
+        /// Seeded byte offsets and selection fixture order for classes 5-6.
+        pub qualification_seed: u64,
+    }
+
+    /// Measured reclamation or scoped-mapping fault cell and its clean control.
+    #[derive(Clone, Debug, Default, Eq, PartialEq)]
+    pub struct QualificationCell {
+        /// Fault boundary actually executed.
+        pub name: String,
+        /// Actual targeted injections and clean completions.
+        pub fires: u64,
+        pub controls: u64,
+        /// Explicit refused outcome, never a successful callback.
+        pub refusal: String,
+        /// Unauthorized deletes and changed protected files.
+        pub unauthorized_unlinks: u64,
+        pub changed_live_files: u64,
+        /// Pending authority survived, and all remaining targets resumed once.
+        pub intent_preserved: bool,
+        pub resumed: bool,
+        /// Reported bytes and independently summed physical unlink lengths.
+        pub removed_bytes: u64,
+        pub unlinked_bytes: u64,
+        /// Callback exposure on a refused mapping.
+        pub exposed_blocks: u64,
+        /// Slot fills at the scoped transition.
+        pub filled: usize,
+        /// Open attempts from the source and the independent VFS log.
+        pub opens: usize,
+        pub logged_opens: usize,
+        pub scoped_opens: usize,
+        /// Actual mark run/merge counts or folded manifest count.
+        pub runs: usize,
+        pub merges: usize,
+        pub folded: usize,
+        /// Successful publications making the count-only foreground leg due.
+        pub count_debt: u64,
+    }
+
+    /// Pack census measured before oldest-first selection, without random IDs.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct QualificationPack {
+        pub serial: u64,
+        pub bytes: u32,
+        pub live: u64,
+        pub pages: u32,
+        pub records: u32,
+        pub graph_live: bool,
+    }
+    /// Actual selection inputs and outputs, and same-seed clean identities.
+    #[derive(Clone, Debug, Default, Eq, PartialEq)]
+    pub struct QualificationSelection {
+        pub packs: Vec<QualificationPack>,
+        pub selected_serials: Vec<u64>,
+        pub clean_serials: Vec<u64>,
+        pub byte_limit: u64,
+        /// Direction and fixture group ordinal identify a range semantically.
+        pub ranges: Vec<(u8, usize, usize)>,
+        pub selected_ranges: Vec<(u8, usize)>,
+        pub clean_ranges: Vec<(u8, usize)>,
+        pub fixture_pending: Vec<usize>,
+    }
+
+    /// Per-commit source open counts compared with actual VFS open calls.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct QualificationCommit {
+        pub generation: u64,
+        pub opens: usize,
+        pub logged_opens: usize,
+        pub filled: usize,
+        pub scoped_opens: usize,
+    }
+
+    /// ZE-172 executions, separate from classes 1-4 for scoped binding runs.
+    #[derive(Clone, Debug, Default, Eq, PartialEq)]
+    pub struct QualificationReport {
+        pub cells: Vec<QualificationCell>,
+        pub selection: Option<QualificationSelection>,
+        pub commits: Vec<QualificationCommit>,
+        /// Mapped/private page decode deltas: two reads in one attempt, then a fresh one.
+        pub preparation_page_decodes: Option<[[u64; 3]; 2]>,
+    }
+
+    /// Execute real class-5 reclamation or class-6 scoped mapping cells.
+    pub fn run_qualification_probe(seed: u64, mapping: bool) -> QualificationReport {
+        crate::lifecycle::native_graph::tests::storage_faults::run_qualification_probe(
+            seed, mapping,
+        )
+    }
+
+    /// Actual state observed by one complete ZE-47 / ZE-172 execution.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct StorageFaultState {
+        /// Typed classification of every class-1 damaged-artifact refusal.
+        pub artifact_refusals: Vec<String>,
+        /// Nodes observed after each class-1 damage was reverted byte-exactly.
+        pub surviving_nodes: Vec<ObservedKeyedNode>,
+        /// Actual node-directory root level after the splitting commit
+        /// published, observed through a fresh lease.
+        pub split_level: u16,
+        /// Root level the retained pre-split lease still reports after that
+        /// same publication. A pre-split oracle must still read level zero.
+        pub retained_split_level: u16,
+        /// Keyed nodes committed before the splitting chunk, so the family
+        /// can model exactly the population both leases must answer.
+        pub pre_split_keys: u32,
+        /// Pre-split keys observed through a fresh post-split lease.
+        pub committed_keys: Vec<ObservedKeyedNode>,
+        /// The same keys resolved through the retained pre-split root.
+        pub old_root_keys: Vec<ObservedKeyedNode>,
+        /// Published generations observed before and after the class-2 faults
+        /// on the splitting commit, each through its own fresh lease.
+        pub split_generations: (u64, u64),
+        /// Xxh3-64 over the retained pre-split root page, before the faults
+        /// and after the splitting chunk published cleanly.
+        pub retained_root_digests: (u64, u64),
+        /// Generations before and after the WAL-envelope fault on the
+        /// splitting commit, the second one read through a reopen because
+        /// that refusal stops read admissions.
+        pub unsplit_generations: (u64, u64),
+        /// Node-directory root level that same reopen exposes. A split whose
+        /// WAL envelope never landed must not survive recovery.
+        pub unsplit_reopen_level: u16,
+        /// Typed classification of every class-2 refusal.
+        pub split_refusals: Vec<String>,
+        /// OUT rows of the class-3 relationship after a reopen.
+        pub out_rows: Vec<ObservedRelationship>,
+        /// IN rows of the same relationship after the same reopen.
+        pub in_rows: Vec<ObservedRelationship>,
+        /// Typed classification of every class-3 half-prepared refusal.
+        pub out_in_refusals: Vec<String>,
+        /// Typed classification of every class-4 root-replacement refusal.
+        pub root_refusals: Vec<String>,
+        /// Generation exposed by the class-4 reopen.
+        pub reopened_generation: u64,
+        /// Generation acknowledged before the class-4 fault.
+        pub previous_generation: u64,
+        /// Measured class-5/6 executions.
+        pub qualification: QualificationReport,
+    }
+
+    /// Receipts emitted only after each directed storage-fault body completes.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct StorageFaultProbeReport {
+        /// Completed path receipts with actual fired and clean counts.
+        pub receipts: Vec<PathReceipt>,
+        /// Actual state observed by the six fault classes.
+        pub state: StorageFaultState,
+    }
+
+    /// Runs the six directed ZE-47 / ZE-172 storage fault classes against a
+    /// real native store under a faulty VFS, following the supplied schedule.
+    pub fn run_actual_probe(seed: u64, schedule: StorageFaultSchedule) -> StorageFaultProbeReport {
+        crate::lifecycle::native_graph::tests::run_storage_fault_probe(seed, schedule)
+    }
+
+    /// Forwards the crate-private native-store constructor so an external
+    /// test crate can place its own [`Vfs`] under a real native store.
+    /// `lifecycle::native_graph` is `pub(crate)`, so `NativeGraphError` cannot
+    /// cross this seam; the refusal is rendered through its `Display`.
+    pub fn create_native_graph_with_infrastructure(
+        path: &Path,
+        options: OpenOptions,
+        vfs: Arc<dyn Vfs>,
+    ) -> Result<Store, String> {
+        Store::create_native_graph_with_infrastructure(
+            path,
+            options,
+            None,
+            vfs,
+            Arc::new(crate::lifecycle::SystemMonotonicClock),
+            &mut crate::property_graph::storage::allocation::OsEntropy,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Forwards the crate-private native-store reopen constructor. See
+    /// [`create_native_graph_with_infrastructure`] for the error contract.
+    pub fn open_native_graph_with_infrastructure(
+        path: &Path,
+        options: OpenOptions,
+        vfs: Arc<dyn Vfs>,
+    ) -> Result<Store, String> {
+        Store::open_native_graph_with_infrastructure(
+            path,
+            options,
+            None,
+            vfs,
+            Arc::new(crate::lifecycle::SystemMonotonicClock),
+        )
+        .map_err(|error| error.to_string())
+    }
+}
+
+#[cfg(all(feature = "graph-cypher", feature = "test-seams"))]
+#[doc(hidden)]
+pub mod graph_recovery_test_support {
+    use crate::graph_read_view_test_support::{ObservedRelationship, PathReceipt};
+
+    /// Creates a runner fixture with explicit relationship deletion rules.
+    /// The constructor is crate-private; this test seam adds no production API.
+    pub fn create_with_relationship_rules(
+        path: &std::path::Path,
+        options: crate::lifecycle::OpenOptions,
+        document: Option<crate::epoch::EmbeddingTower>,
+        rules: crate::property_graph::catalog::RelationshipRules<'_>,
+    ) -> Result<crate::lifecycle::Store, String> {
+        crate::lifecycle::Store::create_native_graph_with_relationship_types(
+            path, options, document, rules,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Selects explicit maintenance for the runner's acknowledgement ledger.
+    #[allow(clippy::result_large_err)]
+    pub fn configure_unified_runner(
+        store: &crate::lifecycle::Store,
+    ) -> Result<(), crate::property_graph::GraphStoreError> {
+        store
+            .set_native_graph_maintenance_policy(crate::property_graph::GraphMaintenancePolicy {
+                automatic: false,
+                ..Default::default()
+            })
+            .map_err(Into::into)
+    }
+
+    /// Dispatches runner requests to the same Store's production writer.
+    #[allow(clippy::result_large_err)]
+    pub fn apply_unified_batch(
+        store: &crate::lifecycle::Store,
+        documents: Option<&crate::ingest::IngestBatch>,
+        requests: &[crate::property_graph::staging::StructuredWrite<'_, '_>],
+        control: &crate::lifecycle::QueryControl,
+    ) -> Result<(u64, bool), crate::property_graph::GraphStoreError> {
+        let result = match documents {
+            Some(documents) => store.apply_native_mixed(documents, requests, control),
+            None => store.apply_native_graph(requests, control),
+        }
+        .map_err(crate::property_graph::GraphStoreError::from)?;
+        let changed = result.changed_generation();
+        Ok((
+            changed.unwrap_or(result.admitted_generation()).get(),
+            changed.is_some(),
+        ))
+    }
+
+    /// Observes whether this Store has an installed graph publication.
+    #[allow(clippy::result_large_err)]
+    pub fn unified_graph_enabled(
+        store: &crate::lifecycle::Store,
+    ) -> Result<bool, crate::property_graph::GraphStoreError> {
+        store.native_graph.is_installed().map_err(|error| {
+            crate::property_graph::GraphStoreError::from(
+                crate::lifecycle::native_graph::NativeGraphError::Store(error),
+            )
+        })
+    }
+
+    /// Drives the production mixed writer through the nonshipping fault facade.
+    pub fn apply_mixed_batch(
+        store: &crate::lifecycle::Store,
+        documents: &crate::ingest::IngestBatch,
+        key: &str,
+    ) -> Result<(crate::property_graph::NodeId, u64), String> {
+        use crate::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
+        use crate::property_graph::{
+            ApplicationKey, CanonicalContents, EntityId, EntityKind, GraphRevision,
+        };
+        let image =
+            CanonicalContents::node(&mut [], &mut [], None, None).map_err(|e| e.to_string())?;
+        let requests = [StructuredWrite {
+            key: ApplicationKey::new(EntityKind::Node, "mixed-probe", key)
+                .map_err(|e| e.to_string())?,
+            revision: GraphRevision::new(1).map_err(|e| e.to_string())?,
+            operation: StructuredOperation::Create,
+            image: Some(WriteImage::Node(&image)),
+        }];
+        let result = store
+            .apply_native_mixed(
+                documents,
+                &requests,
+                &crate::lifecycle::QueryControl::Cancel(crate::lifecycle::CancelToken::new()),
+            )
+            .map_err(|e| e.to_string())?;
+        let receipt = result.first().ok_or("mixed probe omitted node receipt")?;
+        let EntityId::Node(node) = receipt.entity else {
+            return Err("mixed probe returned relationship".into());
+        };
+        let generation = result
+            .changed_generation()
+            .ok_or("mixed probe did not commit")?;
+        Ok((node, generation.get()))
+    }
+
+    /// Observes a node through the native read admission after a mixed write.
+    pub fn mixed_node_present(
+        store: &crate::lifecycle::Store,
+        node: crate::property_graph::NodeId,
+    ) -> bool {
+        crate::lifecycle::native_graph::tests::observe_mixed_node(store, node)
+    }
+
+    /// Actual state observed after reopening one real mixed native commit.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct RecoveryState {
+        /// Actual persistent store identity.
+        pub store: u128,
+        /// Actual reopened graph generation.
+        pub generation: u64,
+        /// Actual reopened complete-envelope sequence.
+        pub sequence: u64,
+        /// First created node identity.
+        pub first_node: u128,
+        /// Second created node identity.
+        pub second_node: u128,
+        /// Actual relationship row observed in both directions.
+        pub relationship: ObservedRelationship,
+    }
+
+    /// Receipts emitted only after each directed recovery body completes.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct RecoveryProbeReport {
+        /// Completed path receipts with actual fired/clean counts.
+        pub receipts: Vec<PathReceipt>,
+        /// Actual reopened mixed state.
+        pub state: RecoveryState,
+    }
+
+    /// Exercises seal rotation with a graph record after the previous fold.
+    pub fn run_seal_rotation_probe() -> Vec<PathReceipt> {
+        crate::lifecycle::native_graph::tests::seal::run_rotation_probe()
+    }
+
+    /// Exercises late seal cancellation and failures of its durable cleanup.
+    pub fn run_seal_cancellation_probe() -> Vec<PathReceipt> {
+        crate::lifecycle::native_graph::tests::seal::run_cancellation_probe()
+    }
+
+    /// Exercises interrupted enable catalog creation and writable retry.
+    pub fn run_enable_retry_probe() -> Vec<PathReceipt> {
+        crate::lifecycle::native_graph::tests::recovery::run_enable_retry_probe()
+    }
+
+    /// Runs the nine directed production recovery paths used by ZE-40 acceptance.
+    pub fn run_actual_probe(seed: u64) -> RecoveryProbeReport {
+        crate::lifecycle::native_graph::tests::run_recovery_probe(seed)
+    }
+}
+
+/// Nonshipping public-facade observations for seeded ZE-41 qualification.
+#[cfg(all(feature = "graph-cypher", any(test, feature = "test-seams")))]
+pub mod graph_commit_recovery_test_support {
+    pub use crate::property_graph::commit_recovery_test_support::*;
+}
+
+/// Query diagnostics and health reporting.
+pub mod diag;
+/// Epoch identity and migration.
+pub mod epoch;
+/// Persisted-format framing, versions, and golden-fixture support.
+pub mod format;
+/// Full-text indexing and retrieval.
+pub mod fts;
+/// Hybrid result fusion.
+pub mod fusion;
+/// Per-segment vector graphs.
+pub mod graph;
+/// Ingest and mutation coordination.
+pub mod ingest;
+/// Runtime-dispatched compute kernels.
+pub mod kernels;
+/// Store lifecycle and memory accounting.
+pub mod lifecycle;
+/// Persistent manifest coordination.
+pub mod manifest;
+/// Columnar metadata and filters.
+pub mod meta;
+/// Query planning and selectivity decisions.
+pub mod planner;
+/// Native property-graph identity and values, independent of vector indexes.
+#[cfg(feature = "graph-cypher")]
+pub mod property_graph;
+/// Training-free vector quantization.
+pub mod quant;
+/// Exact vector scanning.
+pub mod scan;
+/// Immutable segment representation.
+pub mod segment;
+/// Operating-system integration wrappers.
+pub mod sys;
+/// Adaptive storage tiers.
+pub mod tier;
+/// Read-only end-to-end store verification.
+pub mod verify;
+/// Virtual filesystem and platform I/O.
+pub mod vfs;
+/// Write-ahead logging and durability.
+pub mod wal;
+
+#[cfg(test)]
+mod test_support;
+
+/// The current crate version.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used
+)]
+mod tests {
+    use rand::RngCore;
+
+    #[test]
+    #[cfg_attr(miri, ignore = "environment-dependent RNG is outside the Miri subset")]
+    fn seeded_rng_is_deterministic_per_name_and_env() {
+        let mut first =
+            crate::test_support::seeded_rng("tests::seeded_rng_is_deterministic_per_name_and_env");
+        let mut second =
+            crate::test_support::seeded_rng("tests::seeded_rng_is_deterministic_per_name_and_env");
+        let mut other_name = crate::test_support::seeded_rng("tests::another_test");
+
+        let first_draw = first.next_u64();
+        let second_draw = second.next_u64();
+        let other_name_draw = other_name.next_u64();
+
+        let environment_seed = std::env::var("ZE_TEST_SEED").unwrap_or_else(|_| String::from("0"));
+        let other_environment_seed = format!("{environment_seed}-different");
+        let mut other_env = crate::test_support::seeded_rng_from(
+            "tests::seeded_rng_is_deterministic_per_name_and_env",
+            &other_environment_seed,
+        );
+        let other_env_draw = other_env.next_u64();
+
+        assert_eq!(first_draw, second_draw);
+        assert_ne!(first_draw, other_name_draw);
+        assert_ne!(first_draw, other_env_draw);
+    }
+
+    #[test]
+    fn version_constant_is_current() {
+        assert_eq!(crate::VERSION, "0.1.0");
+    }
+}

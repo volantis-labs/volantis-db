@@ -2,12 +2,12 @@
 
 use super::coverage::CoverageRegistry;
 use std::collections::BTreeSet;
-use zeppelin_embed_adversarial_oracle::graph_adjacency_store::{
+use volantis_db_adversarial_oracle::graph_adjacency_store::{
     Operation, RelationshipRow, compare_read_view_expansion,
 };
 
 pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
-    let report = zeppelin_embed::graph_publication_test_support::run_actual_probe(seed);
+    let report = volantis_db::graph_publication_test_support::run_actual_probe(seed);
     let expected = [
         Operation::CreateNode { id: 1 },
         Operation::CreateNode { id: 2 },

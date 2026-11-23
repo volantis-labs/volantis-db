@@ -4,11 +4,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tempfile::tempdir;
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::{
     CancelToken, Deadline, OpenOptions, QueryControl, QueryError, Store, StoreError,
 };
-use zeppelin_embed::scan::{F32Rows, ScanOptions, ScanQuery, ScanRequest, ScanRows};
-use zeppelin_embed_adversarial_oracle::lifecycle_accounting::{LifecycleInput, LifecycleObserved};
+use volantis_db::scan::{F32Rows, ScanOptions, ScanQuery, ScanRequest, ScanRows};
+use volantis_db_adversarial_oracle::lifecycle_accounting::{LifecycleInput, LifecycleObserved};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LifecycleOperationKind {
@@ -233,7 +233,7 @@ fn observe_locking(
 /// Refuse specifically at the active ID-map reservation and release the
 /// preceding row buffer. This extends the existing allocation-denial mode.
 fn observe_active_id_map_denial(directory: &std::path::Path) -> Result<(), String> {
-    use zeppelin_embed::ingest::{
+    use volantis_db::ingest::{
         DocId, DocumentVersion, IngestBatch, IngestDocument, IngestError, Revision,
     };
     let path = directory.join("active-id-map-denied");
@@ -294,7 +294,7 @@ fn observe_active_id_map_denial(directory: &std::path::Path) -> Result<(), Strin
 /// Exercise the new map-growth, map-copy and delete-set admission boundaries
 /// using the existing allocation-denial mode and public mutation paths.
 fn observe_hash_table_denials(directory: &std::path::Path) -> Result<(), String> {
-    use zeppelin_embed::ingest::{
+    use volantis_db::ingest::{
         DeleteBatch, DocId, DocumentVersion, IngestBatch, IngestDocument, IngestError, Revision,
     };
     let group = if cfg!(all(
@@ -311,7 +311,7 @@ fn observe_hash_table_denials(directory: &std::path::Path) -> Result<(), String>
         + 4 * 8
         + 4
         + 1
-        + std::mem::size_of::<zeppelin_embed::quant::Bit4Factors>()
+        + std::mem::size_of::<volantis_db::quant::Bit4Factors>()
         + 1
         + 8
         + 5;
@@ -524,7 +524,7 @@ pub fn run_lifecycle_operation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zeppelin_embed_adversarial_oracle::lifecycle_accounting as oracle;
+    use volantis_db_adversarial_oracle::lifecycle_accounting as oracle;
 
     #[test]
     fn lifecycle_public_operations_pass_exact_checkers() {

@@ -26,19 +26,19 @@ def build_swift_consumer(xcframework, work, disable_swift_sandbox=False):
     package = work / 'swiftpm'
     source = package / 'Sources/TextConsumer'
     source.mkdir(parents=True)
-    shutil.copytree(xcframework, package / 'ZeppelinEmbedGraph.xcframework', symlinks=True)
+    shutil.copytree(xcframework, package / 'VolantisDBGraph.xcframework', symlinks=True)
     shutil.copyfile(Path(__file__).with_name('consumers') / 'text.swift', source / 'main.swift')
-    shim = package / 'Sources/CZeppelinEmbed'
+    shim = package / 'Sources/CVolantisDB'
     shim.mkdir()
-    shutil.copyfile(ROOT / 'bindings/swift/Sources/CZeppelinEmbedGraph/Exports.swift', shim / 'Exports.swift')
-    shutil.copytree(ROOT / 'bindings/swift/Sources/ZeppelinEmbed', package / 'Sources/ZeppelinEmbed')
+    shutil.copyfile(ROOT / 'bindings/swift/Sources/CVolantisDBGraph/Exports.swift', shim / 'Exports.swift')
+    shutil.copytree(ROOT / 'bindings/swift/Sources/VolantisDB', package / 'Sources/VolantisDB')
     (package / 'Package.swift').write_text('''// swift-tools-version: 5.10
 import PackageDescription
 let package = Package(name: "InstalledText", platforms: [.macOS(.v14)], targets: [
-    .binaryTarget(name: "ZeppelinEmbedGraph", path: "ZeppelinEmbedGraph.xcframework"),
-    .target(name: "CZeppelinEmbed", dependencies: ["ZeppelinEmbedGraph"]),
-    .target(name: "ZeppelinEmbed", dependencies: ["CZeppelinEmbed"], swiftSettings: [.define("ZE_GRAPH"), .define("ZE_TEXT")]),
-    .executableTarget(name: "TextConsumer", dependencies: ["ZeppelinEmbed"])
+    .binaryTarget(name: "VolantisDBGraph", path: "VolantisDBGraph.xcframework"),
+    .target(name: "CVolantisDB", dependencies: ["VolantisDBGraph"]),
+    .target(name: "VolantisDB", dependencies: ["CVolantisDB"], swiftSettings: [.define("ZE_GRAPH"), .define("ZE_TEXT")]),
+    .executableTarget(name: "TextConsumer", dependencies: ["VolantisDB"])
 ])
 ''')
     env = os.environ.copy()
@@ -50,7 +50,7 @@ let package = Package(name: "InstalledText", platforms: [.macOS(.v14)], targets:
         command.append('--disable-sandbox')
     run(command, cwd=work, env=env, check=True)
     binary = package / '.build/release/TextConsumer'
-    resource = binary.parent / 'ZeppelinEmbedGraph.framework/Versions/A/Resources/mlx.metallib'
+    resource = binary.parent / 'VolantisDBGraph.framework/Versions/A/Resources/mlx.metallib'
     if not binary.is_file() or not resource.is_file():
         raise FileNotFoundError('SwiftPM did not install the executable and framework metallib')
     return binary, resource
@@ -94,20 +94,20 @@ def qualify(artifact_root, output, disable_swift_sandbox=False):
             work = Path(directory).resolve()
             if work.is_relative_to(ROOT):
                 raise ValueError('installed consumers must be outside the repository')
-            with tarfile.open(artifact_root / 'macos-sdk-graph-cypher/zeppelin-embed-graph-cypher-macos-arm64.tar.gz') as archive:
+            with tarfile.open(artifact_root / 'macos-sdk-graph-cypher/volantis-db-graph-cypher-macos-arm64.tar.gz') as archive:
                 archive.extractall(work, filter='data')
             # ditto preserves the versioned framework's symlinks.
-            run(['ditto', '-x', '-k', artifact_root / 'xcframework-graph-cypher/ZeppelinEmbedGraph.xcframework.zip', work], check=True)
-            sdk = work / 'zeppelin-embed-graph-cypher-macos-arm64'
+            run(['ditto', '-x', '-k', artifact_root / 'xcframework-graph-cypher/VolantisDBGraph.xcframework.zip', work], check=True)
+            sdk = work / 'volantis-db-graph-cypher-macos-arm64'
             fixture = work / 'gte.zem'
-            shutil.copyfile(ROOT / 'crates/zeppelin-embed-text/tests/fixtures/ze115/gte.zem', fixture)
+            shutil.copyfile(ROOT / 'crates/volantis-db-text/tests/fixtures/ze115/gte.zem', fixture)
             source = work / 'text.c'
             shutil.copyfile(Path(__file__).with_name('consumers') / 'text.c', source)
             builds = []
             for flavor, suffix in (('static', 'a'), ('dylib', 'dylib')):
-                library = sdk / 'lib' / ('libzeppelin_embed_graph_cypher_ffi.' + suffix)
+                library = sdk / 'lib' / ('libvolantis_db_graph_cypher_ffi.' + suffix)
                 resource = sdk / 'lib/mlx.metallib'
-                for path in (sdk / 'include/zeppelin_embed.h', library, resource):
+                for path in (sdk / 'include/volantis_db.h', library, resource):
                     if not path.is_file() or path.stat().st_size == 0:
                         raise FileNotFoundError(f'missing installed text input: {path}')
                 tools.check_exports(library, 'graph-cypher')
@@ -123,7 +123,7 @@ def qualify(artifact_root, output, disable_swift_sandbox=False):
                     cwd=work, check=True)
                 report[flavor] = dict(compile='PASS')
                 builds.append((flavor, binary, install / 'mlx.metallib'))
-            binary, resource = build_swift_consumer(work / 'ZeppelinEmbedGraph.xcframework', work, disable_swift_sandbox)
+            binary, resource = build_swift_consumer(work / 'VolantisDBGraph.xcframework', work, disable_swift_sandbox)
             report['swiftpm'] = dict(compile='PASS')
             builds.append(('swiftpm', binary, resource))
             for flavor, binary, resource in builds:

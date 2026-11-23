@@ -1,4 +1,4 @@
-use zeppelin_embed::property_graph::{NodeId, RelId};
+use volantis_db::property_graph::{NodeId, RelId};
 
 fn main() {
     let node = NodeId::new(1).expect("nonzero node identity");

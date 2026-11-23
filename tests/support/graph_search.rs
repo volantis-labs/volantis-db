@@ -9,18 +9,18 @@
     clippy::result_large_err
 )]
 use std::collections::{BTreeMap, BTreeSet};
-use zeppelin_embed::graph_commit_recovery_test_support::{Fixture, ProbeStore, document};
-use zeppelin_embed::lifecycle::Store;
-use zeppelin_embed::lifecycle::{CancelToken, QueryControl};
-use zeppelin_embed::property_graph::query::completed::{
+use volantis_db::graph_commit_recovery_test_support::{Fixture, ProbeStore, document};
+use volantis_db::lifecycle::Store;
+use volantis_db::lifecycle::{CancelToken, QueryControl};
+use volantis_db::property_graph::query::completed::{
     CompletedGraphResult, GraphQueryOptions, Value,
 };
-use zeppelin_embed::property_graph::query::plan::*;
-use zeppelin_embed::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
-use zeppelin_embed::property_graph::*;
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed_adversarial_oracle::graph_fixture as oracle;
-use zeppelin_embed_cypher::{CompileLimits, execute};
+use volantis_db::property_graph::query::plan::*;
+use volantis_db::property_graph::staging::{StructuredOperation, StructuredWrite, WriteImage};
+use volantis_db::property_graph::*;
+use volantis_db::vfs::StdVfs;
+use volantis_db_adversarial_oracle::graph_fixture as oracle;
+use volantis_db_cypher::{CompileLimits, execute};
 
 pub const ABSOLUTE: f64 = 1e-6;
 pub const RELATIVE: f64 = 1e-6;
@@ -36,7 +36,7 @@ impl Corpus {
     pub fn new() -> Self {
         Self::with_vfs(std::sync::Arc::new(StdVfs))
     }
-    pub fn with_vfs(vfs: std::sync::Arc<dyn zeppelin_embed::vfs::Vfs>) -> Self {
+    pub fn with_vfs(vfs: std::sync::Arc<dyn volantis_db::vfs::Vfs>) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let fixture = Fixture {
             store: 65,
@@ -193,8 +193,8 @@ impl Corpus {
         if delete_document {
             let generation = self
                 .graph()
-                .delete(zeppelin_embed::ingest::DeleteBatch::new(vec![
-                    zeppelin_embed::ingest::DocId::new(expected.receipts[0].id),
+                .delete(volantis_db::ingest::DeleteBatch::new(vec![
+                    volantis_db::ingest::DocId::new(expected.receipts[0].id),
                 ]))
                 .unwrap();
             assert_eq!(generation.generation(), expected.generation);
@@ -235,7 +235,7 @@ impl Corpus {
             &m.key.value,
         )
         .unwrap();
-        use zeppelin_embed::ingest::{
+        use volantis_db::ingest::{
             DocId, DocumentVersion, IngestBatch, IngestDocument, Revision,
         };
         let docs = if let Some(oracle::Image::Node { text, vector, .. }) = &m.image {
@@ -582,7 +582,7 @@ impl Corpus {
         assert!(
             matches!(actual.outcome(),GraphWriteOutcome::Committed {generation} if generation.get()==expected.generation)
         );
-        use zeppelin_embed::ingest::{
+        use volantis_db::ingest::{
             DocId, DocumentVersion, IngestBatch, IngestDocument, Revision,
         };
         let documents = expected

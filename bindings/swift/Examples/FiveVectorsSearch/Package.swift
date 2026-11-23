@@ -12,7 +12,7 @@ let package = Package(
         .executableTarget(
             name: "FiveVectorsSearch",
             dependencies: [
-                .product(name: "ZeppelinEmbed", package: "zeppelin-embed"),
+                .product(name: "VolantisDB", package: "volantis-db"),
             ]
         ),
     ]

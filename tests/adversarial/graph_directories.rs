@@ -3,8 +3,8 @@
 use super::coverage::CoverageRegistry;
 use rand::RngCore;
 use std::cell::Cell;
-use zeppelin_embed::lifecycle::{CancelToken, OpenOptions, QueryControl, Store};
-use zeppelin_embed::property_graph::storage::{
+use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl, Store};
+use volantis_db::property_graph::storage::{
     artifact::*,
     memory::{StorageBuffer, StorageMemory},
     participant::{DirectoryBase, PreparationCatalog, prepare_directories},
@@ -13,8 +13,8 @@ use zeppelin_embed::property_graph::storage::{
     stream::PayloadSlice,
     tree::{TreeKind, directory::*},
 };
-use zeppelin_embed::property_graph::{catalog::*, resources::GraphResources, staging::*, *};
-use zeppelin_embed_adversarial_oracle::graph_directory as model;
+use volantis_db::property_graph::{catalog::*, resources::GraphResources, staging::*, *};
+use volantis_db_adversarial_oracle::graph_directory as model;
 mod fixture;
 mod observe;
 pub const REQUIRED_COVERAGE: &[&str] = &[

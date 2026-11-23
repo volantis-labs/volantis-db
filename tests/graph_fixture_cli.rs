@@ -2,7 +2,7 @@
 #[path = "tooling_seed.rs"]
 mod test_support;
 use rand::Rng;
-use zeppelin_embed_bench::graph_fixture::{self, Config, Scale, WordStream};
+use volantis_db_bench::graph_fixture::{self, Config, Scale, WordStream};
 fn main() {
     if let Err(error) = run() {
         eprintln!("graph-fixture: {error}");

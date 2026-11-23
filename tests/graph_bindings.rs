@@ -12,14 +12,14 @@ mod bindings;
 #[path = "support/graph_search.rs"]
 mod graph_search;
 use graph_search::*;
-use zeppelin_embed::lifecycle::Store;
-use zeppelin_embed_adversarial_oracle::graph_fixture as oracle;
-use zeppelin_embed_ffi::*;
+use volantis_db::lifecycle::Store;
+use volantis_db_adversarial_oracle::graph_fixture as oracle;
+use volantis_db_ffi::*;
 fn rust_cell(
-    r: &zeppelin_embed::property_graph::query::completed::CompletedGraphResult,
-    v: zeppelin_embed::property_graph::query::completed::Value,
+    r: &volantis_db::property_graph::query::completed::CompletedGraphResult,
+    v: volantis_db::property_graph::query::completed::Value,
 ) -> String {
-    use zeppelin_embed::property_graph::query::completed::Value;
+    use volantis_db::property_graph::query::completed::Value;
     match v {
         Value::Map { entries } => {
             let pairs = r.pools().children
@@ -59,7 +59,7 @@ fn rust_cell(
     }
 }
 fn rust_observe(
-    r: &zeppelin_embed::property_graph::query::completed::CompletedGraphResult,
+    r: &volantis_db::property_graph::query::completed::CompletedGraphResult,
 ) -> String {
     (0..r.metadata().rows as usize)
         .map(|row| {
@@ -189,7 +189,7 @@ fn ze72_rust_c_applications_match_independent_oracle() {
                 assert_eq!(report.call.0, 0);
                 assert_eq!(
                     report.kind,
-                    zeppelin_embed::property_graph::query::completed::SearchKind::Vector
+                    volantis_db::property_graph::query::completed::SearchKind::Vector
                 );
             }
         }
@@ -213,13 +213,13 @@ fn ze72_rust_c_applications_match_independent_oracle() {
     let rust_ids = snapshot
         .nodes
         .iter()
-        .map(|n| zeppelin_embed::property_graph::NodeId::new(n.id).unwrap())
+        .map(|n| volantis_db::property_graph::NodeId::new(n.id).unwrap())
         .collect::<Vec<_>>();
     let rust_nodes = c
         .graph()
         .get_nodes(
             &rust_ids,
-            zeppelin_embed::property_graph::GraphGetOptions {
+            volantis_db::property_graph::GraphGetOptions {
                 text: true,
                 vector: true,
             },
@@ -229,7 +229,7 @@ fn ze72_rust_c_applications_match_independent_oracle() {
     let rust_rel_ids = snapshot
         .relationships
         .iter()
-        .map(|r| zeppelin_embed::property_graph::RelId::new(r.id).unwrap())
+        .map(|r| volantis_db::property_graph::RelId::new(r.id).unwrap())
         .collect::<Vec<_>>();
     let rust_rels = c
         .graph()
@@ -345,7 +345,7 @@ fn ze72_rust_c_applications_match_independent_oracle() {
         if std::env::var("ZE72_MUTATION").as_deref() == Ok("provenance") {
             observed_reports.clear();
         }
-        zeppelin_embed_adversarial_oracle::graph_c_entry::compare_reports(
+        volantis_db_adversarial_oracle::graph_c_entry::compare_reports(
             *reports,
             c.model.generation,
             &observed_reports,
@@ -398,14 +398,14 @@ fn ze72_rust_c_applications_match_independent_oracle() {
 #[test]
 fn ze72_rust_shared_semantics_match_independent_oracle() {
     let dir = tempfile::tempdir().unwrap();
-    let graph = zeppelin_embed::lifecycle::Store::create_graph(
+    let graph = volantis_db::lifecycle::Store::create_graph(
         dir.path().join("graph"),
-        zeppelin_embed::lifecycle::OpenOptions::new().with_max_resident_bytes(256 << 20),
+        volantis_db::lifecycle::OpenOptions::new().with_max_resident_bytes(256 << 20),
         None,
     )
     .unwrap();
     let run = |q| {
-        zeppelin_embed_cypher::execute(
+        volantis_db_cypher::execute(
             &graph,
             &control(),
             &Default::default(),
@@ -424,13 +424,13 @@ fn ze72_rust_shared_semantics_match_independent_oracle() {
 
 #[test]
 fn ze72_rust_stored_list_kinds_match_shared_fixture() {
-    use zeppelin_embed::property_graph::query::completed::Value;
-    use zeppelin_embed::property_graph::staging::*;
-    use zeppelin_embed::property_graph::*;
+    use volantis_db::property_graph::query::completed::Value;
+    use volantis_db::property_graph::staging::*;
+    use volantis_db::property_graph::*;
     let dir = tempfile::tempdir().unwrap();
     let graph = Store::create_graph(
         dir.path().join("properties"),
-        zeppelin_embed::lifecycle::OpenOptions::new().with_max_resident_bytes(256 << 20),
+        volantis_db::lifecycle::OpenOptions::new().with_max_resident_bytes(256 << 20),
         None,
     )
     .unwrap();
@@ -493,12 +493,12 @@ fn ze72_rust_stored_list_kinds_match_shared_fixture() {
         };
         assert_eq!(children.len, 0);
         let kind = match element {
-            zeppelin_embed::property_graph::query::completed::ListKind::Query => 0,
-            zeppelin_embed::property_graph::query::completed::ListKind::Bool => 1,
-            zeppelin_embed::property_graph::query::completed::ListKind::I64 => 2,
-            zeppelin_embed::property_graph::query::completed::ListKind::F64 => 3,
-            zeppelin_embed::property_graph::query::completed::ListKind::String => 4,
-            zeppelin_embed::property_graph::query::completed::ListKind::Empty => 5,
+            volantis_db::property_graph::query::completed::ListKind::Query => 0,
+            volantis_db::property_graph::query::completed::ListKind::Bool => 1,
+            volantis_db::property_graph::query::completed::ListKind::I64 => 2,
+            volantis_db::property_graph::query::completed::ListKind::F64 => 3,
+            volantis_db::property_graph::query::completed::ListKind::String => 4,
+            volantis_db::property_graph::query::completed::ListKind::Empty => 5,
         };
         bindings::compare(name, expected, &format!("L{kind}[]")).unwrap();
     }

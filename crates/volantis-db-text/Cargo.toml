@@ -1,0 +1,35 @@
+[package]
+name = "volantis-db-text"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Local text embedding and retrieval for Volantis DB on macOS and Apple silicon"
+repository = "https://github.com/volantis-labs/volantis-db"
+homepage = "https://github.com/volantis-labs/volantis-db"
+documentation = "https://docs.rs/volantis-db-text"
+readme = "README.md"
+keywords = ["text-embedding", "vector-search", "hybrid-search", "embedded", "macos"]
+categories = ["database-implementations", "text-processing"]
+
+[features]
+test-support = []
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+volantis-db = { path = "../volantis-db", version = "=0.1.0" }
+libc.workspace = true
+xxhash-rust.workspace = true
+mlx-rs = { version = "=0.25.3", default-features = false, features = ["metal"] }
+unicode-normalization-alignments = "=0.1.12"
+unicode_categories = "=0.1.1"
+unicode-segmentation = "=1.12.0"
+
+[build-dependencies]
+cc = "1"
+
+[dev-dependencies]
+volantis-db = { path = "../volantis-db", version = "=0.1.0", features = ["test-seams"] }
+tempfile.workspace = true

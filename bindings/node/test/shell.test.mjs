@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 const require = createRequire(import.meta.url);
 const { Store, openInspection, openNamespace } = require('..');
-const bin = fileURLToPath(new URL('../bin/zeppelin-shell.js', import.meta.url));
+const bin = fileURLToPath(new URL('../bin/volantis-shell.js', import.meta.url));
 const attributes = ['u64', 'i64', 'f64', 'bool', 'dictionaryString', 'rawString'].map((type, i) => ({ id: i + 1, name: i === 0 ? 'rank' : `属性-${type}`, type, nullable: true }));
 function fixture(body) {
   const root = mkdtempSync(join(tmpdir(), 'ze-shell-'));

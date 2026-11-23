@@ -12,17 +12,17 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::{
     Deadline, ManualMonotonicClock, MonotonicClock, OpenOptions, QueryControl, Store,
 };
-use zeppelin_embed::property_graph::{
+use volantis_db::property_graph::{
     GraphGeneration, StoreInstanceId,
     query::{QueryValue, QueryView, ValueContext, plan::*, resources::*},
     resources::GraphResources,
 };
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed_adversarial_oracle::graph_mutation_lowering::{self as oracle, Expr, Item};
-use zeppelin_embed_cypher::{
+use volantis_db::vfs::StdVfs;
+use volantis_db_adversarial_oracle::graph_mutation_lowering::{self as oracle, Expr, Item};
+use volantis_db_cypher::{
     CompileLimits, ErrorKind, LoweredMutation, ResourceError, compile_in, compile_mutation_in,
 };
 
@@ -99,7 +99,7 @@ fn expr(description: PlanDescription<'_>, id: ExprId) -> Result<Expr, String> {
         } => Ok(Expr::RelType(Box::new(expr(description, *operand)?))),
         Expression::Binary {
             operation:
-                BinaryExpression::Arithmetic(zeppelin_embed::property_graph::query::Arithmetic::Add),
+                BinaryExpression::Arithmetic(volantis_db::property_graph::query::Arithmetic::Add),
             left,
             right,
         } => Ok(Expr::Add(

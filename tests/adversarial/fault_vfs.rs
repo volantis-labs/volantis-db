@@ -7,10 +7,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rand::Rng;
-use zeppelin_embed::lifecycle::CancelToken;
-use zeppelin_embed::lifecycle::{ManualMonotonicClock, MonotonicClock};
-use zeppelin_embed::vfs::crash::{CrashStateKind, CrashVfs, MemoryVfs};
-use zeppelin_embed::vfs::{StdVfs, SyncKind, Vfs, VfsFile};
+use volantis_db::lifecycle::CancelToken;
+use volantis_db::lifecycle::{ManualMonotonicClock, MonotonicClock};
+use volantis_db::vfs::crash::{CrashStateKind, CrashVfs, MemoryVfs};
+use volantis_db::vfs::{StdVfs, SyncKind, Vfs, VfsFile};
 
 use super::profiles::{Environment, IoModeBias};
 use super::program::{CrashBoundary, Op, Program};
@@ -1441,8 +1441,8 @@ impl ScheduledFile {
     // Mixed runs still issue one physical append. The scheduled Append site
     // observes each member so nth_match can stop at an exact member boundary.
     fn mixed_append(&mut self, bytes: &[u8]) -> std::io::Result<Option<()>> {
-        use zeppelin_embed::ingest::wal_payload::MIXED_BATCH_MEMBER_V1;
-        use zeppelin_embed::wal::record::decode_record;
+        use volantis_db::ingest::wal_payload::MIXED_BATCH_MEMBER_V1;
+        use volantis_db::wal::record::decode_record;
         if !self.path.ends_with("wal.ze")
             || !self.schedule.events.iter().any(|event| {
                 event.site == FaultSite::Append
@@ -1451,8 +1451,8 @@ impl ScheduledFile {
         {
             return Ok(None);
         }
-        let mut offset = if bytes.starts_with(&zeppelin_embed::format::frame::FILE_MAGIC) {
-            zeppelin_embed::wal::header::WAL_HEADER_LEN
+        let mut offset = if bytes.starts_with(&volantis_db::format::frame::FILE_MAGIC) {
+            volantis_db::wal::header::WAL_HEADER_LEN
         } else {
             0
         };

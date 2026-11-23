@@ -2,12 +2,12 @@
 //! The retained base is a fixture adapter: this is not publication/WAL evidence.
 use super::coverage::CoverageRegistry;
 use rand::RngCore;
-use zeppelin_embed::{
+use volantis_db::{
     fts::tokenizer::{TokenizerConfig, TokenizerEpoch},
     lifecycle::{OpenOptions, Store},
     property_graph::{catalog::*, resources::GraphResources, staging::*, *},
 };
-use zeppelin_embed_adversarial_oracle::{
+use volantis_db_adversarial_oracle::{
     graph_key_lifecycle::{Action, Expected, Origin, Record, Rejection},
     graph_staging::{self as model, Accepted, Disposition, Outcome, Refusal, Request},
 };
@@ -151,7 +151,7 @@ impl AdmittedBase for Base {
         BaseIdentity {
             store: StoreInstanceId::new(1).unwrap(),
             generation: GraphGeneration::new(self.generation),
-            fold: zeppelin_embed::property_graph::staging::FoldMark {
+            fold: volantis_db::property_graph::staging::FoldMark {
                 manifest_generation: self.generation,
                 ..Default::default()
             },

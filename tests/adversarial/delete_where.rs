@@ -10,13 +10,13 @@ use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tempfile::tempdir;
-use zeppelin_embed::ingest::{DocId, DocumentVersion, IngestBatch, IngestDocument, Revision};
-use zeppelin_embed::lifecycle::{
+use volantis_db::ingest::{DocId, DocumentVersion, IngestBatch, IngestDocument, Revision};
+use volantis_db::lifecycle::{
     DocumentFields, OpenOptions, Store, StoreTestDependencies, SystemMonotonicClock,
 };
-use zeppelin_embed::meta::{Predicate, PredicateValue, TIMESTAMP_COLUMN};
-use zeppelin_embed::vfs::{StdVfs, SyncKind, Vfs, VfsFile};
-use zeppelin_embed_bench::harness_json::json;
+use volantis_db::meta::{Predicate, PredicateValue, TIMESTAMP_COLUMN};
+use volantis_db::vfs::{StdVfs, SyncKind, Vfs, VfsFile};
+use volantis_db_bench::harness_json::json;
 
 fn predicate() -> Predicate {
     Predicate::Eq {

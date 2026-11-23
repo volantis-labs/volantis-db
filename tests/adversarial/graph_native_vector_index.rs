@@ -1,13 +1,13 @@
 //! Directed graph retrieval checks against the Store's document segments.
 use super::coverage::CoverageRegistry;
-use zeppelin_embed::epoch::*;
-use zeppelin_embed::ingest::*;
-use zeppelin_embed::lifecycle::*;
-use zeppelin_embed::property_graph::query::completed::{
+use volantis_db::epoch::*;
+use volantis_db::ingest::*;
+use volantis_db::lifecycle::*;
+use volantis_db::property_graph::query::completed::{
     CompletedGraphResult, GraphQueryOptions, Value,
 };
-use zeppelin_embed::property_graph::query::runtime::{RuntimeLimits, WorkKind};
-use zeppelin_embed_cypher::{CompileLimits, execute};
+use volantis_db::property_graph::query::runtime::{RuntimeLimits, WorkKind};
+use volantis_db_cypher::{CompileLimits, execute};
 
 pub const REGISTERED_COVERAGE: &[&str] = &[
     "property-graph.native-segment-search.exact",
@@ -72,7 +72,7 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<ProbeReport, 
             document: tower,
             alignment_digest: vec![],
         },
-        tokenizer: zeppelin_embed::fts::tokenizer::TokenizerConfig::text_default().epoch(),
+        tokenizer: volantis_db::fts::tokenizer::TokenizerConfig::text_default().epoch(),
     };
     let options = OpenOptions::new()
         .with_epoch(epoch)

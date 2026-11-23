@@ -197,7 +197,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     assert.equal(args.length, 2, 'release-reference PACKAGE_DIR OUTPUT.json');
     const packageDirectory = realpathSync(resolve(args[0]));
     const manifest = JSON.parse(readFileSync(join(packageDirectory, 'package.json'), 'utf8'));
-    assert.equal(manifest.name, '@zepdb/zeppelin-embed');
+    assert.equal(manifest.name, 'volantis-db');
     assert.equal(manifest.version, '0.6.0');
     assert.ok(!readFileSync(join(packageDirectory, 'index.d.ts'), 'utf8').includes('eligibleIds'),
       'reference must be released 0.6.0 without eligibleIds; current checkout is not a release reference');

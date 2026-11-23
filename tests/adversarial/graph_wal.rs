@@ -1,10 +1,10 @@
 //! PG7 exercises private WAL replay, not file publication or store recovery.
 use super::coverage::CoverageRegistry;
 use rand::RngCore;
-use zeppelin_embed::property_graph::storage::artifact::{ArtifactId, BlockKind, PhysicalRef};
-use zeppelin_embed::property_graph::wal::*;
-use zeppelin_embed::property_graph::{GraphGeneration, StoreInstanceId};
-use zeppelin_embed_adversarial_oracle::graph_wal::{self as oracle, State};
+use volantis_db::property_graph::storage::artifact::{ArtifactId, BlockKind, PhysicalRef};
+use volantis_db::property_graph::wal::*;
+use volantis_db::property_graph::{GraphGeneration, StoreInstanceId};
+use volantis_db_adversarial_oracle::graph_wal::{self as oracle, State};
 pub const REQUIRED_COVERAGE: &[&str] = &[
     "property-graph.wal.prefix",
     "property-graph.wal.transition",

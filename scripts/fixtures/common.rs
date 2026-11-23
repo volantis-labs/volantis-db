@@ -1,12 +1,12 @@
-use zeppelin_embed::epoch::{
+use super::engine::epoch::{
     ComputeUnits, EmbeddingEpoch, EmbeddingRuntime, EmbeddingTower, Normalization, StoreEpoch,
 };
-use zeppelin_embed::fts::{index::FieldId, search::TermQuery, tokenizer::TokenizerConfig};
-use zeppelin_embed::ingest::{
+use super::engine::fts::{index::FieldId, search::TermQuery, tokenizer::TokenizerConfig};
+use super::engine::ingest::{
     DocId, DocumentVersion, IngestBatch, IngestDocument, Revision, SearchRequest,
 };
-use zeppelin_embed::lifecycle::{CancelToken, OpenOptions, QueryControl, SearchOptions, Store};
-use zeppelin_embed::meta::{ColumnDefinition, ColumnId, ColumnType, PredicateValue, Schema};
+use super::engine::lifecycle::{CancelToken, OpenOptions, QueryControl, SearchOptions, Store};
+use super::engine::meta::{ColumnDefinition, ColumnId, ColumnType, PredicateValue, Schema};
 pub fn epoch() -> StoreEpoch {
     let tower = EmbeddingTower {
         model_id: "release-fixture".into(),

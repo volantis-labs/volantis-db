@@ -1,7 +1,7 @@
 //! Independently authored logical trace plus the retained staging-base adapter.
 //! Expected canonical bytes below are literal v1 fields, never encoder output.
 use super::*;
-use zeppelin_embed::fts::tokenizer::{TokenizerConfig, TokenizerEpoch};
+use volantis_db::fts::tokenizer::{TokenizerConfig, TokenizerEpoch};
 
 pub const NS: &str = "pg8\0";
 pub const NODE_HIGH: u128 = 1u128 << 100;
@@ -320,9 +320,9 @@ impl<S: BlockSource> RecordCatalog<S> for Base {
 impl<S: BlockSource> PreparationCatalog<S> for Base {
     fn namespace_id(
         &self,
-        name: zeppelin_embed::property_graph::GraphName<'_>,
+        name: volantis_db::property_graph::GraphName<'_>,
         r: &mut TreeResources<'_>,
-    ) -> Result<zeppelin_embed::property_graph::catalog::NamespaceId, TreeError> {
+    ) -> Result<volantis_db::property_graph::catalog::NamespaceId, TreeError> {
         for entry in &self.symbols {
             r.step(1)?;
             if entry.1 == name.as_str()

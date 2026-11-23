@@ -3,7 +3,7 @@
 
 use super::coverage::CoverageRegistry;
 use std::collections::BTreeSet;
-use zeppelin_embed_adversarial_oracle::graph_adjacency_store::{
+use volantis_db_adversarial_oracle::graph_adjacency_store::{
     Operation, RelationshipRow, compare_read_view_expansion,
 };
 
@@ -44,7 +44,7 @@ fn compare_bytes(removed: u64, unlinked: u64) -> Result<(), &'static str> {
 }
 
 fn compare_race(
-    report: &zeppelin_embed::graph_reclaim_test_support::RaceProbeReport,
+    report: &volantis_db::graph_reclaim_test_support::RaceProbeReport,
 ) -> Result<(), String> {
     if report.observation != report.control {
         return Err(String::from(
@@ -60,8 +60,8 @@ pub fn race_probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), Stri
 pub fn race_observation(
     seed: u64,
     coverage: &mut CoverageRegistry,
-) -> Result<zeppelin_embed_bench::harness_json::Value, String> {
-    let report = zeppelin_embed::graph_reclaim_test_support::run_ze176_race_probe(seed);
+) -> Result<volantis_db_bench::harness_json::Value, String> {
+    let report = volantis_db::graph_reclaim_test_support::run_ze176_race_probe(seed);
     compare_race(&report)?;
     let mut perturbed = report.clone();
     perturbed.observation.0 += 1;
@@ -78,7 +78,7 @@ pub fn race_observation(
     ] {
         coverage.hit(key);
     }
-    Ok(zeppelin_embed_bench::harness_json::json!({
+    Ok(volantis_db_bench::harness_json::json!({
         "observation": report.observation, "control": report.control
     }))
 }
@@ -89,8 +89,8 @@ pub fn probe(seed: u64, coverage: &mut CoverageRegistry) -> Result<(), String> {
 pub fn observe(
     seed: u64,
     coverage: &mut CoverageRegistry,
-) -> Result<zeppelin_embed_bench::harness_json::Value, String> {
-    let report = zeppelin_embed::graph_reclaim_test_support::run_actual_probe(seed);
+) -> Result<volantis_db_bench::harness_json::Value, String> {
+    let report = volantis_db::graph_reclaim_test_support::run_actual_probe(seed);
     if !compare_detach_sweep(report.detach_sweep) {
         return Err("DETACH sweep changed visibility or original installing generation".into());
     }
@@ -185,9 +185,9 @@ pub fn observe(
     if seen != required {
         return Err("missing reclaim boundary receipts".into());
     }
-    Ok(zeppelin_embed_bench::harness_json::json!({
+    Ok(volantis_db_bench::harness_json::json!({
         "state": format!("{:?}", report.state), "detach_sweep": report.detach_sweep,
-        "receipts": report.receipts.iter().map(|r| zeppelin_embed_bench::harness_json::json!({"key": r.key, "fires": r.fires, "controls": r.clean_controls})).collect::<Vec<_>>()
+        "receipts": report.receipts.iter().map(|r| volantis_db_bench::harness_json::json!({"key": r.key, "fires": r.fires, "controls": r.clean_controls})).collect::<Vec<_>>()
     }))
 }
 

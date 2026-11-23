@@ -5,7 +5,7 @@
 //
 //   node scripts/reopen-bench.mjs --docs 3000,20000,100000 [--auto-seal-rows 2048]
 //     [--batch 1] [--max-resident-bytes 536870912]
-//     [--package <path to a zeppelin-embed package>]
+//     [--package <path to a volantis-db package>]
 //
 // `--batch` writes that many documents per upsert. Without `--auto-seal-rows`
 // nothing is sealed, which measures WAL replay; `--package` measures another

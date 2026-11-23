@@ -6,20 +6,20 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tempfile::tempdir;
-use zeppelin_embed::fts::bm25::Bm25Params;
-use zeppelin_embed::fts::index::{DEFAULT_FIELD, Document, LexicalIndex, SegmentIndex};
-use zeppelin_embed::fts::phonetic;
-use zeppelin_embed::fts::prune::{Strategy, search_pruned};
-use zeppelin_embed::fts::query::LexicalQuery;
-use zeppelin_embed::fts::search::TermQuery;
-use zeppelin_embed::fts::snippet;
-use zeppelin_embed::fts::tokenizer::{Analyzer, TokenizerConfig};
-use zeppelin_embed::ingest::{
+use volantis_db::fts::bm25::Bm25Params;
+use volantis_db::fts::index::{DEFAULT_FIELD, Document, LexicalIndex, SegmentIndex};
+use volantis_db::fts::phonetic;
+use volantis_db::fts::prune::{Strategy, search_pruned};
+use volantis_db::fts::query::LexicalQuery;
+use volantis_db::fts::search::TermQuery;
+use volantis_db::fts::snippet;
+use volantis_db::fts::tokenizer::{Analyzer, TokenizerConfig};
+use volantis_db::ingest::{
     DeleteBatch, DocId, DocumentVersion, IngestBatch, IngestDocument, Revision, StoreLexicalError,
 };
-use zeppelin_embed::lifecycle::{CancelToken, OpenOptions, QueryControl, QueryError, Store};
-use zeppelin_embed::scan::ScanError;
-use zeppelin_embed_adversarial_oracle::fts::{
+use volantis_db::lifecycle::{CancelToken, OpenOptions, QueryControl, QueryError, Store};
+use volantis_db::scan::ScanError;
+use volantis_db_adversarial_oracle::fts::{
     DocumentFact, DocumentTokens, FtsInput, FtsObserved, PhoneticFact, ScoreFact, SnippetFact,
     StructuredFact, TokenFact,
 };
@@ -377,7 +377,7 @@ fn score_fact(document: DocumentVersion, score: f64) -> Result<ScoreFact, String
 }
 
 fn structured_fact(
-    outcome: zeppelin_embed::ingest::StoreStructuredLexicalSearchOutcome,
+    outcome: volantis_db::ingest::StoreStructuredLexicalSearchOutcome,
 ) -> Result<StructuredFact, String> {
     let mut expansions = outcome
         .expansions
@@ -917,7 +917,7 @@ pub(crate) fn run_fts_operation_on_store(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zeppelin_embed_adversarial_oracle::fts as oracle;
+    use volantis_db_adversarial_oracle::fts as oracle;
 
     #[test]
     fn astra_02_lexical_cancellation_and_same_seed_clean_control() {

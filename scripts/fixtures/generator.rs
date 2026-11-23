@@ -1,5 +1,6 @@
 #![allow(clippy::expect_used, clippy::panic)]
 mod common;
+use zeppelin_embed as engine;
 use std::path::Path;
 use zeppelin_embed::ingest::{DeleteBatch, DocId};
 use zeppelin_embed::lifecycle::{

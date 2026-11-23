@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-import zeppelin_embed as ze
-from zeppelin_embed._library import LIBRARY
+import volantis_db as ze
+from volantis_db._library import LIBRARY
 
 HEADER = (
     Path(__file__).resolve().parents[3]
     / "crates"
-    / "zeppelin-embed-ffi"
+    / "volantis-db-ffi"
     / "include"
-    / "zeppelin_embed.h"
+    / "volantis_db.h"
 )
 
 
@@ -43,7 +43,7 @@ def test_error_hierarchy_matches_exported_c_table_and_header() -> None:
     assert ze.error_code_name(62) == "ZE_ERR_MISSING_EMBEDDER"
     assert ze.error_code_name(63) == "ZE_ERR_MLX_CACHE_LIMIT_CONFLICT"
     assert ze.error_code_name(64) == "ZE_ERR_UNKNOWN"
-    assert issubclass(ze.Cancelled, ze.ZeppelinError)
+    assert issubclass(ze.Cancelled, ze.VolantisError)
     assert ze.Cancelled.code == ze.ErrorCode.ERR_CANCELLED
 
 

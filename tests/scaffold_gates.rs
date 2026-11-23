@@ -15,7 +15,7 @@ fn repo_root() -> PathBuf {
 fn fixture_dir(name: &str) -> Result<PathBuf, Box<dyn Error>> {
     let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let path = std::env::temp_dir().join(format!(
-        "zeppelin-embed-{name}-{}-{nonce}",
+        "volantis-db-{name}-{}-{nonce}",
         std::process::id()
     ));
     fs::create_dir_all(&path)?;
@@ -170,10 +170,10 @@ fn size_budget_fails_on_inflated_binary() {
 #[test]
 fn normal_consumers_exclude_test_seams() {
     for (package, features) in [
-        ("zeppelin-embed-bench", ""),
-        ("zeppelin-embed-cypher", ""),
-        ("zeppelin-embed-ffi", ""),
-        ("zeppelin-embed-ffi", "graph-cypher"),
+        ("volantis-db-bench", ""),
+        ("volantis-db-cypher", ""),
+        ("volantis-db-ffi", ""),
+        ("volantis-db-ffi", "graph-cypher"),
     ] {
         let mut command = Command::new("cargo");
         command.current_dir(repo_root()).args([
@@ -193,7 +193,7 @@ fn normal_consumers_exclude_test_seams() {
         assert!(output.status.success(), "{text}");
         for feature in ["test-support", "test-seams"] {
             assert!(
-                !text.contains(&format!("zeppelin-embed feature \"{feature}\"")),
+                !text.contains(&format!("volantis-db feature \"{feature}\"")),
                 "{package} {features} enables {feature} through normal/build edges:\n{text}"
             );
         }

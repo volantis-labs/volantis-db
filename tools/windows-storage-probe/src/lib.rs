@@ -1,12 +1,12 @@
 //! W02 native probe: does Windows support the durable-publication protocol the
-//! Zeppelin storage engine needs, on standard-user local NTFS?
+//! Volantis DB storage engine needs, on standard-user local NTFS?
 //!
 //! This package is deliberately outside the product workspace, std-only and
-//! dependency-free. It has to build and run before `zeppelin-embed` itself is
+//! dependency-free. It has to build and run before `volantis-db` itself is
 //! portable, so the experiment cannot live in a core integration test.
 //!
 //! Nothing here is a product surface. W05 lifts the validated wrappers into
-//! `crates/zeppelin-embed/src/sys/windows.rs` and re-proves them through
+//! `crates/volantis-db/src/sys/windows.rs` and re-proves them through
 //! `tests/windows_storage_protocol.rs` against the real engine.
 
 #![cfg(windows)]

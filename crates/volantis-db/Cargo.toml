@@ -1,0 +1,169 @@
+[package]
+name = "volantis-db"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "In-process vector, lexical, and hybrid search for macOS and Apple silicon"
+repository = "https://github.com/volantis-labs/volantis-db"
+homepage = "https://github.com/volantis-labs/volantis-db"
+documentation = "https://docs.rs/volantis-db"
+readme = "README.md"
+keywords = ["vector-search", "full-text-search", "hybrid-search", "embedded", "macos"]
+categories = ["database-implementations", "text-processing"]
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[features]
+graph-cypher = []
+query-timing = []
+allocation-audit = []
+benchmark-kernels = []
+test-seams = ["benchmark-kernels"]
+
+[dependencies]
+libc.workspace = true
+roaring.workspace = true
+xxhash-rust.workspace = true
+
+[dev-dependencies]
+# Integration tests enable deterministic seams only through dev edges.
+volantis-db = { path = ".", features = ["test-seams"] }
+criterion.workspace = true
+proptest.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+tempfile.workspace = true
+
+[[bench]]
+name = "kernels"
+harness = false
+
+[[bench]]
+name = "kernels_cold_dram"
+harness = false
+
+[[bench]]
+name = "scan"
+harness = false
+
+[[bench]]
+name = "query_pool"
+harness = false
+
+[[bench]]
+name = "lexical_queries"
+harness = false
+
+[[bench]]
+name = "ingest"
+harness = false
+
+[[bench]]
+name = "filtered_exec"
+harness = false
+
+[[test]]
+name = "graph_adjacency"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_adjacency_store"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_artifact"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_canonical"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_catalog"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_checked_utf8"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_compiled_context"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_completed_predicate"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_completed_results"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_directories"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_key_lifecycle"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_memory_intervals"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_query_allocation"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_query_external_capacity"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_query_plan"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_query_runtime"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_query_runtime_control"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_read_view"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_query_storage"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_query_values"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_relational"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_storage_failures"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_storage_prepare"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_wal"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_write_staging"
+required-features = ["graph-cypher"]
+
+[[test]]
+name = "graph_resource_accounting"
+required-features = ["graph-cypher"]

@@ -24,5 +24,5 @@ test-threads = 1
 max-threads = 1
 
 [[profile.default.overrides]]
-filter = 'package(zeppelin-embed-text)'
+filter = 'package(volantis-db-text)'
 test-group = "native-model"

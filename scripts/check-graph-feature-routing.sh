@@ -112,11 +112,11 @@ reject_text() {
 
 run_route ci-arm Darwin arm64 aarch64-apple-darwin '<unset>' clippy ci-gates.sh
 require_text "$route_output" 'native graph qualification: selected for aarch64-apple-darwin'
-require_text "$route_log" '--features zeppelin-embed-workspace-tests/graph-result-test-support'
+require_text "$route_log" '--features volantis-db-workspace-tests/graph-result-test-support'
 
 run_route coverage-arm Darwin arm64 aarch64-apple-darwin '<unset>' llvm-cov coverage.sh
 require_text "$route_output" 'native graph coverage: selected for aarch64-apple-darwin'
-require_text "$route_log" '--features zeppelin-embed-workspace-tests/graph-result-test-support'
+require_text "$route_log" '--features volantis-db-workspace-tests/graph-result-test-support'
 
 run_route adversarial-arm Darwin arm64 aarch64-apple-darwin '<unset>' test adversarial.sh smoke
 require_text "$route_output" 'native graph campaigns: selected for aarch64-apple-darwin'
@@ -135,13 +135,13 @@ require_text "$route_output" 'native graph campaigns: selected for x86_64-apple-
 require_text "$route_log" 'graph-result-test-support'
 
 run_route ci-linux Linux x86_64 x86_64-unknown-linux-gnu '<unset>' clippy ci-gates.sh
-require_text "$route_log" '--exclude zeppelin-embed-cypher'
+require_text "$route_log" '--exclude volantis-db-cypher'
 reject_text "$route_log" 'graph-result-test-support'
 
 run_route coverage-linux Linux x86_64 x86_64-unknown-linux-gnu '<unset>' llvm-cov coverage.sh
-require_text "$route_log" '--exclude zeppelin-embed-bench'
-require_text "$route_log" '--exclude zeppelin-embed-cypher'
-require_text "$route_log" '--exclude zeppelin-embed-text'
+require_text "$route_log" '--exclude volantis-db-bench'
+require_text "$route_log" '--exclude volantis-db-cypher'
+require_text "$route_log" '--exclude volantis-db-text'
 reject_text "$route_log" 'graph-result-test-support'
 
 run_route adversarial-linux Linux x86_64 x86_64-unknown-linux-gnu '<unset>' test adversarial.sh smoke
@@ -165,7 +165,7 @@ require_text "$route_log" 'graph-result-test-support'
 
 run_route ci-linux-arm-target Linux x86_64 x86_64-unknown-linux-gnu aarch64-apple-darwin clippy ci-gates.sh
 require_text "$route_output" 'native graph qualification: not selected for aarch64-apple-darwin'
-require_text "$route_log" '--exclude zeppelin-embed-cypher'
+require_text "$route_log" '--exclude volantis-db-cypher'
 reject_text "$route_log" 'graph-result-test-support'
 
 run_route ci-arm-x86-rustc Darwin arm64 x86_64-apple-darwin '<unset>' clippy ci-gates.sh

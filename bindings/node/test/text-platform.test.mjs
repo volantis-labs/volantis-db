@@ -14,8 +14,8 @@ for (const platform of ['darwin', 'win32']) {
       process: {platform, arch: 'x64', versions: {napi: '8'}},
       require: name => name.endsWith('.node') ? {textSupported: false} : require(name)});
     vm.runInContext(source, context);
-    const {TextStore, ZeppelinError} = exports.exports;
-    const unavailable = error => error instanceof ZeppelinError && error.code === 'ZE_ERR_UNSUPPORTED' &&
+    const {TextStore, VolantisError} = exports.exports;
+    const unavailable = error => error instanceof VolantisError && error.code === 'ZE_ERR_UNSUPPORTED' &&
       error.errorCode === 11 && error.message === 'text API is available on macOS arm64 only';
     assert.throws(() => TextStore.open('unused', 'unused'), unavailable);
     await assert.rejects(TextStore.openAsync('unused', 'unused'), unavailable);

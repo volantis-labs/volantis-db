@@ -1,4 +1,4 @@
-# Python 3.11.15, macOS arm64. Recorded from zeppelin-embed-models/venv-freeze.txt,
+# Python 3.11.15, macOS arm64. Recorded from volantis-db-models/venv-freeze.txt,
 # plus the installed xxhash version required by the existing baker.
 attrs==26.1.0
 cattrs==26.2.1

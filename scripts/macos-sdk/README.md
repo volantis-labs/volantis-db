@@ -1,28 +1,28 @@
-# Zeppelin Embed macOS SDK
+# Volantis DB macOS SDK
 
-This archive contains the Zeppelin Embed core C ABI for macOS on Apple
+This archive contains the Volantis DB core C ABI for macOS on Apple
 silicon. It can be called from any language that supports C-compatible foreign
 functions.
 
-- `include/zeppelin_embed.h`: public C header
-- `lib/libzeppelin_embed_ffi.a`: static library
-- `lib/libzeppelin_embed_ffi.dylib`: dynamic library
+- `include/volantis_db.h`: public C header
+- `lib/libvolantis_db_ffi.a`: static library
+- `lib/libvolantis_db_ffi.dylib`: dynamic library
 
 The legacy SDK provides caller-supplied vector, lexical, and hybrid retrieval.
 Embedding models are supplied separately.
 
-The dylib uses the install name `@rpath/libzeppelin_embed_ffi.dylib`. Embed it
+The dylib uses the install name `@rpath/libvolantis_db_ffi.dylib`. Embed it
 in the application, add the containing directory to the executable's runtime
 search paths, and sign the finished application bundle. A C program can link
 the static archive with `-liconv`; Clang supplies the remaining macOS system
 libraries.
 
-See <https://github.com/zepdb/zeppelin-embed> for API examples and source.
+See <https://github.com/volantis-labs/volantis-db> for API examples and source.
 
 Build with `--artifact legacy` (the default) or `--artifact graph-cypher`.
 The graph-cypher SDK supports macOS 14+ arm64, includes the full core, graph
-and model-backed text C ABI headers, and installs `libzeppelin_embed_graph_cypher_ffi.a` and `.dylib`.
-Its install name is `@rpath/libzeppelin_embed_graph_cypher_ffi.dylib`.
+and model-backed text C ABI headers, and installs `libvolantis_db_graph_cypher_ffi.a` and `.dylib`.
+Its install name is `@rpath/libvolantis_db_graph_cypher_ffi.dylib`.
 The legacy SDK retains macOS 11+ arm64 and its existing filenames.
 
 These SDKs are alternatives. Graph already includes the full core and compiler;

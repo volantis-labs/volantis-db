@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed::meta::{
+use volantis_db::meta::{
     AliveSet, ColumnDefinition, ColumnId, ColumnInput, ColumnStoreBuilder, ColumnType, ColumnValue,
     Predicate, PredicateValue, RangeBound, RangePredicate, Schema, TIMESTAMP_COLUMN, evaluate,
 };

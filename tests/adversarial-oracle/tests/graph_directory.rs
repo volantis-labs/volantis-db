@@ -1,4 +1,4 @@
-use zeppelin_embed_adversarial_oracle::graph_directory::{
+use volantis_db_adversarial_oracle::graph_directory::{
     Entity, Expected, Image, Key, Kind, Limits, Model, Operation, OperationKind, Outcome, Shape,
 };
 
@@ -76,7 +76,7 @@ fn graph_directory_preserves_full_ids_and_independent_kind_domains() {
 
 #[test]
 fn graph_directory_retains_complete_fences_replays_and_old_snapshots() {
-    use zeppelin_embed_adversarial_oracle::graph_directory::{DeleteMode, Fence, Provenance};
+    use volantis_db_adversarial_oracle::graph_directory::{DeleteMode, Fence, Provenance};
     let mut model = Model::new(Limits::default());
     let id = (1_u128 << 120) | 9;
     let request = create(id, Some(key(b"", b"\0")), &[3], &[0, 0, 0, 0, 0, 0, 0, 128]);
@@ -206,7 +206,7 @@ fn relationship(id: u128, source: u128, target: u128, rel_type: u64) -> Operatio
     }
 }
 fn delete_node(id: u128, key: Option<Key>, revision: u64, detach: bool) -> Operation {
-    use zeppelin_embed_adversarial_oracle::graph_directory::DeleteMode;
+    use volantis_db_adversarial_oracle::graph_directory::DeleteMode;
     Operation {
         kind: if key.is_some() {
             OperationKind::Delete
@@ -228,7 +228,7 @@ fn delete_node(id: u128, key: Option<Key>, revision: u64, detach: bool) -> Opera
 
 #[test]
 fn graph_directory_preserves_raw_incident_rows_but_validates_live_endpoints() {
-    use zeppelin_embed_adversarial_oracle::graph_directory::{DeleteMode, Error};
+    use volantis_db_adversarial_oracle::graph_directory::{DeleteMode, Error};
     let mut model = Model::new(Limits::default());
     let high = (1_u128 << 100) | 7;
     model
@@ -287,7 +287,7 @@ fn graph_directory_preserves_raw_incident_rows_but_validates_live_endpoints() {
 
 #[test]
 fn graph_directory_key_ranges_are_byte_exact_and_capacity_bounded() {
-    use zeppelin_embed_adversarial_oracle::graph_directory::Error;
+    use volantis_db_adversarial_oracle::graph_directory::Error;
     let mut model = Model::new(Limits::default());
     let cases = [
         (9, b"z".as_slice(), b"".as_slice()),
@@ -309,7 +309,7 @@ fn graph_directory_key_ranges_are_byte_exact_and_capacity_bounded() {
     let snapshot = model.snapshot();
     let ids = |rows: Vec<(
         &Key,
-        &zeppelin_embed_adversarial_oracle::graph_directory::Fence,
+        &volantis_db_adversarial_oracle::graph_directory::Fence,
     )>| {
         rows.iter()
             .map(|(_, fence)| fence.provenance.incarnation.id)
@@ -353,7 +353,7 @@ fn graph_directory_key_ranges_are_byte_exact_and_capacity_bounded() {
 
 #[test]
 fn graph_directory_snapshot_reads_filter_both_endpoints_before_capacity() {
-    use zeppelin_embed_adversarial_oracle::graph_directory::{DeleteMode, Error};
+    use volantis_db_adversarial_oracle::graph_directory::{DeleteMode, Error};
     let mut model = Model::new(Limits::default());
     for id in 1..=3 {
         model
@@ -415,9 +415,9 @@ fn graph_directory_snapshot_reads_filter_both_endpoints_before_capacity() {
 
 fn comparator_fixture() -> (
     Model,
-    zeppelin_embed_adversarial_oracle::graph_directory::Observation,
+    volantis_db_adversarial_oracle::graph_directory::Observation,
 ) {
-    use zeppelin_embed_adversarial_oracle::graph_directory::{
+    use volantis_db_adversarial_oracle::graph_directory::{
         DeleteMode, Fence, Observation, Provenance, Record,
     };
     let high = (1_u128 << 100) | 7;
@@ -607,7 +607,7 @@ fn graph_directory_comparator_detects_omitted_extra_and_reordered_membership() {
 
 #[test]
 fn graph_directory_comparator_detects_canonical_bits_and_every_provenance_field() {
-    use zeppelin_embed_adversarial_oracle::graph_directory::DeleteMode;
+    use volantis_db_adversarial_oracle::graph_directory::DeleteMode;
     let (model, literal) = comparator_fixture();
     let expected = model.snapshot();
     let mut changed = literal.clone();
@@ -714,7 +714,7 @@ fn graph_directory_numeric_ranges_reach_maximum_id_without_byte_ordering() {
             .unwrap();
     }
     let snapshot = model.snapshot();
-    let ids = |rows: Vec<&zeppelin_embed_adversarial_oracle::graph_directory::Record>| {
+    let ids = |rows: Vec<&volantis_db_adversarial_oracle::graph_directory::Record>| {
         rows.iter()
             .map(|r| r.provenance.incarnation.id)
             .collect::<Vec<_>>()
@@ -740,7 +740,7 @@ fn graph_directory_numeric_ranges_reach_maximum_id_without_byte_ordering() {
 
 #[test]
 fn graph_directory_rejects_limits_without_partial_logical_changes() {
-    use zeppelin_embed_adversarial_oracle::graph_directory::Error;
+    use volantis_db_adversarial_oracle::graph_directory::Error;
     for (field, error) in [
         ("steps", Error::Limit("steps")),
         ("entities", Error::Limit("entities")),
@@ -785,7 +785,7 @@ fn graph_directory_rejects_limits_without_partial_logical_changes() {
 
 #[test]
 fn graph_directory_rejects_invalid_requests_topology_and_bitwise_replay_changes() {
-    use zeppelin_embed_adversarial_oracle::graph_directory::Error;
+    use volantis_db_adversarial_oracle::graph_directory::Error;
     let mut model = Model::new(Limits::default());
     for (operation, reason) in [
         (create(0, None, &[], &[1]), "identity_or_revision"),
@@ -823,7 +823,7 @@ fn graph_directory_rejects_invalid_requests_topology_and_bitwise_replay_changes(
 
 #[test]
 fn graph_directory_unkeyed_tombstone_comparator_checks_complete_deletion_provenance() {
-    use zeppelin_embed_adversarial_oracle::graph_directory::{DeleteMode, Observation, Provenance};
+    use volantis_db_adversarial_oracle::graph_directory::{DeleteMode, Observation, Provenance};
     let mut model = Model::new(Limits::default());
     model.apply(1, create(99, None, &[], &[0])).unwrap();
     model.apply(2, delete_node(99, None, 2, true)).unwrap();
@@ -862,7 +862,7 @@ fn graph_directory_unkeyed_tombstone_comparator_checks_complete_deletion_provena
 
 #[test]
 fn graph_directory_cypher_noop_preserves_max_revision_without_increment() {
-    use zeppelin_embed_adversarial_oracle::graph_directory::Error;
+    use volantis_db_adversarial_oracle::graph_directory::Error;
     let mut model = Model::new(Limits::default());
     let mut initial = create(7, Some(key(b"n", b"max")), &[3], &[0x80]);
     initial.revision = u64::MAX;

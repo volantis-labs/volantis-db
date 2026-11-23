@@ -8,13 +8,13 @@ use super::program::{Op, Program};
 use super::runner::{ComparisonOutcomeCounts, RunOutcome};
 use std::collections::BTreeMap;
 use std::path::Path;
-use zeppelin_embed::graph_commit_recovery_test_support::{
+use volantis_db::graph_commit_recovery_test_support::{
     BatchObservation, Boundary, BoundaryReport, Fixture,
 };
-use zeppelin_embed::property_graph::EntityId;
-use zeppelin_embed_adversarial_oracle::graph_fixture as primitive;
-use zeppelin_embed_adversarial_oracle::graph_lifecycle as oracle;
-use zeppelin_embed_bench::harness_json::{Value, json};
+use volantis_db::property_graph::EntityId;
+use volantis_db_adversarial_oracle::graph_fixture as primitive;
+use volantis_db_adversarial_oracle::graph_lifecycle as oracle;
+use volantis_db_bench::harness_json::{Value, json};
 
 pub fn input(fixture: &Fixture) -> Vec<primitive::Mutation> {
     use primitive::*;
@@ -331,7 +331,7 @@ fn lines(records: &[Value]) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
     for record in records {
         bytes
-            .extend(zeppelin_embed_bench::harness_json::to_vec(record).map_err(|e| e.to_string())?);
+            .extend(volantis_db_bench::harness_json::to_vec(record).map_err(|e| e.to_string())?);
         bytes.push(b'\n');
     }
     Ok(bytes)
@@ -343,7 +343,7 @@ pub fn run(
     overridden: bool,
     root: &Path,
 ) -> Result<RunOutcome, String> {
-    zeppelin_embed::graph_commit_recovery_test_support::with_qualification_nonces(seed, || {
+    volantis_db::graph_commit_recovery_test_support::with_qualification_nonces(seed, || {
         run_inner(seed, profile, overridden, root)
     })
 }
@@ -429,7 +429,7 @@ fn run_inner(
                     let mut report = super::graph_reclaim::observe(seed, &mut coverage)?;
                     let race = super::graph_reclaim::race_observation(seed, &mut coverage)?;
                     report["reader_race"] = race;
-                    let reclaim = zeppelin_embed::graph_commit_recovery_test_support::run_ze75_reclaim_evidence(seed);
+                    let reclaim = volantis_db::graph_commit_recovery_test_support::run_ze75_reclaim_evidence(seed);
                     check_reclaim(&reclaim)?;
                     report["checkpoint_retry_reclaim"] = json!(reclaim.iter().map(|r| json!({
                     "cell": r.cell, "fires": r.fires, "controls": r.controls,
@@ -714,12 +714,12 @@ fn fault_vfs_qualifies_unified_native_wal() {
 /// The memory VFS cannot map a native graph. Qualify its byte/barrier model using
 /// the real executor's WAL bytes, separately from directory loss and SIGKILL.
 fn fault_vfs_observation(fixture: &Fixture) -> Result<Value, String> {
-    use zeppelin_embed::vfs::{SyncKind, Vfs};
+    use volantis_db::vfs::{SyncKind, Vfs};
     let root = tempfile::tempdir().map_err(|e| e.to_string())?;
-    let store = zeppelin_embed::graph_commit_recovery_test_support::ProbeStore::create(
+    let store = volantis_db::graph_commit_recovery_test_support::ProbeStore::create(
         &root.path().join("native"),
         fixture,
-        std::sync::Arc::new(zeppelin_embed::vfs::StdVfs),
+        std::sync::Arc::new(volantis_db::vfs::StdVfs),
     );
     store.apply(fixture).map_err(|e| e.to_string())?;
     super::graph_recovery::compare_batch(fixture, &store.observe().ok_or("missing WAL control")?)?;
@@ -734,7 +734,7 @@ fn fault_vfs_observation(fixture: &Fixture) -> Result<Value, String> {
         .find(|e| e.file_name().to_string_lossy().starts_with("wal.ze"))
         .ok_or("native WAL missing")?;
     let bytes = std::fs::read(entry.path()).map_err(|e| e.to_string())?;
-    let vfs = zeppelin_embed::vfs::fault::FaultVfs::new();
+    let vfs = volantis_db::vfs::fault::FaultVfs::new();
     let path = Path::new("wal.ze-control");
     let mut file = vfs.open_append(path).map_err(|e| e.to_string())?;
     file.append(&bytes).map_err(|e| e.to_string())?;
@@ -770,7 +770,7 @@ fn fault_vfs_observation(fixture: &Fixture) -> Result<Value, String> {
 }
 
 pub fn check_reclaim(
-    reports: &[zeppelin_embed::graph_commit_recovery_test_support::ReclaimEvidence],
+    reports: &[volantis_db::graph_commit_recovery_test_support::ReclaimEvidence],
 ) -> Result<(), String> {
     let clean = reports
         .iter()

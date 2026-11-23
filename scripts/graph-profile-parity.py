@@ -193,7 +193,7 @@ def run_matrix(args):
     m = build_manifest(args.manifest)
     args.output.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, CARGO_BUILD_JOBS='3')
-    command = ['cargo', 'build', '-p', 'zeppelin-embed-workspace-tests', '--features', 'graph-cypher,zeppelin-embed/test-seams', '--bin', 'graph-profile']
+    command = ['cargo', 'build', '-p', 'volantis-db-workspace-tests', '--features', 'graph-cypher,volantis-db/test-seams', '--bin', 'graph-profile']
     subprocess.run(command, cwd=ROOT, env=env, check=True)
     described = subprocess.check_output([ROOT / 'target/debug/graph-profile', 'describe'], cwd=ROOT, text=True)
     m['cases'] = json.loads(described)['cases']
@@ -222,7 +222,7 @@ def run_matrix(args):
     swift_env = dict(env, ZE_USE_LOCAL_FFI='1', ZE_ENABLE_GRAPH='1', ZE74_SWIFT_MANIFEST=str((args.output/'consumer-manifest.json').resolve()),
                      ZE74_SWIFT_RECEIPTS=str(swift_receipts.resolve()), CLANG_MODULE_CACHE_PATH=str(ROOT/'target/swift-ze74-clang'),
                      SWIFTPM_MODULECACHE_OVERRIDE=str(ROOT/'target/swift-ze74-module'))
-    archive = subprocess.run(['cargo', 'build', '--locked', '--release', '-p', 'zeppelin-embed-ffi', '--features', 'graph-cypher'],
+    archive = subprocess.run(['cargo', 'build', '--locked', '--release', '-p', 'volantis-db-ffi', '--features', 'graph-cypher'],
                              cwd=ROOT, env=env, capture_output=True, text=True)
     (args.output/'swift-archive.log').write_text(archive.stdout+archive.stderr)
     build = archive

@@ -6,27 +6,27 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use tempfile::tempdir;
-use zeppelin_embed::epoch::{
+use volantis_db::epoch::{
     ComputeUnits, EmbeddingEpoch, EmbeddingRuntime, EmbeddingTower, Normalization, StoreEpoch,
 };
-use zeppelin_embed::fts::tokenizer::TokenizerConfig;
-use zeppelin_embed::graph::build::GraphBuildError;
-use zeppelin_embed::graph::refine::RefinementPass;
-use zeppelin_embed::ingest::{
+use volantis_db::fts::tokenizer::TokenizerConfig;
+use volantis_db::graph::build::GraphBuildError;
+use volantis_db::graph::refine::RefinementPass;
+use volantis_db::ingest::{
     DeleteBatch, DocId, DocumentVersion, IngestBatch, IngestDocument, Revision, RowSource,
     SearchOutcome, SearchRequest,
 };
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::{
     CancelToken, OpenOptions, QueryControl, SearchOptions, SearchTier, Store,
     StoreTestDependencies, SystemMonotonicClock,
 };
-use zeppelin_embed::planner::{SegmentBranch, SegmentTier as PlanSegmentTier};
-use zeppelin_embed::segment::SegmentId;
-use zeppelin_embed::tier::{
+use volantis_db::planner::{SegmentBranch, SegmentTier as PlanSegmentTier};
+use volantis_db::segment::SegmentId;
+use volantis_db::tier::{
     MaintenanceBudget, MaintenanceError, MaintenanceReport, MaintenanceStatus, TierThresholds,
 };
-use zeppelin_embed_adversarial_oracle::storage_durability::{parse_manifest, parse_segment};
-use zeppelin_embed_adversarial_oracle::tiering_maintenance::{
+use volantis_db_adversarial_oracle::storage_durability::{parse_manifest, parse_segment};
+use volantis_db_adversarial_oracle::tiering_maintenance::{
     self as oracle, BudgetDisposition, BudgetStep, CandidateFact, PlanBranch, PlanFact, PlanTier,
     PublicationFact, TierFixture, TierInput, TierObserved,
 };
@@ -534,7 +534,7 @@ fn observe_on_store(
 fn observe_uncached(seed: u64) -> Result<(TierInput, TierObserved), String> {
     let directory = tempdir().map_err(|error| error.to_string())?;
     let dependencies = StoreTestDependencies::new(
-        Arc::new(zeppelin_embed::vfs::StdVfs),
+        Arc::new(volantis_db::vfs::StdVfs),
         Arc::new(SystemMonotonicClock),
     );
     let mut leg = ControlStore::open(directory.path(), control_open_options(seed), dependencies)?;

@@ -11,9 +11,9 @@ TARGET="${CARGO_TARGET_DIR:-$ROOT/target}"
 if [[ "$TARGET" != /* ]]; then TARGET="$ROOT/$TARGET"; fi
 MEASURE="$TARGET/cypher-parser-footprint"
 mkdir -p "$MEASURE"
-cargo build --locked --release -p zeppelin-embed-cypher -p zeppelin-embed-ffi
-C_SOURCE=crates/zeppelin-embed-cypher/tests/fixtures/footprint_consumer.c
-SHIM=crates/zeppelin-embed-cypher/tests/fixtures/footprint_shim.rs
+cargo build --locked --release -p volantis-db-cypher -p volantis-db-ffi
+C_SOURCE=crates/volantis-db-cypher/tests/fixtures/footprint_consumer.c
+SHIM=crates/volantis-db-cypher/tests/fixtures/footprint_shim.rs
 for variant in baseline frontend; do
     RUST_EXTRA=()
     C_EXTRA=()
@@ -21,11 +21,11 @@ for variant in baseline frontend; do
     # One Rust link composes rlibs so the runtime is present exactly once.
     rustc --edition 2024 --crate-type staticlib --crate-name ze54_combined_probe \
         -C opt-level=3 -C lto=fat -C codegen-units=1 -C panic=unwind \
-        --extern "zeppelin_embed_cypher=$TARGET/release/libzeppelin_embed_cypher.rlib" \
-        --extern "zeppelin_embed_ffi=$TARGET/release/libzeppelin_embed_ffi.rlib" \
+        --extern "volantis_db_cypher=$TARGET/release/libvolantis_db_cypher.rlib" \
+        --extern "volantis_db_ffi=$TARGET/release/libvolantis_db_ffi.rlib" \
         -L "dependency=$TARGET/release/deps" ${RUST_EXTRA[@]+"${RUST_EXTRA[@]}"} \
         "$SHIM" -o "$MEASURE/lib$variant.a"
-    clang -O3 -I crates/zeppelin-embed-ffi/include "$C_SOURCE" ${C_EXTRA[@]+"${C_EXTRA[@]}"} \
+    clang -O3 -I crates/volantis-db-ffi/include "$C_SOURCE" ${C_EXTRA[@]+"${C_EXTRA[@]}"} \
         "$MEASURE/lib$variant.a" -framework Security -framework CoreFoundation \
         -lpthread -ldl -lm -o "$MEASURE/$variant"
     strip -S -x "$MEASURE/$variant"
@@ -35,7 +35,7 @@ for variant in baseline frontend; do
 done
 rustc --edition 2024 --crate-type staticlib --crate-name ze54_parser_probe \
     -C opt-level=3 -C lto=fat -C codegen-units=1 -C panic=unwind --cfg frontend --cfg standalone \
-    --extern "zeppelin_embed_cypher=$TARGET/release/libzeppelin_embed_cypher.rlib" \
+    --extern "volantis_db_cypher=$TARGET/release/libvolantis_db_cypher.rlib" \
     -L "dependency=$TARGET/release/deps" "$SHIM" -o "$MEASURE/parser-stripped.a"
 strip -S -x "$MEASURE/parser-stripped.a"
 for variant in baseline frontend; do

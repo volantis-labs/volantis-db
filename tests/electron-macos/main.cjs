@@ -67,7 +67,7 @@ app
     const mode = process.env.ZE_FIXTURE_MODE;
     assert.ok(root);
     assert.ok(['single', 'concurrent'].includes(mode));
-    const main = doubleLoad('@zepdb/zeppelin-embed', join(root, 'main'));
+    const main = doubleLoad('volantis-db', join(root, 'main'));
     const count = mode === 'concurrent' ? 2 : 1;
     const workers = Array.from({ length: count }, (_, i) =>
       utility(join(root, `utility-${i}`)),

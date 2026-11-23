@@ -14,7 +14,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::process::Command;
 
 use tempfile::tempdir;
-use zeppelin_embed::ingest::{
+use volantis_db::ingest::{
     DeleteBatch, DocId, DocumentVersion, IngestBatch, IngestDocument, IngestError,
     IngestRetentionCheckpoint, IngestRetentionFaultController, IngestRetentionFaultEffect,
     IngestRetentionFaultKind, IngestRetentionFaultReceiptV1, IngestRetentionIoKind,
@@ -22,17 +22,17 @@ use zeppelin_embed::ingest::{
     PartialBatchAppendVfs, PurgeError, PurgeUnlinkErrorVfs, RetentionPolicy, Revision,
     SearchRequest,
 };
-use zeppelin_embed::lifecycle::{
+use volantis_db::lifecycle::{
     CancelToken, OpenOptions, QueryControl, SearchOptions, SearchTier, Store, StoreError,
     StoreTestDependencies, SystemMonotonicClock,
 };
-use zeppelin_embed::meta::{
+use volantis_db::meta::{
     Predicate, PredicateValue, RangeBound, RangePredicate, TIMESTAMP_COLUMN,
 };
-use zeppelin_embed::scan::ScanOptions;
-use zeppelin_embed::vfs::StdVfs;
-use zeppelin_embed::wal::WalWriteError;
-use zeppelin_embed_adversarial_oracle::ingest_retention as independent;
+use volantis_db::scan::ScanOptions;
+use volantis_db::vfs::StdVfs;
+use volantis_db::wal::WalWriteError;
+use volantis_db_adversarial_oracle::ingest_retention as independent;
 
 const FIXTURE_NAMESPACE: &str = "adversarial::ingest-retention";
 const QUERY: [f32; 2] = [1.0, 1.0];
@@ -2130,7 +2130,7 @@ fn seal_i22_partition(store: &Store, partition: &I22PartitionFixture) -> Result<
 }
 
 fn labels_for_segments(
-    segments: &[zeppelin_embed::segment::SegmentId],
+    segments: &[volantis_db::segment::SegmentId],
     labels: &[I22SegmentLabel],
 ) -> Result<Vec<String>, String> {
     segments
@@ -3180,7 +3180,7 @@ fn validate_post_ack_receipt(
     receipts: &[IngestRetentionFaultReceiptV1],
     invocation_id: u64,
     batch_count: usize,
-    ack: zeppelin_embed::ingest::IngestAck,
+    ack: volantis_db::ingest::IngestAck,
 ) -> Result<(), String> {
     let [receipt] = receipts else {
         return Err(format!(

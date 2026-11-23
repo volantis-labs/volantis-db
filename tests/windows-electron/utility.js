@@ -7,7 +7,7 @@
  *
  * It speaks a tiny request/response protocol over the parent port. Every reply
  * carries either `ok: true` with a result or `ok: false` with the error's
- * name, message and Zeppelin error code, so the main process can assert on
+ * name, message and Volantis DB error code, so the main process can assert on
  * typed failures rather than on message text.
  */
 
@@ -22,7 +22,7 @@ let zeppelin;
 let loadError;
 try {
   // eslint-disable-next-line global-require
-  zeppelin = require('@zepdb/zeppelin-embed');
+  zeppelin = require('volantis-db');
 } catch (error) {
   loadError = error;
 }

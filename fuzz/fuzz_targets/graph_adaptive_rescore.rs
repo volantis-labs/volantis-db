@@ -1,8 +1,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use zeppelin_embed::graph::search::{GraphSearchProfile, GraphSearchRequest};
-use zeppelin_embed::quant::{RescoreMetric, RescorePool, rescore_top_k};
+use volantis_db::graph::search::{GraphSearchProfile, GraphSearchRequest};
+use volantis_db::quant::{RescoreMetric, RescorePool, rescore_top_k};
 
 fuzz_target!(|data: &[u8]| {
     let byte = |index: usize| data.get(index).copied().unwrap_or(0);

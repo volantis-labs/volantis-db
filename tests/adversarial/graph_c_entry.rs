@@ -1,7 +1,7 @@
 //! Directed C boundary proof; the oracle consumes primitive observations only.
 use super::coverage::CoverageRegistry;
-use zeppelin_embed_adversarial_oracle::graph_c_entry::{self as oracle, Observed};
-use zeppelin_embed_ffi::*;
+use volantis_db_adversarial_oracle::graph_c_entry::{self as oracle, Observed};
+use volantis_db_ffi::*;
 #[path = "../support/graph_bindings.rs"]
 mod bindings;
 pub const REQUIRED_COVERAGE: [&str; 7] = [

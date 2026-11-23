@@ -1,0 +1,69 @@
+#![allow(clippy::expect_used)]
+
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
+use tempfile::{TempDir, tempdir};
+use volantis_db::lifecycle::durability::{CommitTier, DurabilityMode, DurabilityPolicy};
+use volantis_db::manifest::Manifest;
+use volantis_db::manifest::io::commit_manifest;
+use volantis_db::meta::{AliveSet, ColumnStoreBuilder, Schema};
+use volantis_db::quant::Bit4Factors;
+use volantis_db::segment::SegmentId;
+use volantis_db::segment::writer::{SegmentBuild, SegmentFactors, write_segment};
+use volantis_db::vfs::StdVfs;
+
+pub fn test_guard() -> MutexGuard<'static, ()> {
+    static TEST_GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+    match TEST_GUARD.get_or_init(|| Mutex::new(())).lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+pub fn published_store(generation: u64) -> TempDir {
+    let directory = tempdir().expect("published store directory");
+    let schema = Schema::new(Vec::new()).expect("timestamp-only schema");
+    let mut columns = ColumnStoreBuilder::new(schema.clone());
+    columns.push_row(17, &[]).expect("fixture row");
+    let columns = columns.finish().expect("fixture columns");
+    let alive = AliveSet::new(1);
+    let id = SegmentId::new(0x0102_0304_0506, [0x09; 10]);
+    let codes = [0x88_u8];
+    let factors = [Bit4Factors::from_persisted(1.0, 1.0, 1.0)];
+    let rescore = [0.0_f32, 0.0_f32];
+    let policy = DurabilityPolicy::new(DurabilityMode::Derived, CommitTier::Ordered)
+        .expect("derived policy");
+    let segment = write_segment(
+        &StdVfs,
+        directory.path(),
+        SegmentBuild {
+            id,
+            scheme: 4,
+            dims: 2,
+            codes: &codes,
+            factors: SegmentFactors::Bit4(&factors),
+            rescore: &rescore,
+            columns: &columns,
+            alive: &alive,
+        },
+        policy,
+    )
+    .expect("fixture segment");
+    commit_manifest(
+        &StdVfs,
+        directory.path(),
+        &Manifest {
+            #[cfg(feature = "graph-cypher")]
+            graph: None,
+            generation,
+            log_seq: 0,
+            segments: vec![segment],
+            epochs: Vec::new(),
+            epoch_alias: None,
+            schema,
+        },
+        policy,
+    )
+    .expect("fixture manifest");
+    directory
+}

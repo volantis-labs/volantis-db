@@ -17,14 +17,14 @@ import sys
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
-CRATES = {**{f'zeppelin-embed{suffix}': f'crates/zeppelin-embed{suffix}'
+CRATES = {**{f'volantis-db{suffix}': f'crates/volantis-db{suffix}'
              for suffix in ('', '-cypher', '-text', '-ffi', '-bench')},
-          'zeppelin-embed-adversarial-oracle': 'tests/adversarial-oracle',
-          'zeppelin-embed-workspace-tests': 'tests'}
+          'volantis-db-adversarial-oracle': 'tests/adversarial-oracle',
+          'volantis-db-workspace-tests': 'tests'}
 EXCLUSIONS = ['registry/', 'fuzz/', 'target/',
-              'crates/zeppelin-embed-bench/src/bin/',
-              'crates/zeppelin-embed-bench/src/platform/',
-              'crates/zeppelin-embed-bench/src/recall/']
+              'crates/volantis-db-bench/src/bin/',
+              'crates/volantis-db-bench/src/platform/',
+              'crates/volantis-db-bench/src/recall/']
 SHAPES = ('project-evidence', 'semantic-context', 'alice-project-ranking',
           'lexical-evidence', 'hybrid-project-evidence', 'bounded-evidence')
 SURFACES = ('rust', 'c', 'swift')
@@ -92,11 +92,11 @@ def inventory():
         crates[package['package']['name']] = dict(path=directory, features=package.get('features', {}))
     return dict(workspace=crates, shipping=SHIPPING,
                 node_build='bindings/node/scripts/build-native.mjs',
-                profile_sha256=digest(ROOT / 'crates/zeppelin-embed-cypher/tests/fixtures/cypher-profile-v1.json'))
+                profile_sha256=digest(ROOT / 'crates/volantis-db-cypher/tests/fixtures/cypher-profile-v1.json'))
 
 
 def profile_scenarios():
-    raw = json.loads((ROOT / 'crates/zeppelin-embed-cypher/tests/fixtures/cypher-profile-v1.json').read_text())
+    raw = json.loads((ROOT / 'crates/volantis-db-cypher/tests/fixtures/cypher-profile-v1.json').read_text())
     return {row['coordinate']: dict(fixture_block_sha256=row['fixture_block_sha256'],
                                    support_disposition=row['support_disposition'])
             for row in raw['scenarios']}
