@@ -213,7 +213,8 @@ fn native_graph_only_object_reopens_full_width_identity_and_exact_payload() {
 #[test]
 fn native_graph_formats_are_required_and_append_only() {
     use volantis_db::format::{FormatRegistry, RegistryError};
-    for family in [17, 18, 19] {
+    // WF-985 appended family 20 (VectorPresence); the next value is unknown.
+    for family in [17, 18, 19, 20] {
         assert!(FormatRegistry::require(family, 1).is_ok());
         assert!(matches!(
             FormatRegistry::require(family, 2),
@@ -221,8 +222,8 @@ fn native_graph_formats_are_required_and_append_only() {
         ));
     }
     assert_eq!(
-        FormatRegistry::require(20, 1),
-        Err(RegistryError::UnknownFamily(20))
+        FormatRegistry::require(21, 1),
+        Err(RegistryError::UnknownFamily(21))
     );
 }
 

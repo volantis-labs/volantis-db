@@ -3,7 +3,8 @@
 //! Weights stay in the mapped bundle in their stored dtype (F16 or F32). Each
 //! linear layer widens one tile of weight rows at a time into a per-worker
 //! buffer; the runtime keeps no fp32 copy of a tower. Large products split over
-//! at most [`MAX_WORKERS`] scoped threads, joined before every return.
+//! at most [`MAX_WORKERS`](crate::runtime::cpu::MAX_WORKERS) scoped threads,
+//! joined before every return.
 
 use std::sync::Arc;
 
