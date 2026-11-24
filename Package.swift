@@ -20,9 +20,9 @@ let useLocalXCFramework = environment["ZE_USE_LOCAL_XCFRAMEWORK"] == "1"
 // fails the release when this literal disagrees with the archive it attaches,
 // and prints the value to pin. `scripts/xcframework/build.sh` only reports a
 // local mismatch.
-let binaryChecksum = "8894c756b23191e171f2c5b74b869edef1d06e8b5a5f36cdd734b1f700ca7633" // ze:xcframework-checksum
+let binaryChecksum = "d9d2b3d6816edc3d7ddba38a3d882c225a602399c42e85e8d3d3d162946bf346" // ze:xcframework-checksum
 
-let graphBinaryChecksum = "ef3963ca69bcb09d0c6cc192483068df9aa8f7d17c33c7f4f7eef659680c23f2" // ze:graph-xcframework-checksum
+let graphBinaryChecksum = "72977afcd04d56513aa3779c8b27f6ac14c549d7a8f5ba193819fc49ad83588f" // ze:graph-xcframework-checksum
 
 // Framework discovery uses the framework's name; preserve the public C import
 // through a source re-export when selecting the dynamic full artifact.
