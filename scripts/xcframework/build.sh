@@ -262,6 +262,11 @@ attempt_slice() {
             return 1
         fi
         release_rustflags="$release_rustflags -Clink-arg=$compiler_runtime"
+        # The pinned framework checksum needs a byte-identical dylib. Without
+        # -reproducible, ld orders the objc selector references and GOT slots
+        # differently between CI runs of the same inputs, so __objc_stubs,
+        # __stubs and the content-hash LC_UUID change (WF-992).
+        release_rustflags="$release_rustflags -Clink-arg=-Wl,-reproducible"
     fi
     if [ -n "$PREBUILT_ARCHIVE" ]; then
         archive="$PREBUILT_ARCHIVE"
