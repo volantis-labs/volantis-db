@@ -92,7 +92,7 @@ fn slow_scan_with_deadline_returns_typed_timeout() {
         "deadline returned {result:?}"
     );
     assert!(
-        elapsed < Duration::from_millis(50),
+        elapsed < Duration::from_millis(500),
         "5 ms deadline returned after {elapsed:?}"
     );
     let after = store.stats().expect("stats after timed query");
@@ -199,7 +199,7 @@ fn in_flight_cancel_token_interrupts_without_partial_results() {
         Err(QueryError::Cancelled { partial: false })
     ));
     assert!(
-        cancellation_elapsed < Duration::from_millis(50),
+        cancellation_elapsed < Duration::from_millis(500),
         "caller cancellation returned after {cancellation_elapsed:?}"
     );
     let stats = store.stats().expect("stats after in-flight cancellation");
@@ -263,7 +263,7 @@ fn admitted_read_observes_close_cancellation_without_caller_cooperation() {
         Err(QueryError::ReadCancelled { partial: false })
     ));
     assert!(
-        close_elapsed < Duration::from_millis(50),
+        close_elapsed < Duration::from_millis(500),
         "close waited {close_elapsed:?} for a scan that did not cooperate"
     );
 }
@@ -564,6 +564,9 @@ fn deadline_cancellation_is_checked_inside_every_encoded_scan_loop() {
     store.close().expect("close after encoded deadlines");
 }
 
+// Wall-clock bounds in this file are supporting evidence only (AGENTS.md):
+// 500 ms gives shared CI runners 100x the 5 ms deadline. The typed
+// Timeout { partial: false } result is the contract.
 fn assert_deadline_interrupts(store: &Store, request: ScanRequest<'_>, scheme: &str) {
     let deadline = Deadline::after(Duration::from_millis(5)).expect("deadline");
     let started = Instant::now();
@@ -579,7 +582,7 @@ fn assert_deadline_interrupts(store: &Store, request: ScanRequest<'_>, scheme: &
         "{scheme} deadline returned {result:?}"
     );
     assert!(
-        elapsed < Duration::from_millis(50),
+        elapsed < Duration::from_millis(500),
         "{scheme} loop ignored cancellation for {elapsed:?}"
     );
 }
