@@ -1,7 +1,7 @@
 {
   "format": "graph-profile-parity-v1",
   "source_profile": "crates/volantis-db-cypher/tests/fixtures/cypher-profile-v1.json",
-  "source_profile_sha256": "62622cf5d570a29786c7f698b2f396288e41dc60ea44d6e2bf15d5ece6322e46",
+  "source_profile_sha256": "16a038613ec7ba3b5ccc47fc97de0e56c0580af8ba5a424a6097445d1846c66b",
   "source_commit": "007895aff5f33097d67b2e48a0a2babd6bd18590",
   "paths": [
     "rust-structured",
