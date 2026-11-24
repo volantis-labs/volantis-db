@@ -185,7 +185,7 @@ class ReleaseTests(unittest.TestCase):
                     self.assertIsNone(self.g.policy('footprint/' + artifact)['section_bytes_max'])
                 continue
             sizes = ((13312*1024, True), (13312*1024+1, False)) if features else (
-                (5285*1024, True), (5632*1024, True), (5632*1024+1, False))
+                (5285*1024, True), (6144*1024, True), (6144*1024+1, False))
             for size, passes in sizes:
                 with self.subTest(artifact=artifact, section_bytes=size):
                     report = self.example_observations('footprint/' + artifact)

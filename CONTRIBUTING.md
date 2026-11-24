@@ -52,7 +52,7 @@ touches those contracts. `scripts/ci-gates.sh` is the full local qualification
 entry point; some of its tools require separate installation.
 
 `scripts/size-budget.sh` gates the post-strip linked sections of each static
-FFI archive: graph-free core and FFI 5,632 KB, graph FFI 13,312 KB, macOS arm64
+FFI archive: graph-free core and FFI 6,144 KB, graph FFI 13,312 KB, macOS arm64
 graph+text FFI 28,672 KB (MLX), and macOS x86_64 graph+text FFI 14,336 KB (CPU
 runtime, owner decision 2026-11-23). The Node workflow applies the two text
 gates to the archives linked into the darwin-arm64 and darwin-x64 prebuilds.

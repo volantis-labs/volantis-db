@@ -225,11 +225,12 @@ def installed_report(raw, kind):
 def footprint_budget(artifact):
     # Owner decisions: 2026-09-27 graph FFI 12,288 KiB (CLAUDE.md), raised to
     # 13,312 KiB on 2026-11-23 (WF-992);
-    # 2026-10-05 legacy 5,632 KiB on all platforms. Graph-contained core
+    # 2026-10-05 legacy 5,632 KiB on all platforms, raised to 6,144 KiB on
+    # 2026-11-23 (WF-992). Graph-contained core
     # is reported separately; it receives no independent archive gate.
     if artifact in ('graph-core-arm64', 'text-arm64', 'legacy-consumer'):
         return None
-    return (13312 if SHIPPING[artifact] else 5632) * 1024
+    return (13312 if SHIPPING[artifact] else 6144) * 1024
 
 
 def policy(name):

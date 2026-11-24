@@ -20,8 +20,9 @@ features=()
 MANIFEST="$ROOT_DIR/Package.swift"
 PIN_MARKER=xcframework-checksum
 case "$SELECTOR" in
-    # Owner decision 2026-10-05: legacy arm64 and Intel share 5,632 KB.
-    legacy) SUFFIX=""; NAME=VolantisDB; SIZE_BUDGET_KB=5632; MACOS_DEPLOYMENT_TARGET=11.0 ;;
+    # Owner decision 2026-10-05: legacy arm64 and Intel share 5,632 KB,
+    # raised to 6,144 KB on 2026-11-23 (WF-992).
+    legacy) SUFFIX=""; NAME=VolantisDB; SIZE_BUDGET_KB=6144; MACOS_DEPLOYMENT_TARGET=11.0 ;;
     graph-cypher)
         # ZE-506 decision 2026-10-19: arm64 graph+text is gated at 28,672 KB.
         # ZE_TEXT_SIZE_BUDGET_KB is a local-only override; CI never sets it.

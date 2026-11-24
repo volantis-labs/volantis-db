@@ -5,7 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Owner decision 2026-10-05: graph-free core/FFI budget is 5,632 KB
 # on every platform, including arm64 and Intel.
-BUDGET_KB="${ZE_SIZE_BUDGET_KB:-5632}"
+# WF-992, owner decision 2026-11-23: raised to 6,144 KB on every platform.
+# The legacy XCFramework macOS x86_64 slice measured 5,696 KB after E24.
+BUDGET_KB="${ZE_SIZE_BUDGET_KB:-6144}"
 # Owner decision 2026-09-27 (CLAUDE.md, ZE-253): complete graph FFI
 # archive (core + FFI + Cypher) is gated at 12,288 KB.
 # WF-992, owner decision 2026-11-23: raised to 13,312 KB on every platform.

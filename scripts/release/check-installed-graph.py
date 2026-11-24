@@ -119,8 +119,9 @@ def check_xcframework(path, artifact, work, output):
             run(['lipo', library, '-thin', arch, '-output', thin])
         tools.check_exports(thin, artifact)
         measured = tools.measure(thin, output)
-        # Legacy remains a universal static artifact under the 2026-10-05 gate.
-        measured['budget_kib'] = 5632
+        # Legacy remains a universal static artifact under the graph-free gate
+        # (2026-10-05, raised to 6,144 KiB on 2026-11-23, WF-992).
+        measured['budget_kib'] = 6144
         measured['budget_pass'] = measured['section_kib'] <= measured['budget_kib']
         slices[arch] = measured
     return slices
