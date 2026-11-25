@@ -22,7 +22,7 @@ let useLocalXCFramework = environment["ZE_USE_LOCAL_XCFRAMEWORK"] == "1"
 // local mismatch.
 let binaryChecksum = "d9d2b3d6816edc3d7ddba38a3d882c225a602399c42e85e8d3d3d162946bf346" // ze:xcframework-checksum
 
-let graphBinaryChecksum = "72977afcd04d56513aa3779c8b27f6ac14c549d7a8f5ba193819fc49ad83588f" // ze:graph-xcframework-checksum
+let graphBinaryChecksum = "9772761ecea6983e3f0904c3e8f78cb6aac77ee7d684273193b028934ed1a8b8" // ze:graph-xcframework-checksum
 
 // Framework discovery uses the framework's name; preserve the public C import
 // through a source re-export when selecting the dynamic full artifact.
