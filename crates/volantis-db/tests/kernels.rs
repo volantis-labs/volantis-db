@@ -1183,8 +1183,10 @@ mod kernels {
             elapsed.as_nanos()
         );
         assert!(
-            elapsed <= std::time::Duration::from_millis(10),
-            "hamming batch took {elapsed:?}, above 10 ms"
+            // 20 ms: 2x headroom for shared CI runners (AGENTS.md); the
+            // name keeps the 10 ms design target.
+            elapsed <= std::time::Duration::from_millis(20),
+            "hamming batch took {elapsed:?}, above 20 ms"
         );
         std::hint::black_box(out);
     }

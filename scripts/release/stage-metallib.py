@@ -6,12 +6,20 @@ import shutil
 
 
 def stage(release, destination):
-    candidates = list(release.glob('build/mlx-sys-*/out/build/lib/mlx.metallib'))
-    if len(candidates) != 1 or candidates[0].stat().st_size == 0:
-        raise ValueError(f'expected one nonempty MLX metallib in {release}, found {candidates}')
+    candidates = sorted(release.glob('build/mlx-sys-*/out/build/lib/mlx.metallib'),
+                        key=lambda path: path.stat().st_mtime_ns)
+    if not candidates:
+        raise ValueError(f'expected an MLX metallib in {release}, found none')
+    # A restored CI cache can hold build-script output dirs from earlier
+    # RUSTFLAGS; the newest one is the build that just ran.
+    chosen = candidates[-1]
+    if chosen.stat().st_size == 0:
+        raise ValueError(f'MLX metallib is empty: {chosen}')
+    for stale in candidates[:-1]:
+        print(f'MLX runtime: ignoring older build output {stale}')
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(candidates[0], destination)
-    print(f'MLX runtime: {candidates[0]} -> {destination}')
+    shutil.copyfile(chosen, destination)
+    print(f'MLX runtime: {chosen} -> {destination}')
 
 
 if __name__ == '__main__':
