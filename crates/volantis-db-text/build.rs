@@ -9,6 +9,9 @@ fn main() {
     cc::Build::new()
         .file("objc/ze_model.m")
         .flag("-Wno-deprecated-declarations")
+        // No linker-synthesized __objc_stubs: ld lays them out in a different
+        // order between runs, which breaks the pinned framework checksum.
+        .flag("-fno-objc-msgsend-selector-stubs")
         .flag("-fobjc-arc")
         .flag("-fmodules")
         .compile("ze_model");
@@ -20,6 +23,9 @@ fn main() {
     cc::Build::new()
         .file("objc/ze_coreml.m")
         .flag("-Wno-deprecated-declarations")
+        // No linker-synthesized __objc_stubs: ld lays them out in a different
+        // order between runs, which breaks the pinned framework checksum.
+        .flag("-fno-objc-msgsend-selector-stubs")
         .flag("-fobjc-arc")
         .flag("-fmodules")
         .compile("ze_coreml");
