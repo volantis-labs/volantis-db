@@ -10,6 +10,8 @@
 [![Rust 1.93+](https://img.shields.io/badge/rust-1.93%2B-93450a.svg)](https://www.rust-lang.org)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
+[Website](https://volantislabs.dev/volantis-db/) · [Docs](https://volantislabs.dev/volantis-db/docs/) · [Benchmarks](https://volantislabs.dev/volantis-db/benchmarks/)
+
 [Quick start](#quick-start) · [Search](#one-store-three-ways-to-search) · [APIs](#language-apis)
 
 </div>
